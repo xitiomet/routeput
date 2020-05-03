@@ -1,0 +1,13 @@
+*~
+*.link
+build/
+target/
+dependency-reduced-pom.xml
+.gradle
+*.json
+.DS_Store
+upload.sh
+.classpath
+.project
+.settings/
+.vscode/

@@ -1,0 +1,8 @@
+Package: routeput
+Version: 1.0
+Section: misc
+Priority: low
+Architecture: all
+Description: Route.put Websocket Server
+Depends: default-jre
+Maintainer: openstatic.org <support@openstatic.org>
