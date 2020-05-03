@@ -32,3 +32,5 @@ Other Clients Receive:
 }
 ```
 
+The fields are prefixed with a double underscore in hopes that they will not collide with any existing fields in your packet. In future versions the names of these fields will be definable.
+
