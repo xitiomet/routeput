@@ -202,53 +202,6 @@ public class RoutePutServer
             factory.register(RoutePutSession.class);
         }
     }
-    
-    /*
-    @WebSocket
-    public static class EventsWebSocket
-    {
-     
-        @OnWebSocketMessage
-        public void onText(Session session, String message) throws IOException
-        {
-            try
-            {
-                JSONObject jo = new JSONObject(message);
-                if (session instanceof WebSocketSession)
-                {
-                    WebSocketSession wssession = (WebSocketSession) session;
-                    RoutePutServer.instance.handleWebSocketEvent(jo, wssession);
-                } else {
-                    System.err.println("not instance of WebSocketSession");
-                }
-            } catch (Exception e) {}
-        }
-     
-        @OnWebSocketConnect
-        public void onConnect(Session session) throws IOException
-        {
-            if (session instanceof WebSocketSession)
-            {
-                WebSocketSession wssession = (WebSocketSession) session;
-                System.out.println(wssession.getRemoteAddress().getHostString() + " connected!");
-                RoutePutServer.instance.sessions.add(new RoutePutSession(wssession));
-                
-            }
-        }
-     
-        @OnWebSocketClose
-        public void onClose(Session session, int status, String reason)
-        {
-            if (session instanceof WebSocketSession)
-            {
-                WebSocketSession wssession = (WebSocketSession) session;
-                RoutePutServer.instance.sessions.remove(wssession);
-                
-            }
-        }
-     
-    }
-    */
 
     public static class ApiServlet extends HttpServlet
     {
