@@ -4,6 +4,12 @@ import org.json.*;
 
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.PrintStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.File;
 
 import java.net.InetAddress;
 import java.net.URL;
@@ -47,20 +53,54 @@ import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 
+import org.apache.commons.cli.*;
 
 public class RoutePutServer
 {
     private Server httpServer;
     protected ArrayList<RoutePutSession> sessions;
     protected LinkedHashMap<String, RoutePutSession> collectors;
-
+    protected JSONObject settings;
     protected static RoutePutServer instance;
     private String staticRoot;
     
     public static void main(String[] args)
     {
-        RoutePutServer rps = new RoutePutServer();
-        rps.setState(true);
+        CommandLine cmd = null;
+        JSONObject settings = new JSONObject();
+        try
+        {
+            Options options = new Options();
+            CommandLineParser parser = new DefaultParser();
+            options.addOption(new Option("c", "config", true, "Config file location"));
+            options.addOption(new Option("p", "port", true, "Specify HTTP port"));
+            options.addOption(new Option("?", "help", false, "Shows help"));
+            cmd = parser.parse(options, args);
+            
+            if (cmd.hasOption("?"))
+            {
+                HelpFormatter formatter = new HelpFormatter();
+                formatter.printHelp( "routeput", options );
+                System.exit(0);
+            }
+            
+            if (cmd.hasOption("c"))
+            {
+                File config = new File(cmd.getOptionValue('c',"routeput.json"));
+                settings = loadJSONObject(config);
+            }
+            
+            if (cmd.hasOption("p"))
+            {
+                int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
+                settings.put("port", port);
+            }
+            
+            RoutePutServer rps = new RoutePutServer(settings);
+            rps.setState(true);
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
         
     }
     
@@ -83,12 +123,13 @@ public class RoutePutServer
         return randKey;
     }
     
-    public RoutePutServer()
+    public RoutePutServer(JSONObject settings)
     {
         RoutePutServer.instance = this;
+        this.settings = settings;
         this.sessions = new ArrayList<RoutePutSession>();
         this.collectors = new LinkedHashMap<String, RoutePutSession>();
-        httpServer = new Server(6144);
+        httpServer = new Server(settings.optInt("port", 6144));
         
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.setContextPath("/");
@@ -128,9 +169,11 @@ public class RoutePutServer
         String eventChannel = j.optString("__eventChannel","*");
         if (this.collectors.containsKey(eventChannel))
         {
+            // This Channel has a connected collector
             RoutePutSession collector = this.collectors.get(eventChannel);
             if (session == collector)
             {
+                //this connection is that collector!
                 if (j.has("__targetId"))
                 {
                     RoutePutSession target = findSessionById(j.optString("__targetId", ""));
@@ -139,10 +182,20 @@ public class RoutePutServer
                     broadcastJSONObject(eventChannel, j);
                 }
             } else {
+                // absorb all packets into collector
                 collector.send(j);
             }
         } else {
-            broadcastJSONObject(eventChannel, j);
+            // This Channel is a complete free for all!
+            if (j.has("__targetId"))
+            {
+                // Ok this packet has a target in the channel
+                RoutePutSession target = findSessionById(j.optString("__targetId", ""));
+                target.send(j);
+            } else {
+                // Everybody but the sender should get this packet
+                broadcastJSONObject(eventChannel, j);
+            }
         }
     }
     
@@ -252,7 +305,7 @@ public class RoutePutServer
             JSONObject response = new JSONObject();
             try
             {
-                if ("/rules/add/".equals(target))
+                if ("/channels/".equals(target))
                 {
                     
                 } else if ("/mappings/".equals(target)) {
@@ -263,6 +316,37 @@ public class RoutePutServer
             }
             httpServletResponse.getWriter().println(response.toString());
             //request.setHandled(true);
+        }
+    }
+    
+    public static JSONObject loadJSONObject(File file)
+    {
+        try
+        {
+            FileInputStream fis = new FileInputStream(file);
+            StringBuilder builder = new StringBuilder();
+            int ch;
+            while((ch = fis.read()) != -1){
+                builder.append((char)ch);
+            }
+            fis.close();
+            JSONObject props = new JSONObject(builder.toString());
+            return props;
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    public static void saveJSONObject(File file, JSONObject obj)
+    {
+        try
+        {
+            FileOutputStream fos = new FileOutputStream(file);
+            PrintStream ps = new PrintStream(fos);
+            ps.print(obj.toString());
+            ps.close();
+            fos.close();
+        } catch (Exception e) {
         }
     }
 }
