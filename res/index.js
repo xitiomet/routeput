@@ -1,5 +1,4 @@
 var connection;
-var debugMode = true;
 var reconnectTimeout;
 
 function changeView(radio)
@@ -13,8 +12,7 @@ function changeView(radio)
 function sendEvent(wsEvent)
 {
     var out_event = JSON.stringify(wsEvent);
-    if (debugMode)
-        logIt("<- <b>(" + wsEvent.__eventChannel + ")</b>: " + out_event);
+    //logIt("<- <b>(" + wsEvent.__eventChannel + ")</b>: " + out_event);
     try
     {
         connection.send(out_event);
@@ -28,8 +26,7 @@ function logIt(message)
     var console = document.getElementById('console');
     var d = new Date();
     var dString = d.toLocaleTimeString();
-    if (console.innerHTML != "") console.innerHTML += "<br />";
-    console.innerHTML += "&lt;" + dString + "&gt; " + message;
+    console.innerHTML += "&lt;" + dString + "&gt; " + message + "<br />";
     window.scrollTo(0,document.body.scrollHeight);
 }
 
@@ -53,7 +50,7 @@ function setupWebsocket()
         {
             wsProtocol = 'wss';
         }
-        connection = new WebSocket(wsProtocol + '://' + hostname + ':' + port + '/channel/');
+        connection = new WebSocket(wsProtocol + '://' + hostname + ':' + port + '/channel/routeputDebug/');
         
         connection.onopen = function () {
             logIt("Connected to WebSocket backend!");
@@ -67,8 +64,40 @@ function setupWebsocket()
         connection.onmessage = function (e) {
             var jsonObject = JSON.parse(e.data);
             var evChannel = jsonObject.__eventChannel;
-            if (debugMode)
-                logIt("-> <b>(" + evChannel + ")</b>: " + JSON.stringify(jsonObject));
+            if (jsonObject.hasOwnProperty('logIt'))
+            {
+                logIt(jsonObject.logIt);
+            } else if (jsonObject.hasOwnProperty('channelStats')) {
+                var channelStats = jsonObject.channelStats;
+                var channelStatsTable = document.getElementById('channelStatsTable');
+                var i;
+                for (i = 0; i < channelStatsTable.children.length; i++)
+                {
+                    var child = channelStatsTable.children[i];
+                    var cName = child.id.slice(0, -2);
+                    if (!channelStats.hasOwnProperty(cName) && child.id.endsWith("TR"))
+                    {
+                        console.log("Removing missing channel: " + cName);
+                        channelStatsTable.removeChild(child);
+                    }
+                }
+
+                
+                for (var key in channelStats)
+                {
+                    //console.log(key);
+                    var value = channelStats[key];
+                    //console.log(value)
+                    var channelTR = document.getElementById(key + "TR");
+                    if (channelTR == undefined)
+                    {
+                        channelTR = document.createElement("tr");
+                        channelTR.id = key + "TR";
+                        channelStatsTable.appendChild(channelTR);
+                    }
+                    channelTR.innerHTML = "<td>" + key + "</td><td>" + value.members + "</td>";
+                }
+            }
         };
         
         connection.onclose = function () {

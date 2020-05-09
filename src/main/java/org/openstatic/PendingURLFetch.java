@@ -93,9 +93,15 @@ public class PendingURLFetch implements Runnable
                 InputStream is = con.getInputStream();
                 this.response = readInputStreamToString(is);
             }
+            this.onResponse(this.response);
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
+    }
+    
+    public void onResponse(String response)
+    {
+        
     }
     
     public String getResponse()

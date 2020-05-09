@@ -55,7 +55,7 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 
 import org.apache.commons.cli.*;
 
-public class RoutePutServer
+public class RoutePutServer implements Runnable
 {
     private Server httpServer;
     protected ArrayList<RoutePutSession> sessions;
@@ -63,7 +63,9 @@ public class RoutePutServer
     protected JSONObject settings;
     protected static RoutePutServer instance;
     private String staticRoot;
-    
+    private Thread mainThread;
+    private boolean keep_running;
+
     public static void main(String[] args)
     {
         CommandLine cmd = null;
@@ -98,6 +100,14 @@ public class RoutePutServer
             
             RoutePutServer rps = new RoutePutServer(settings);
             rps.setState(true);
+            
+            Runtime.getRuntime().addShutdownHook(new Thread() 
+            { 
+              public void run() 
+              { 
+                RoutePutServer.instance.keep_running = false;
+              } 
+            }); 
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
@@ -162,6 +172,32 @@ public class RoutePutServer
             e.printStackTrace(System.err);
         }
         httpServer.setHandler(context);
+        this.mainThread = new Thread(this);
+        this.mainThread.setDaemon(true);
+        this.mainThread.start();
+    }
+    
+    public void run()
+    {
+        this.keep_running = true;
+        while(this.keep_running)
+        {
+            try
+            {
+                everySecond();
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                
+            }
+        }
+    }
+    
+    public void everySecond() throws Exception
+    {
+        JSONObject jo = new JSONObject();
+        jo.put("channelStats", this.channelStats());
+        jo.put("__eventChannel", "routeputDebug");
+        this.handleIncomingEvent(jo, null);
     }
     
     public void handleIncomingEvent(JSONObject j, RoutePutSession session)
@@ -228,6 +264,76 @@ public class RoutePutServer
         }
         return null;
     }
+    
+    private JSONObject optJSONObject(JSONObject jo, String key)
+    {
+        JSONObject js = new JSONObject();
+        if (jo.has(key))
+        {
+            js = jo.getJSONObject(key);
+        }
+        return js;
+    }
+    
+    public JSONObject channelStats()
+    {
+        JSONObject jo = new JSONObject();
+        for(RoutePutSession s : this.sessions)
+        {
+            String dChan = s.getDefaultChannel();
+            JSONObject js = optJSONObject(jo, dChan);
+            
+            js.put("members", js.optInt("members", 0) + 1);
+            if (s.isCollector())
+                js.put("collector", s.getConnectionId());
+            
+            jo.put(dChan, js);
+        }
+        return jo;
+    }
+    
+    public JSONObject channelBreakdown()
+    {
+        JSONObject jo = new JSONObject();
+        for(RoutePutSession s : this.sessions)
+        {
+            String dChan = s.getDefaultChannel();
+            JSONObject js = new JSONObject();
+            if (jo.has(dChan))
+            {
+                js = jo.getJSONObject(dChan);
+            }
+            js.put(s.getConnectionId(), s.toJSONObject());
+            jo.put(dChan, js);
+        }
+        return jo;
+    }
+    
+    public JSONObject channelBreakdown(String channel)
+    {
+        JSONObject jo = new JSONObject();
+        for(RoutePutSession s : this.sessions)
+        {
+            if (s.subscribedTo(channel))
+            {
+                jo.put(s.getConnectionId(), s.toJSONObject());
+            }
+        }
+        return jo;
+    }
+
+    public JSONArray channelMembers(String channel)
+    {
+        JSONArray ja = new JSONArray();
+        for(RoutePutSession s : this.sessions)
+        {
+            if (s.subscribedTo(channel))
+            {
+                ja.put(s.getConnectionId());
+            }
+        }
+        return ja;
+    }
 
     public void broadcastJSONObject(String eventChannel, JSONObject jo)
     {
@@ -244,6 +350,14 @@ public class RoutePutServer
                 }
             }
         }
+    }
+    
+    public static void logIt(String text)
+    {
+        JSONObject l = new JSONObject();
+        l.put("__eventChannel", "routeputDebug");
+        l.put("logIt",  text);
+        RoutePutServer.instance.handleIncomingEvent(l, null);
     }
 
     public static class EventsWebSocketServlet extends WebSocketServlet
@@ -301,13 +415,16 @@ public class RoutePutServer
             httpServletResponse.setStatus(HttpServletResponse.SC_OK);
             httpServletResponse.setCharacterEncoding("iso-8859-1");
             String target = request.getPathInfo();
-            System.err.println("Path: " + target);
+            //System.err.println("Path: " + target);
+            logIt("API Request: " + target);
             JSONObject response = new JSONObject();
             try
             {
                 if ("/channels/".equals(target))
                 {
-                    
+                    response.put("channels", RoutePutServer.instance.channelBreakdown());
+                } else if ("/channels/stats/".equals(target)) {
+                    response.put("channels", RoutePutServer.instance.channelStats());
                 } else if ("/mappings/".equals(target)) {
 
                 }
