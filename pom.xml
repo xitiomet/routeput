@@ -12,6 +12,7 @@
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
     <graalvm.version>20.1.0</graalvm.version>
+    <imageName>routeput</imageName>
   </properties>
   <repositories>
     <repository>
@@ -117,6 +118,35 @@
             </executions>
         </plugin>
         <plugin>
+            <groupId>org.graalvm.nativeimage</groupId>
+            <artifactId>native-image-maven-plugin</artifactId>
+            <version>${graalvm.version}</version>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>native-image</goal>
+                    </goals>
+                    <phase>package</phase>
+                </execution>
+            </executions>
+            <configuration>
+                <skip>false</skip>
+                <imageName>${imageName}</imageName>
+                <mainClass>${mainClass}</mainClass>
+                <buildArgs>
+                    --no-server
+                    --no-fallback
+                    -H:Log=registerResource:
+                    -H:-UseServiceLoaderFeature
+                    -H:IncludeResourceBundles=javax.servlet.LocalStrings
+                    -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
+                    -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
+                    -H:ResourceConfigurationFiles=../src/graalvm/resource-config.json
+                    -Dgraal.LogFile=graal.log
+                </buildArgs>
+            </configuration>
+       </plugin>
+        <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
             <version>3.0.1</version>
@@ -128,7 +158,67 @@
             <groupId>org.vafer</groupId>
             <version>1.8</version>
             <executions>
+                <!-- build native image debian package -->
                 <execution>
+                    <id>native-debian-package</id>
+                    <phase>package</phase>
+                    <goals>
+                        <goal>jdeb</goal>
+                    </goals>
+                    <configuration>
+                        <verbose>true</verbose>
+                        <snapshotExpand>true</snapshotExpand>
+                        <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
+                        <snapshotEnv>USER</snapshotEnv>
+                        <controlDir>${basedir}/src/deb/control</controlDir>
+                        <deb>${project.build.directory}/${artifactId}-${version}-native.deb</deb>
+                        <dataSet>
+                            <data>
+                              <src>${project.build.directory}/${imageName}</src>
+                              <type>file</type>
+                              <mapper>
+                                <type>perm</type>
+                                <prefix>/usr/share/routeput</prefix>
+                                <user>loader</user>
+                                <group>loader</group>
+                                <filemode>755</filemode>
+                              </mapper>
+                            </data>
+                            <data>
+                              <type>link</type>
+                              <symlink>true</symlink>
+                              <linkName>/usr/bin/routeput</linkName>
+                              <linkTarget>/usr/share/routeput/${imageName}</linkTarget>
+                            </data>
+                            <data>
+                              <src>${basedir}/src/deb/routeput.native.init.d</src>
+                              <dst>routeput</dst>
+                              <type>file</type>
+                              <mapper>
+                                <type>perm</type>
+                                <prefix>/etc/init.d</prefix>
+                                <user>loader</user>
+                                <group>loader</group>
+                                <filemode>755</filemode>
+                              </mapper>
+                            </data>
+                            <data>
+                              <src>${basedir}/src/main/resources/icon-256.png</src>
+                              <type>file</type>
+                              <mapper>
+                                <type>perm</type>
+                                <prefix>/usr/share/routeput</prefix>
+                                <user>loader</user>
+                                <group>loader</group>
+                                <filemode>755</filemode>
+                              </mapper>
+                            </data>
+                        </dataSet>
+                    </configuration>
+                </execution>
+                <!-- Build JVM Dependent Debian package -->
+                <execution>
+                    <id>jvm-debian-package</id>
                     <phase>package</phase>
                     <goals>
                         <goal>jdeb</goal>
@@ -197,35 +287,7 @@
                 </execution>
             </executions>
        </plugin>
-       <plugin>
-            <groupId>org.graalvm.nativeimage</groupId>
-            <artifactId>native-image-maven-plugin</artifactId>
-            <version>${graalvm.version}</version>
-            <executions>
-                <execution>
-                    <goals>
-                        <goal>native-image</goal>
-                    </goals>
-                    <phase>package</phase>
-                </execution>
-            </executions>
-            <configuration>
-                <skip>false</skip>
-                <imageName>routeput</imageName>
-                <mainClass>${mainClass}</mainClass>
-                <buildArgs>
-                    --no-server
-                    --no-fallback
-                    -H:Log=registerResource:
-                    -H:-UseServiceLoaderFeature
-                    -H:IncludeResourceBundles=javax.servlet.LocalStrings
-                    -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
-                    -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
-                    -H:ResourceConfigurationFiles=../src/graalvm/resource-config.json
-                    -Dgraal.LogFile=graal.log
-                </buildArgs>
-            </configuration>
-       </plugin>
+       
        <plugin>
             <groupId>com.akathist.maven.plugins.launch4j</groupId>
             <artifactId>launch4j-maven-plugin</artifactId>
