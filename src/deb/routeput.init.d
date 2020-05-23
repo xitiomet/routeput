@@ -1,6 +1,14 @@
 #!/bin/bash
-# chkconfig: 2345 20 80
-# description: Route.put Websocket Server
+### BEGIN INIT INFO
+# Provides:          routeput
+# Required-Start:    $local_fs $remote_fs $network
+# Required-Stop:     $local_fs $remote_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Route.put Websocket Server
+# Description:       Start the Route.put Websocket server
+#  This script will start the Route.put web server.
+### END INIT INFO
 
 PIDFILE=/var/run/routeput.pid
 USER=www-data
