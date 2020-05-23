@@ -11,6 +11,7 @@
     <mainClass>org.openstatic.RoutePutServer</mainClass>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
+    <graalvm.version>20.1.0</graalvm.version>
   </properties>
   <repositories>
     <repository>
@@ -56,6 +57,12 @@
         <artifactId>commons-cli</artifactId>
         <version>1.4</version>
     </dependency>
+    <dependency>
+        <groupId>org.graalvm.sdk</groupId>
+        <artifactId>graal-sdk</artifactId>
+        <version>${graalvm.version}</version>
+        <scope>provided</scope>
+    </dependency>
   </dependencies>
   <reporting>
     <plugins>
@@ -73,7 +80,7 @@
   <build>
     <resources>
         <resource>
-          <directory>res/</directory>
+          <directory>src/main/resources/</directory>
           <includes>
             <include>*.png</include>
             <include>*.html</include>
@@ -85,7 +92,6 @@
             <include>*.json</include>
             <include>*.ico</include>
           </includes>
-          <targetPath>routeput-res</targetPath>
         </resource>
     </resources>
     <plugins>
@@ -170,7 +176,7 @@
                               </mapper>
                             </data>
                             <data>
-                              <src>${basedir}/res/icon-256.png</src>
+                              <src>${basedir}/src/main/resources/icon-256.png</src>
                               <type>file</type>
                               <mapper>
                                 <type>perm</type>
@@ -190,6 +196,35 @@
                     </configuration>
                 </execution>
             </executions>
+       </plugin>
+       <plugin>
+            <groupId>org.graalvm.nativeimage</groupId>
+            <artifactId>native-image-maven-plugin</artifactId>
+            <version>${graalvm.version}</version>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>native-image</goal>
+                    </goals>
+                    <phase>package</phase>
+                </execution>
+            </executions>
+            <configuration>
+                <skip>false</skip>
+                <imageName>routeput</imageName>
+                <mainClass>${mainClass}</mainClass>
+                <buildArgs>
+                    --no-server
+                    --no-fallback
+                    -H:Log=registerResource:
+                    -H:-UseServiceLoaderFeature
+                    -H:IncludeResourceBundles=javax.servlet.LocalStrings
+                    -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
+                    -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
+                    -H:ResourceConfigurationFiles=../src/graalvm/resource-config.json
+                    -Dgraal.LogFile=graal.log
+                </buildArgs>
+            </configuration>
        </plugin>
        <plugin>
             <groupId>com.akathist.maven.plugins.launch4j</groupId>
@@ -212,7 +247,7 @@
                         <classPath>
                             <mainClass>${mainClass}</mainClass>
                         </classPath>
-                        <icon>res/favicon.ico</icon>
+                        <icon>src/main/resources/favicon.ico</icon>
                         <jre>
                             <path>jre</path>
                             <minVersion>1.8.0</minVersion>

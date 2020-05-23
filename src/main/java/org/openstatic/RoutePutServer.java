@@ -62,7 +62,6 @@ public class RoutePutServer implements Runnable
     protected LinkedHashMap<String, RoutePutSession> collectors;
     protected JSONObject settings;
     protected static RoutePutServer instance;
-    private String staticRoot;
     private Thread mainThread;
     private boolean keep_running;
 
@@ -145,32 +144,7 @@ public class RoutePutServer implements Runnable
         context.setContextPath("/");
         context.addServlet(ApiServlet.class, "/api/*");
         context.addServlet(EventsWebSocketServlet.class, "/channel/*");
-        try
-        {
-            URL url = RoutePutServer.class.getResource("/routeput-res/index.html");
-            this.staticRoot = url.toString().replaceAll("index.html","");
-            DefaultServlet defaultServlet = new DefaultServlet();
-            ServletHolder holderPwd = new ServletHolder("default", defaultServlet);
-            holderPwd.setInitParameter("resourceBase", this.staticRoot);
-            context.addServlet(holderPwd, "/*");
-            
-            /*
-            final HttpConfiguration httpConfiguration = new HttpConfiguration();
-            httpConfiguration.setSecureScheme("https");
-            httpConfiguration.setSecurePort(6145);
-            final SslContextFactory sslContextFactory = new SslContextFactory(this.staticRoot + "midi-tools.jks");
-            sslContextFactory.setKeyStorePassword("miditools");
-            final HttpConfiguration httpsConfiguration = new HttpConfiguration(httpConfiguration);
-            httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
-            final ServerConnector httpsConnector = new ServerConnector(httpServer,
-                new SslConnectionFactory(sslContextFactory, HttpVersion.HTTP_1_1.asString()),
-                new HttpConnectionFactory(httpsConfiguration));
-            httpsConnector.setPort(6145);
-            httpServer.addConnector(httpsConnector);
-            */
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
-        }
+        context.addServlet(InterfaceServlet.class, "/*");
         httpServer.setHandler(context);
         this.mainThread = new Thread(this);
         this.mainThread.setDaemon(true);
@@ -360,81 +334,6 @@ public class RoutePutServer implements Runnable
         RoutePutServer.instance.handleIncomingEvent(l, null);
     }
 
-    public static class EventsWebSocketServlet extends WebSocketServlet
-    {
-        @Override
-        public void configure(WebSocketServletFactory factory)
-        {
-            //factory.getPolicy().setIdleTimeout(10000);
-            factory.register(RoutePutSession.class);
-        }
-    }
-
-    public static class ApiServlet extends HttpServlet
-    {
-        public JSONObject readJSONObjectPOST(HttpServletRequest request)
-        {
-            StringBuffer jb = new StringBuffer();
-            String line = null;
-            try
-            {
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                {
-                    jb.append(line);
-                }
-            } catch (Exception e) {
-                e.printStackTrace(System.err);
-            }
-
-            try
-            {
-                JSONObject jsonObject =  new JSONObject(jb.toString());
-                return jsonObject;
-            } catch (JSONException e) {
-                e.printStackTrace(System.err);
-                return new JSONObject();
-            }
-        }
-
-        public boolean isNumber(String v)
-        {
-            try
-            {
-                Integer.parseInt(v);
-                return true;
-            } catch(NumberFormatException e){
-                return false;
-            }
-        }
-        
-        @Override
-        protected void doGet(HttpServletRequest request, HttpServletResponse httpServletResponse) throws ServletException, IOException
-        {
-            httpServletResponse.setContentType("text/javascript");
-            httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-            httpServletResponse.setCharacterEncoding("iso-8859-1");
-            String target = request.getPathInfo();
-            //System.err.println("Path: " + target);
-            logIt("API Request: " + target);
-            JSONObject response = new JSONObject();
-            try
-            {
-                if ("/channels/".equals(target))
-                {
-                    response.put("channels", RoutePutServer.instance.channelBreakdown());
-                } else if ("/channels/stats/".equals(target)) {
-                    response.put("channels", RoutePutServer.instance.channelStats());
-                } else if ("/mappings/".equals(target)) {
-
-                }
-            } catch (Exception x) {
-                x.printStackTrace(System.err);
-            }
-            httpServletResponse.getWriter().println(response.toString());
-            //request.setHandled(true);
-        }
-    }
     
     public static JSONObject loadJSONObject(File file)
     {

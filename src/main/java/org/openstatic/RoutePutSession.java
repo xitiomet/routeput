@@ -34,6 +34,11 @@ public class RoutePutSession
     private boolean collector = false;
     private JSONObject httpHeaders;
     
+    public RoutePutSession()
+    {
+        
+    }
+    
     public void send(JSONObject jo)
     {
         if (this.websocketSession != null && jo != null)
