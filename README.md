@@ -36,6 +36,15 @@ Other Clients Receive:
 
 The fields are prefixed with a double underscore in hopes that they will not collide with any existing fields in your packet. In future versions the names of these fields will be definable.
 
+All Special fields to avoid using in your object are:
+```
+__request               String - used to send special commands to the server
+__response              String - used to mark a server response to a __request
+__sourceConnectStatus   boolean - used for when a user connects 
+__targetId              String - Target connectionId for packet routing
+__sourceId              String - Original connectionId that send this packet
+__eventChannel          String - Channel packet was transmitted on
+```
 **Targeted Messages**
 
 In order to send a message directly to another client you must know it's clientId (which is the same as the "__sourceId" field in received messages)
@@ -50,65 +59,22 @@ Example Targeted Message:
 
 **Implementation with javascript**
 
-Route.put is designed to work with your javascript powered front-end, below is a simple implementation example. Please note that all transmitted messages must be serialized json.
+Route.put is designed to work with a javascript powered front-end, below is a simple implementation example. Please note that all transmitted messages must be serialized json. routeput.js is provided in the root of your routput server. (ex: http://127.0.0.1:6144/routeput.js) this library provides the RouteputConnection class
 
 ```javascript
+var routeput = new RouteputConnection("myChannel");
 
-var connection;
-var reconnectTimeout;
+routeput.onblob = function(name, blob) {
+    console.log("Recieved File: " + name);
+};
 
-var routeputHost = "mywebsite.com";
-var routeputChannel = "general";
+routeput.onmessage = function (jsonObject) {
+    var evChannel = jsonObject.__eventChannel;
+	console.log("Received Message on " + evChannel);
+};
 
-// A Message was received from the server
-function routeputReceived(sourceId, jsonObject)
-{
-	console.log("Object received from " + sourceId);
-    console.log(jsonObject);
-}
-
-function routeputConnect()
-{
-    try
-    {
-        connection = new WebSocket('ws://" + routeputHost + "/channel/' + routeputChannel + '/');
-        connection.onopen = function () {
-            console.log("routeput connected");
-        };
-        
-        connection.onerror = function (error) {
-          console.log("WebSocket error!");
-        };
-
-        //Code for handling incoming Websocket messages from the server
-        connection.onmessage = function (e) {
-            var jsonObject = JSON.parse(e.data);
-            if (jsonObject.hasOwnProperty('__sourceId'))
-            {
-                var sourceId = jsonObject.__sourceId;
-				routeputReceived(sourceId, jsonObject);
-            }
-        };
-        
-        connection.onclose = function () {
-          reconnectTimeout = setTimeout(routeputConnect, 3000);
-        };
-    } catch (err) {
-        console.log(err);
-    }
-}
-
-function routeputTransmit(wsEvent)
-{
-    var out_event = JSON.stringify(wsEvent);
-    console.log("Transmit: " + out_event);
-    try
-    {
-        connection.send(out_event);
-    } catch (err) {
-        console.log(err);
-    }
-}
-
+routeput.onconnect = function () {
+	routeput.transmit({"hello": "world"});
+};
 
 ```

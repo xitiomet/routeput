@@ -12,42 +12,30 @@ function chunkSubstr(str, size)
 
 function dataURItoBlob(dataURI)
 {
-  // convert base64 to raw binary data held in a string
-  // doesn't handle URLEncoded DataURIs - see SO answer #6850276 for code that does this
   var byteString = atob(dataURI.split(',')[1]);
-
-  // separate out the mime component
   var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0]
-
-  // write the bytes of the string to an ArrayBuffer
   var ab = new ArrayBuffer(byteString.length);
-
-  // create a view into the buffer
   var ia = new Uint8Array(ab);
-
-  // set the bytes of the buffer to the correct values
   for (var i = 0; i < byteString.length; i++) {
       ia[i] = byteString.charCodeAt(i);
   }
-
-  // write the ArrayBuffer to a blob, and you're done
   var blob = new Blob([ab], {type: mimeString});
   return blob;
-
 }
 
 class RouteputConnection
 {
     host;
     channel;
-    onmessage;
-    onblob;
     wsProtocol;
     wsUrl;
     reconnectTimeout;
     connection;
     chunkBuffer;
-
+    connectionId;
+    onmessage;
+    onblob;
+    onconnect;
     constructor(channel)
     {
         this.host = location.host;
@@ -73,6 +61,10 @@ class RouteputConnection
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
                 console.log("routeput connected - " + this.wsUrl);
+                if (this.onconnect != undefined)
+                {
+                    this.onconnect();
+                }
             };
             
             this.connection.onerror = (error) => {
@@ -85,7 +77,7 @@ class RouteputConnection
                 var rawData = e.data;
                 var jsonObject = JSON.parse(rawData);
                 console.log("Route.put Receive: " + rawData);
-                if (jsonObject.hasOwnProperty("__commandResponse"))
+                if (jsonObject.hasOwnProperty("__response"))
                 {
                     var commandResponse = jsonObject.__commandResponse;
                     if (commandResponse == "blob" && jsonObject.hasOwnProperty("i"))
@@ -104,6 +96,8 @@ class RouteputConnection
                         } else {
                             this.chunkBuffer[jsonObject.name] += jsonObject.data;
                         }
+                    } else if (commandResponse == "connectionId") {
+                        this.connectionId = jsonObject.connectionId;
                     }
                 } else {
                     if (this.onmessage != undefined)
@@ -135,7 +129,7 @@ class RouteputConnection
             var sz = chunks.length;
             for (let i = 0; i < sz; i++)
             {
-                var mm = {"__command": "blob", "name": name ,"i": i+1, "of": sz, "data": chunks[i]};
+                var mm = {"__request": "blob", "name": name ,"i": i+1, "of": sz, "data": chunks[i]};
                 this.transmit(mm);
             }
         };
@@ -143,7 +137,7 @@ class RouteputConnection
     
     requestBlob(name)
     {
-        var mm = {"__command": "blob", "name": name};
+        var mm = {"__request": "blob", "name": name};
         this.transmit(mm);
     }
 
@@ -161,11 +155,11 @@ class RouteputConnection
     
     subscribe(channel)
     {
-        this.transmit({"__command": "subscribe", "channel": channel});
+        this.transmit({"__request": "subscribe", "channel": channel});
     }
     
     unsubscribe(channel)
     {
-        this.transmit({"__command": "unsubscribe", "channel": channel});
+        this.transmit({"__request": "unsubscribe", "channel": channel});
     }
 }

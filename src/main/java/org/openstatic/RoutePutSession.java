@@ -42,6 +42,7 @@ public class RoutePutSession
         
     }
     
+    // Main method for transmitting objects to client.
     public void send(JSONObject jo)
     {
         if (this.websocketSession != null && jo != null)
@@ -57,6 +58,7 @@ public class RoutePutSession
         }
     }
     
+    // Send a chunked blob to client from byte array
     public void sendBlob(String name, String contentType, byte[] bytes)
     {
         StringBuffer sb = new StringBuffer();
@@ -65,6 +67,7 @@ public class RoutePutSession
         transmitBlobChunks(name, sb);
     }
     
+    // Transmit a blob to this client shouldnt be called except by other sendBlob methods
     private void transmitBlobChunks(String name, StringBuffer sb)
     {
         int size = sb.length();
@@ -73,7 +76,7 @@ public class RoutePutSession
         for (int i = 0; i < numChunks; i++)
         {
             JSONObject mm = new JSONObject();
-            mm.put("__commandResponse", "blob");
+            mm.put("__response", "blob");
             mm.put("name", name);
             mm.put("i", i+1);
             mm.put("of", numChunks);
@@ -99,9 +102,9 @@ public class RoutePutSession
             jo.put("__sourceId", this.connectionId);
             if (session instanceof WebSocketSession)
             {
-                if (jo.has("__command"))
+                if (jo.has("__request"))
                 {
-                    String routeputCommand = jo.optString("__command","");
+                    String routeputCommand = jo.optString("__request","");
                     if (routeputCommand.equals("subscribe"))
                     {
                         this.addChannel(jo.optString("channel", null));
@@ -112,7 +115,7 @@ public class RoutePutSession
                         if (this.subscribedTo(channel))
                         {
                             JSONObject resp = new JSONObject();
-                            resp.put("__commandResponse", "members");
+                            resp.put("__response", "members");
                             resp.put("members", RoutePutServer.instance.channelMembers(channel));
                             this.send(resp);
                         }
@@ -138,7 +141,7 @@ public class RoutePutSession
                                      " on " + jo.optString("__eventChannel", this.defaultChannel) +
                                      " from " + this.getConnectionId());
                                 JSONObject resp = new JSONObject();
-                                resp.put("__commandResponse", "blob");
+                                resp.put("__response", "blob");
                                 resp.put("name", name);
                                 this.send(resp);
                             }
@@ -217,6 +220,10 @@ public class RoutePutSession
             jo.put("__sourceConnectStatus", true);
             RoutePutServer.instance.handleIncomingEvent(jo, this);
             RoutePutServer.logIt("New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
+            JSONObject jo2 = new JSONObject();
+            jo2.put("__response", "connectionId");
+            jo2.put("connectionId", this.connectionId);
+            this.send(jo2);
         }
     }
  
