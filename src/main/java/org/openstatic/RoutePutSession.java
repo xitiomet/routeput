@@ -18,15 +18,18 @@ import java.util.Vector;
 import java.util.StringTokenizer;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.File;
 
 @WebSocket
 public class RoutePutSession
 {
     private WebSocketSession websocketSession;
     private Vector<String> channels = new Vector<String>();
+    private HashMap<String, StringBuffer> blobStorage = new HashMap<String, StringBuffer>();
     private String defaultChannel = "*";
     private String path;
     private String remoteIP;
@@ -43,10 +46,43 @@ public class RoutePutSession
     {
         if (this.websocketSession != null && jo != null)
         {
+            if (!jo.has("__eventChannel"))
+            {
+                jo.put("__eventChannel", this.defaultChannel);
+            }
             // avoid sending events to connection that sent them.
             String connectId = jo.optString("__sourceId", "");
             if (!connectId.equals(this.connectionId))
                 this.websocketSession.getRemote().sendStringByFuture(jo.toString());
+        }
+    }
+    
+    public void sendBlob(String name, String contentType, byte[] bytes)
+    {
+        StringBuffer sb = new StringBuffer();
+        sb.append("data:" + contentType + ";base64,");
+        sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
+        transmitBlobChunks(name, sb);
+    }
+    
+    private void transmitBlobChunks(String name, StringBuffer sb)
+    {
+        int size = sb.length();
+        int chunkSize = 4096;
+        int numChunks = (size + chunkSize - 1) / chunkSize;
+        for (int i = 0; i < numChunks; i++)
+        {
+            JSONObject mm = new JSONObject();
+            mm.put("__commandResponse", "blob");
+            mm.put("name", name);
+            mm.put("i", i+1);
+            mm.put("of", numChunks);
+            int start = i*chunkSize;
+            int end = start + chunkSize;
+            if (end > size)
+                end = size;
+            mm.put("data", sb.substring(start,end));
+            this.send(mm);
         }
     }
     
@@ -56,6 +92,11 @@ public class RoutePutSession
         try
         {
             JSONObject jo = new JSONObject(message);
+            if (!jo.has("__eventChannel"))
+            {
+                jo.put("__eventChannel", this.defaultChannel);
+            }
+            jo.put("__sourceId", this.connectionId);
             if (session instanceof WebSocketSession)
             {
                 if (jo.has("__command"))
@@ -75,20 +116,46 @@ public class RoutePutSession
                             resp.put("members", RoutePutServer.instance.channelMembers(channel));
                             this.send(resp);
                         }
+                    } else if (routeputCommand.equals("blob")) {
+                        if (jo.has("i") && jo.has("of") && jo.has("data") && jo.has("name"))
+                        {
+                            int i = jo.optInt("i", 0);
+                            int of = jo.optInt("of", 0);
+                            String name = jo.optString("name", "");
+                            StringBuffer sb = new StringBuffer();
+                            if (i == 1)
+                            {
+                                this.blobStorage.put(name, sb);
+                            } else {
+                                sb = this.blobStorage.get(name);
+                            }
+                            sb.append(jo.optString("data",""));
+                            if (i == of)
+                            {
+                                RoutePutServer.saveBase64Blob(name, sb);
+                                this.blobStorage.remove(name);
+                                RoutePutServer.logIt("Received Blob: " + name +
+                                     " on " + jo.optString("__eventChannel", this.defaultChannel) +
+                                     " from " + this.getConnectionId());
+                                JSONObject resp = new JSONObject();
+                                resp.put("__commandResponse", "blob");
+                                resp.put("name", name);
+                                this.send(resp);
+                            }
+                        } else if (jo.has("name")) {
+                            String name = jo.optString("name", "");
+                            StringBuffer sb = RoutePutServer.loadBase64Blob(name);
+                            this.transmitBlobChunks(name, sb);
+                        }
                     }
                 } else {
-                    if (!jo.has("__eventChannel"))
-                    {
-                        jo.put("__eventChannel", this.defaultChannel);
-                    }
-                    jo.put("__sourceId", this.connectionId);
                     RoutePutServer.instance.handleIncomingEvent(jo, this);
                 }
             } else {
                 System.err.println("not instance of WebSocketSession");
             }
         } catch (Exception e) {
-            
+            RoutePutServer.logIt(e);
         }
     }
  

@@ -13,6 +13,7 @@
     <maven.compiler.target>1.8</maven.compiler.target>
     <graalvm.version>20.1.0</graalvm.version>
     <imageName>routeput</imageName>
+    <jettyVersion>9.4.28.v20200408</jettyVersion>
   </properties>
   <repositories>
     <repository>
@@ -30,22 +31,32 @@
     <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-server</artifactId>
-        <version>9.4.0.RC3</version>
+        <version>${jettyVersion}</version>
     </dependency>
     <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-servlet</artifactId>
-        <version>9.4.0.RC3</version>
+        <version>${jettyVersion}</version>
+    </dependency>
+    <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-io</artifactId>
+        <version>${jettyVersion}</version>
+    </dependency>
+    <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-http</artifactId>
+        <version>${jettyVersion}</version>
     </dependency>
     <dependency>
         <groupId>org.eclipse.jetty.websocket</groupId>
         <artifactId>websocket-servlet</artifactId>
-        <version>9.4.0.RC3</version>
+        <version>${jettyVersion}</version>
     </dependency>
     <dependency>
         <groupId>org.eclipse.jetty.websocket</groupId>
         <artifactId>websocket-server</artifactId>
-        <version>9.4.0.RC3</version>
+        <version>${jettyVersion}</version>
     </dependency>
     <!-- https://mvnrepository.com/artifact/net.glxn/qrgen -->
     <dependency>
@@ -92,6 +103,7 @@
             <include>*.jks</include>
             <include>*.json</include>
             <include>*.ico</include>
+            <include>*.properties</include>
           </includes>
         </resource>
     </resources>
@@ -136,8 +148,20 @@
                 <buildArgs>
                     --no-server
                     --no-fallback
+                    -Vorg.eclipse.jetty.LEVEL=OFF
+                    -Vjetty.httpConfig.sendServerVersion=false
+                    --initialize-at-build-time=org.eclipse.jetty.http.HttpTokens
+                    --initialize-at-build-time=org.eclipse.jetty.util.log.StdErrLog
+                    --initialize-at-build-time=org.eclipse.jetty.util.log.Log
+                    --initialize-at-build-time=org.eclipse.jetty.util.Uptime
+                    --initialize-at-build-time=org.eclipse.jetty.util.TypeUtil
+                    --initialize-at-build-time=org.eclipse.jetty.util.ModuleLocation
+                    -H:+ReportExceptionStackTraces
+                    -H:+TraceClassInitialization
+                    -H:+ReportUnsupportedElementsAtRuntime
                     -H:Log=registerResource:
-                    -H:-UseServiceLoaderFeature
+                    -H:+UseServiceLoaderFeature
+                    -H:EnableURLProtocols=http,https
                     -H:IncludeResourceBundles=javax.servlet.LocalStrings
                     -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
                     -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
@@ -171,7 +195,7 @@
                         <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
                         <snapshotEnv>USER</snapshotEnv>
                         <controlDir>${basedir}/src/deb/control</controlDir>
-                        <deb>${project.build.directory}/${artifactId}-${version}-native.deb</deb>
+                        <deb>${project.build.directory}/${project.artifactId}-${project.version}-native.deb</deb>
                         <dataSet>
                             <data>
                               <src>${project.build.directory}/${imageName}</src>
@@ -229,7 +253,7 @@
                         <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
                         <snapshotEnv>USER</snapshotEnv>
                         <controlDir>${basedir}/src/deb/control</controlDir>
-                        <deb>${project.build.directory}/${artifactId}-${version}.deb</deb>
+                        <deb>${project.build.directory}/${project.artifactId}-${project.version}.deb</deb>
                         <dataSet>
                             <data>
                               <src>${project.build.directory}/${project.build.finalName}.jar</src>

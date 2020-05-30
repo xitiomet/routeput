@@ -11,8 +11,8 @@
 ### END INIT INFO
 
 PIDFILE=/var/run/routeput.pid
-USER=www-data
-GROUP=www-data
+USER=routeput
+GROUP=routeput
 CWD=/usr/share/routeput
 PROGRAM=/usr/bin/routeput
 PROGRAM_ARGS=""

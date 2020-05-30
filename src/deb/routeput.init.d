@@ -11,9 +11,9 @@
 ### END INIT INFO
 
 PIDFILE=/var/run/routeput.pid
-USER=www-data
-GROUP=www-data
-CWD=/var/www
+USER=routeput
+GROUP=routeput
+CWD=/usr/share/routeput
 JVM_ARGS=
 JAR_PATH=/usr/share/java/routeput.jar
 PROGRAM=/usr/bin/java

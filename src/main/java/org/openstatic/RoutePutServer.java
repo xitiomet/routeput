@@ -21,13 +21,22 @@ import java.util.Iterator;
 import java.util.Vector;
 import java.util.Random;
 import java.util.LinkedHashMap;
+import java.util.EnumSet;
 
+import javax.servlet.DispatcherType;
 import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.Filter;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
 
 import org.eclipse.jetty.http.HttpVersion;
+import org.eclipse.jetty.http.MimeTypes;
+
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.util.resource.JarResource;
@@ -64,9 +73,37 @@ public class RoutePutServer implements Runnable
     protected static RoutePutServer instance;
     private Thread mainThread;
     private boolean keep_running;
+    public static File blobRoot;
+
+
+    public static class HeaderAddingFilter implements Filter
+    {
+        public HeaderAddingFilter() {}
+        
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+                if (response instanceof HttpServletResponse)
+                {
+                    HttpServletResponse httpResponse = (HttpServletResponse) response;
+                    httpResponse.addHeader("Server", "Route.put 1.0");
+                }
+                chain.doFilter(request, response);
+        }
+
+        @Override
+        public void init(FilterConfig arg0) throws ServletException {
+
+        }
+
+        @Override
+        public void destroy() {}
+    }
 
     public static void main(String[] args)
     {
+        //System.setProperty("org.eclipse.jetty.util.log.class", "org.eclipse.jetty.util.log.StdErrLog");
+        //System.setProperty("org.eclipse.jetty.LEVEL", "OFF");
         CommandLine cmd = null;
         JSONObject settings = new JSONObject();
         try
@@ -76,7 +113,22 @@ public class RoutePutServer implements Runnable
             options.addOption(new Option("c", "config", true, "Config file location"));
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
             options.addOption(new Option("?", "help", false, "Shows help"));
+            options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
+
             cmd = parser.parse(options, args);
+            
+            if (!cmd.hasOption("q"))
+            {
+                System.err.println("  ____             _                     _   ");
+                System.err.println(" |  _ \\ ___  _   _| |_ ___   _ __  _   _| |_ ");
+                System.err.println(" | |_) / _ \\| | | | __/ _ \\ | '_ \\| | | | __|");
+                System.err.println(" |  _ < (_) | |_| | ||  __/_| |_) | |_| | |_ ");
+                System.err.println(" |_| \\_\\___/ \\__,_|\\__\\___(_) .__/ \\__,_|\\__|");
+                System.err.println("                            |_|              ");
+                System.err.println("");
+                System.err.println("  Simple, Websocket Server and message router");
+                System.err.println("");
+            }
             
             if (cmd.hasOption("?"))
             {
@@ -139,8 +191,11 @@ public class RoutePutServer implements Runnable
         this.sessions = new ArrayList<RoutePutSession>();
         this.collectors = new LinkedHashMap<String, RoutePutSession>();
         httpServer = new Server(settings.optInt("port", 6144));
-        
+        RoutePutServer.blobRoot = new File(settings.optString("blobRoot", "./blob/"));
+        if (!RoutePutServer.blobRoot.exists())
+            RoutePutServer.blobRoot.mkdir();
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
+        context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
         context.addServlet(ApiServlet.class, "/api/*");
         context.addServlet(EventsWebSocketServlet.class, "/channel/*");
@@ -161,7 +216,7 @@ public class RoutePutServer implements Runnable
                 everySecond();
                 Thread.sleep(1000);
             } catch (Exception e) {
-                
+                logIt(e);
             }
         }
     }
@@ -333,6 +388,18 @@ public class RoutePutServer implements Runnable
         l.put("logIt",  text);
         RoutePutServer.instance.handleIncomingEvent(l, null);
     }
+    
+    public static void logIt(Exception e)
+    {
+        logIt("Exception - " + e.toString());
+        try
+        {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PrintStream ps = new PrintStream(baos);
+            e.printStackTrace(ps);
+            logIt(baos.toString());
+        } catch (Exception e2) {}
+    }
 
     
     public static JSONObject loadJSONObject(File file)
@@ -363,6 +430,98 @@ public class RoutePutServer implements Runnable
             ps.close();
             fos.close();
         } catch (Exception e) {
+            logIt(e);
+        }
+    }
+    
+    public static void saveBase64Blob(String fileName, StringBuffer sb)
+    {
+        try
+        {
+            File file = new File(RoutePutServer.blobRoot, fileName);
+            byte[] fileData = java.util.Base64.getDecoder().decode(sb.substring(sb.indexOf(",") + 1));
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(fileData);
+            fos.close();
+        } catch (Exception e) {
+            logIt(e);
+        }
+    }
+    
+    public static StringBuffer loadBase64Blob(String fileName)
+    {
+        StringBuffer sb = new StringBuffer();
+        try
+        {
+            File file = new File(RoutePutServer.blobRoot, fileName);
+            String contentType = getContentTypeFor(fileName);
+            if (file.exists())
+            {
+                sb.append("data:" + contentType + ";base64,");
+                FileInputStream fis = new FileInputStream(file);
+                byte[] bFile = new byte[(int) file.length()];
+                fis.read(bFile);
+                fis.close();
+                sb.append(java.util.Base64.getEncoder().encodeToString(bFile));
+            }
+        } catch (Exception e) {
+            logIt(e);
+        }
+        return sb;
+    }
+    
+    /** Determine the content type of a local file */
+    public static String getContentTypeFor(String filename)
+    {
+        String lc_file = filename.toLowerCase();
+        if (lc_file.endsWith(".html") || lc_file.endsWith(".htm"))
+        {
+            return "text/html";
+        } else if (lc_file.endsWith(".txt")) {
+            return "text/plain";
+        } else if (lc_file.endsWith(".css")) {
+            return "text/css";
+        } else if (lc_file.endsWith(".js")) {
+            return "text/javascript";
+        } else if (lc_file.endsWith(".jpg") || lc_file.endsWith(".jpe") || lc_file.endsWith(".jpeg")) {
+            return "image/jpeg";
+        } else if (lc_file.endsWith(".gif")) {
+            return "image/gif";
+        } else if (lc_file.endsWith(".png")) {
+            return "image/png";
+        } else if (lc_file.endsWith(".bmp")) {
+            return "image/x-ms-bmp";
+        } else if (lc_file.endsWith(".mp3")) {
+            return "audio/mpeg3";
+        } else if (lc_file.endsWith(".zip")) {
+            return "application/zip";
+        } else if (lc_file.endsWith(".pdf")) {
+            return "application/pdf";
+        } else if (lc_file.endsWith(".xml")) {
+            return "text/xml";
+        } else if (lc_file.endsWith(".mid")) {
+            return "audio/midi";
+        } else if (lc_file.endsWith(".tar")) {
+            return "application/x-tar";
+        } else if (lc_file.endsWith(".ico")) {
+            return "image/x-icon";
+        } else if (lc_file.endsWith(".avi")) {
+            return "video/x-msvideo";
+        } else if (lc_file.endsWith(".mp4")) {
+            return "video/mp4";
+        } else if (lc_file.endsWith(".mkv")) {
+            return "video/x-matroska";
+        } else if (lc_file.endsWith(".mov")) {
+            return "video/quicktime";
+        } else if (lc_file.endsWith(".wmv")) {
+            return "video/x-ms-wmv";
+        } else if (lc_file.endsWith(".3gp")) {
+            return "video/3gpp";
+        } else {
+            String result = MimeTypes.getDefaultMimeByExtension(filename);
+            if ("".equals(result) || result == null)
+                result = "application/octet-stream";
+            return result;
         }
     }
 }

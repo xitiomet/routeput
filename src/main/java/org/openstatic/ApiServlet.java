@@ -37,7 +37,7 @@ public class ApiServlet extends HttpServlet
             JSONObject jsonObject =  new JSONObject(jb.toString());
             return jsonObject;
         } catch (JSONException e) {
-            e.printStackTrace(System.err);
+            RoutePutServer.logIt(e);
             return new JSONObject();
         }
     }
@@ -59,6 +59,7 @@ public class ApiServlet extends HttpServlet
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
+        httpServletResponse.addHeader("Server", "Route.put 1.0");
         String target = request.getPathInfo();
         //System.err.println("Path: " + target);
         RoutePutServer.instance.logIt("API Request: " + target);
@@ -74,7 +75,7 @@ public class ApiServlet extends HttpServlet
 
             }
         } catch (Exception x) {
-            x.printStackTrace(System.err);
+            RoutePutServer.logIt(x);
         }
         httpServletResponse.getWriter().println(response.toString());
         //request.setHandled(true);
