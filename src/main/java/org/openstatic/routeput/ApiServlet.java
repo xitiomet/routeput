@@ -1,4 +1,4 @@
-package org.openstatic;
+package org.openstatic.routeput;
 
 import org.json.*;
 
@@ -62,7 +62,7 @@ public class ApiServlet extends HttpServlet
         httpServletResponse.addHeader("Server", "Route.put 1.0");
         String target = request.getPathInfo();
         //System.err.println("Path: " + target);
-        RoutePutServer.instance.logIt("API Request: " + target);
+        RoutePutServer.logIt("API Request: " + target);
         JSONObject response = new JSONObject();
         try
         {

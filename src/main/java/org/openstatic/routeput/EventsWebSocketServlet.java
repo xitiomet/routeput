@@ -1,4 +1,4 @@
-package org.openstatic;
+package org.openstatic.routeput;
 
 import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
 import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;

@@ -1,24 +1,15 @@
-package org.openstatic;
+package org.openstatic.routeput;
 
 import org.json.*;
 
 import java.io.IOException;
-import java.io.BufferedReader;
 import java.io.PrintStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 
-import java.net.InetAddress;
-import java.net.URL;
-import java.net.URI;
-
 import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.Iterator;
-import java.util.Vector;
 import java.util.Random;
 import java.util.LinkedHashMap;
 import java.util.EnumSet;
@@ -27,42 +18,14 @@ import javax.servlet.DispatcherType;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
 
-import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.http.MimeTypes;
-
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.eclipse.jetty.servlet.DefaultServlet;
-import org.eclipse.jetty.util.resource.JarResource;
-import org.eclipse.jetty.util.resource.Resource;
-import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.handler.AbstractHandler;
-import org.eclipse.jetty.util.ssl.SslContextFactory;    
-
-import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
-import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
-import org.eclipse.jetty.websocket.common.WebSocketSession;
-import org.eclipse.jetty.websocket.api.Session;
-import org.eclipse.jetty.websocket.api.annotations.OnWebSocketClose;
-import org.eclipse.jetty.websocket.api.annotations.OnWebSocketConnect;
-import org.eclipse.jetty.websocket.api.annotations.OnWebSocketMessage;
-import org.eclipse.jetty.websocket.api.annotations.WebSocket;
-import org.eclipse.jetty.server.HttpConfiguration;
-import org.eclipse.jetty.server.handler.ResourceHandler;
-import org.eclipse.jetty.server.SecureRequestCustomizer;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.HttpConnectionFactory;
-import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.servlet.ServletContextHandler;
-
-import org.apache.commons.cli.*;
 
 public class RoutePutServer implements Runnable
 {
@@ -100,70 +63,6 @@ public class RoutePutServer implements Runnable
         public void destroy() {}
     }
 
-    public static void main(String[] args)
-    {
-        //System.setProperty("org.eclipse.jetty.util.log.class", "org.eclipse.jetty.util.log.StdErrLog");
-        //System.setProperty("org.eclipse.jetty.LEVEL", "OFF");
-        CommandLine cmd = null;
-        JSONObject settings = new JSONObject();
-        try
-        {
-            Options options = new Options();
-            CommandLineParser parser = new DefaultParser();
-            options.addOption(new Option("c", "config", true, "Config file location"));
-            options.addOption(new Option("p", "port", true, "Specify HTTP port"));
-            options.addOption(new Option("?", "help", false, "Shows help"));
-            options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-
-            cmd = parser.parse(options, args);
-            
-            if (!cmd.hasOption("q"))
-            {
-                System.err.println("  ____             _                     _   ");
-                System.err.println(" |  _ \\ ___  _   _| |_ ___   _ __  _   _| |_ ");
-                System.err.println(" | |_) / _ \\| | | | __/ _ \\ | '_ \\| | | | __|");
-                System.err.println(" |  _ < (_) | |_| | ||  __/_| |_) | |_| | |_ ");
-                System.err.println(" |_| \\_\\___/ \\__,_|\\__\\___(_) .__/ \\__,_|\\__|");
-                System.err.println("                            |_|              ");
-                System.err.println("");
-                System.err.println("  Simple, Websocket Server and message router");
-                System.err.println("");
-            }
-            
-            if (cmd.hasOption("?"))
-            {
-                HelpFormatter formatter = new HelpFormatter();
-                formatter.printHelp( "routeput", options );
-                System.exit(0);
-            }
-            
-            if (cmd.hasOption("c"))
-            {
-                File config = new File(cmd.getOptionValue('c',"routeput.json"));
-                settings = loadJSONObject(config);
-            }
-            
-            if (cmd.hasOption("p"))
-            {
-                int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
-                settings.put("port", port);
-            }
-            
-            RoutePutServer rps = new RoutePutServer(settings);
-            rps.setState(true);
-            
-            Runtime.getRuntime().addShutdownHook(new Thread() 
-            { 
-              public void run() 
-              { 
-                RoutePutServer.instance.keep_running = false;
-              } 
-            }); 
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
-        }
-        
-    }
     
     public static synchronized String generateBigAlphaKey(int key_length)
     {
@@ -204,6 +103,13 @@ public class RoutePutServer implements Runnable
         this.mainThread = new Thread(this);
         this.mainThread.setDaemon(true);
         this.mainThread.start();
+        Runtime.getRuntime().addShutdownHook(new Thread() 
+        { 
+            public void run() 
+            { 
+            RoutePutServer.instance.keep_running = false;
+            } 
+        });
     }
     
     public void run()
@@ -223,15 +129,15 @@ public class RoutePutServer implements Runnable
     
     public void everySecond() throws Exception
     {
-        JSONObject jo = new JSONObject();
+        RoutePutMessage jo = new RoutePutMessage();
         jo.put("channelStats", this.channelStats());
-        jo.put("__eventChannel", "routeputDebug");
+        jo.setChannel("routeputDebug");
         this.handleIncomingEvent(jo, null);
     }
     
-    public void handleIncomingEvent(JSONObject j, RoutePutSession session)
+    public void handleIncomingEvent(RoutePutMessage j, RoutePutSession session)
     {
-        String eventChannel = j.optString("__eventChannel","*");
+        String eventChannel = j.getChannel();
         if (this.collectors.containsKey(eventChannel))
         {
             // This Channel has a connected collector
@@ -366,7 +272,6 @@ public class RoutePutServer implements Runnable
 
     public void broadcastJSONObject(String eventChannel, JSONObject jo)
     {
-        String message = jo.toString();
         for(RoutePutSession s : this.sessions)
         {
             if (s.subscribedTo(eventChannel))
@@ -383,8 +288,8 @@ public class RoutePutServer implements Runnable
     
     public static void logIt(String text)
     {
-        JSONObject l = new JSONObject();
-        l.put("__eventChannel", "routeputDebug");
+        RoutePutMessage l = new RoutePutMessage();
+        l.setChannel("routeputDebug");
         l.put("logIt",  text);
         RoutePutServer.instance.handleIncomingEvent(l, null);
     }

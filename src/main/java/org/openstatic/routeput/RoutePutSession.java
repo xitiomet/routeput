@@ -1,4 +1,4 @@
-package org.openstatic;
+package org.openstatic.routeput;
 
 import org.json.*;
 import org.eclipse.jetty.websocket.common.WebSocketSession;
@@ -40,6 +40,16 @@ public class RoutePutSession
     public RoutePutSession()
     {
         
+    }
+
+    public boolean becomeCollector()
+    {
+        if (!RoutePutServer.instance.collectors.containsKey(this.defaultChannel))
+        {
+            RoutePutServer.instance.collectors.put(this.defaultChannel, this);
+            this.collector = true;
+        }
+        return this.collector;
     }
     
     // Main method for transmitting objects to client.
@@ -94,7 +104,7 @@ public class RoutePutSession
     {
         try
         {
-            JSONObject jo = new JSONObject(message);
+            RoutePutMessage jo = new RoutePutMessage(message);
             if (!jo.has("__eventChannel"))
             {
                 jo.put("__eventChannel", this.defaultChannel);
@@ -110,6 +120,11 @@ public class RoutePutSession
                         this.addChannel(jo.optString("channel", null));
                     } else if (routeputCommand.equals("unsubscribe")) {
                         this.removeChannel(jo.optString("channel", null));
+                    } else if (routeputCommand.equals("becomeCollector")) {
+                        RoutePutMessage resp = new RoutePutMessage();
+                        resp.put("__response", "becomeCollector");
+                        resp.put("collector", this.becomeCollector());
+                        this.send(resp);
                     } else if (routeputCommand.equals("members")) {
                         String channel = jo.optString("channel", this.defaultChannel);
                         if (this.subscribedTo(channel))
@@ -200,8 +215,7 @@ public class RoutePutSession
             }
             if (token.equals("collector"))
             {
-                RoutePutServer.instance.collectors.put(this.defaultChannel, this);
-                this.collector = true;
+                becomeCollector();
             }
         }
         if (this.connectionId == null)
@@ -214,9 +228,9 @@ public class RoutePutSession
             this.websocketSession = (WebSocketSession) session;
             //System.out.println(this.websocketSession.getRemoteAddress().getHostString() + " connected!");
             RoutePutServer.instance.sessions.add(this);
-            JSONObject jo = new JSONObject();
-            jo.put("__sourceId", this.connectionId);
-            jo.put("__eventChannel", this.defaultChannel);
+            RoutePutMessage jo = new RoutePutMessage();
+            jo.setSourceId(this.connectionId);
+            jo.setChannel(this.defaultChannel);
             jo.put("__sourceConnectStatus", true);
             RoutePutServer.instance.handleIncomingEvent(jo, this);
             RoutePutServer.logIt("New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
@@ -230,9 +244,9 @@ public class RoutePutSession
     @OnWebSocketClose
     public void onClose(Session session, int status, String reason)
     {
-        JSONObject jo = new JSONObject();
-        jo.put("__sourceId", this.connectionId);
-        jo.put("__eventChannel", this.defaultChannel);
+        RoutePutMessage jo = new RoutePutMessage();
+        jo.setSourceId(this.connectionId);
+        jo.setChannel(this.defaultChannel);
         jo.put("__sourceConnectStatus", false);
         RoutePutServer.instance.handleIncomingEvent(jo, this);
         if (RoutePutServer.instance.sessions.contains(this))
