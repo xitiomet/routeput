@@ -1,6 +1,6 @@
-## Route.put Websocket Server ##
+## Routeput Websocket Server ##
 
-This project is my attempt at making a simple Websocket Server for my many-to-one, and many-to-many communications needs.
+This project is my attempt at making a simple Websocket Server for my many-to-one, and many-to-many communications needs. This server was written in java using GraalVM and native-image.
 
 **How to use**
 
@@ -8,7 +8,7 @@ Simply form a websocket connection to /channel/ANYTHING/ and start sending json 
 
 (also some special fields are added to the object, more on that later).
 
-ANYTHING can be anything! In the example above the word ANYTHING represents the name of the channel your websocket clients are talking on. This is the many-to-many functionality of Route.put anything transmitted to a channel is received by all in the channel, unless a collector connection is formed.
+ANYTHING can be anything! In the example above the word ANYTHING represents the name of the channel your websocket clients are talking on. This is the many-to-many functionality of Routeput anything transmitted to a channel is received by all in the channel, unless a collector connection is formed.
 
 Collectors are special clients that receive all events transmitted by anyone on the channel, if a collector is connected to a channel, none of the other clients will see each others messages and all messages are delivered to the collector, who then may respond to each client individually or together as a whole. Any Messages transmitted by the collector are sent to all members of the channel
 
@@ -59,7 +59,7 @@ Example Targeted Message:
 
 **Implementation with javascript**
 
-Route.put is designed to work with a javascript powered front-end, below is a simple implementation example. Please note that all transmitted messages must be serialized json. routeput.js is provided in the root of your routput server. (ex: http://127.0.0.1:6144/routeput.js) this library provides the RouteputConnection class
+Routeput is designed to work with a javascript powered front-end, below is a simple implementation example. Please note that all transmitted messages must be serialized json. routeput.js is provided in the root of your routput server. (ex: http://127.0.0.1:6144/routeput.js) this library provides the RouteputConnection class
 
 ```javascript
 var routeput = new RouteputConnection("myChannel");

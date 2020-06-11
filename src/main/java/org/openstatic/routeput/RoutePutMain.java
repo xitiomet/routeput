@@ -23,17 +23,22 @@ public class RoutePutMain
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
             options.addOption(new Option("x", "client", true, "Client Mode"));
+            Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server");
+            upstreamOption.setOptionalArg(true);
+            options.addOption(upstreamOption);
 
             cmd = parser.parse(options, args);
             
             if (!cmd.hasOption("q"))
             {
-                System.err.println("  ____             _                     _   ");
-                System.err.println(" |  _ \\ ___  _   _| |_ ___   _ __  _   _| |_ ");
-                System.err.println(" | |_) / _ \\| | | | __/ _ \\ | '_ \\| | | | __|");
-                System.err.println(" |  _ < (_) | |_| | ||  __/_| |_) | |_| | |_ ");
-                System.err.println(" |_| \\_\\___/ \\__,_|\\__\\___(_) .__/ \\__,_|\\__|");
-                System.err.println("                            |_|              ");
+                System.err.println("  ______            _                   _   ");
+                System.err.println("  | ___ \\          | |                 | |  ");
+                System.err.println("  | |_/ /___  _   _| |_ ___ _ __  _   _| |_ ");
+                System.err.println("  |    // _ \\| | | | __/ _ \\ '_ \\| | | | __|");
+                System.err.println("  | |\\ \\ (_) | |_| | ||  __/ |_) | |_| | |_ ");
+                System.err.println("  \\_| \\_\\___/ \\__,_|\\__\\___| .__/ \\__,_|\\__|");
+                System.err.println("                           | |");
+                System.err.println("                           |_|");
                 System.err.println("");
                 System.err.println("  Simple, Websocket Server and message router");
                 System.err.println("");
@@ -60,25 +65,27 @@ public class RoutePutMain
 
             if (cmd.hasOption("x"))
             {
-                clientTest();
+                clientTest(cmd.getOptionValue('x',"openstatic.org"), settings.optInt("port", 6144));
                 System.exit(0);
             }
             
             RoutePutServer rps = new RoutePutServer(settings);
             rps.setState(true);
             
-             
+            if (cmd.hasOption("u"))
+            {
+                rps.connectUpstream("lobby", cmd.getOptionValue('u',"wss://openstatic.org/channel/lobby/"));
+            }
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
         
     }
 
-    public static void clientTest()
+    public static void clientTest(String host, int port)
     {
-        RoutePutClient rpc = new RoutePutClient("lobby", "ws://openstatic.org/channel/lobby/");
-        RoutePutCollector collector = new RoutePutCollector(rpc);
-        collector.addSessionListener(new RoutePutRemoteSessionListener(){
+        RoutePutClient rpc = new RoutePutClient("lobby", "ws://" + host + ":" + String.valueOf(port) + "/channel/lobby/");
+        rpc.addSessionListener(new RoutePutRemoteSessionListener(){
         
             @Override
             public void onConnect(RoutePutRemoteSession session) {
@@ -99,11 +106,19 @@ public class RoutePutMain
             }
         });
         rpc.connect();
+        //rpc.becomeCollector();
+        RandomQuotes quotes = new RandomQuotes();
         try
         {
             while(true)
             {
-                Thread.sleep(1000);
+                JSONObject msg = new JSONObject();
+                msg.put("event","chat");
+                msg.put("text", quotes.nextQuote());
+                msg.put("username", "Ghost in the machine");
+                System.err.println("Sending: " + msg.toString());
+                rpc.send(msg);
+                Thread.sleep(10000);
             }
         } catch (Exception e) {
             e.printStackTrace(System.err);

@@ -71,8 +71,11 @@ public class ApiServlet extends HttpServlet
                 response.put("channels", RoutePutServer.instance.channelBreakdown());
             } else if ("/channels/stats/".equals(target)) {
                 response.put("channels", RoutePutServer.instance.channelStats());
-            } else if ("/mappings/".equals(target)) {
-
+            } else if ("/upstream/".equals(target)) {
+                String channel = request.getParameter("channel");
+                String uri = request.getParameter("uri");
+                RoutePutSession session = RoutePutServer.instance.connectUpstream(channel, uri);
+                response.put("session", session.toJSONObject());
             }
         } catch (Exception x) {
             RoutePutServer.logIt(x);

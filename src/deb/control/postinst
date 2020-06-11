@@ -1,6 +1,7 @@
 #!/bin/bash
 echo Route.put Post-Install Script Running!
 chown -R routeput:routeput /usr/share/routeput
+chown -R routeput:routeput /etc/routeput
 update-rc.d routeput defaults
 update-rc.d routeput enable
 /etc/init.d/routeput start

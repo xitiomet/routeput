@@ -15,7 +15,7 @@ USER=routeput
 GROUP=routeput
 CWD=/usr/share/routeput
 PROGRAM=/usr/bin/routeput
-PROGRAM_ARGS=""
+PROGRAM_ARGS="-c /etc/routeput/routeput.json"
 
 start() {
     echo -n "Starting Route.put Server...."

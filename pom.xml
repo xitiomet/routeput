@@ -237,6 +237,18 @@
                                 <filemode>755</filemode>
                               </mapper>
                             </data>
+                            <data>
+                              <src>${basedir}/src/deb/routeput.json</src>
+                              <dst>routeput.json</dst>
+                              <type>file</type>
+                              <mapper>
+                                <type>perm</type>
+                                <prefix>/etc/routeput</prefix>
+                                <user>loader</user>
+                                <group>loader</group>
+                                <filemode>755</filemode>
+                              </mapper>
+                            </data>
                         </dataSet>
                     </configuration>
                 </execution>
@@ -305,6 +317,18 @@
                               <symlink>true</symlink>
                               <linkName>/usr/share/java/routeput.jar</linkName>
                               <linkTarget>../routeput/lib/${project.build.finalName}.jar</linkTarget>
+                            </data>
+                            <data>
+                              <src>${basedir}/src/deb/routeput.json</src>
+                              <dst>routeput.json</dst>
+                              <type>file</type>
+                              <mapper>
+                                <type>perm</type>
+                                <prefix>/etc/routeput</prefix>
+                                <user>loader</user>
+                                <group>loader</group>
+                                <filemode>755</filemode>
+                              </mapper>
                             </data>
                         </dataSet>
                     </configuration>

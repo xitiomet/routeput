@@ -14,6 +14,6 @@ public class EventsWebSocketServlet extends WebSocketServlet
     public void configure(WebSocketServletFactory factory)
     {
         //factory.getPolicy().setIdleTimeout(10000);
-        factory.register(RoutePutSession.class);
+        factory.register(RoutePutServerWebsocket.class);
     }
 }

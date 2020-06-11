@@ -1,6 +1,10 @@
 package org.openstatic.routeput;
 
 import org.json.*;
+import org.openstatic.routeput.client.RoutePutClient;
+import org.openstatic.routeput.client.RoutePutMessageListener;
+import org.openstatic.routeput.client.RoutePutRemoteSession;
+import org.openstatic.routeput.client.RoutePutRemoteSessionListener;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -30,7 +34,7 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 public class RoutePutServer implements Runnable
 {
     private Server httpServer;
-    protected ArrayList<RoutePutSession> sessions;
+    protected LinkedHashMap<String, RoutePutSession> sessions;
     protected LinkedHashMap<String, RoutePutSession> collectors;
     protected JSONObject settings;
     protected static RoutePutServer instance;
@@ -49,7 +53,7 @@ public class RoutePutServer implements Runnable
                 if (response instanceof HttpServletResponse)
                 {
                     HttpServletResponse httpResponse = (HttpServletResponse) response;
-                    httpResponse.addHeader("Server", "Route.put 1.0");
+                    httpResponse.addHeader("Server", "Routeput 1.0");
                 }
                 chain.doFilter(request, response);
         }
@@ -87,7 +91,7 @@ public class RoutePutServer implements Runnable
     {
         RoutePutServer.instance = this;
         this.settings = settings;
-        this.sessions = new ArrayList<RoutePutSession>();
+        this.sessions = new LinkedHashMap<String, RoutePutSession>();
         this.collectors = new LinkedHashMap<String, RoutePutSession>();
         httpServer = new Server(settings.optInt("port", 6144));
         RoutePutServer.blobRoot = new File(settings.optString("blobRoot", "./blob/"));
@@ -97,7 +101,7 @@ public class RoutePutServer implements Runnable
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
         context.addServlet(ApiServlet.class, "/api/*");
-        context.addServlet(EventsWebSocketServlet.class, "/channel/*");
+        context.addServlet(EventsWebSocketServlet.class, settings.optString("channelPath", "/channel/*"));
         context.addServlet(InterfaceServlet.class, "/*");
         httpServer.setHandler(context);
         this.mainThread = new Thread(this);
@@ -107,7 +111,7 @@ public class RoutePutServer implements Runnable
         { 
             public void run() 
             { 
-            RoutePutServer.instance.keep_running = false;
+                RoutePutServer.instance.keep_running = false;
             } 
         });
     }
@@ -125,6 +129,36 @@ public class RoutePutServer implements Runnable
                 logIt(e);
             }
         }
+    }
+
+    public RoutePutSession connectUpstream(String channel, String uri)
+    {
+        RoutePutClient client = new RoutePutClient(channel, uri);
+        client.addSessionListener(new RoutePutRemoteSessionListener() {
+            
+            @Override
+            public void onConnect(RoutePutRemoteSession session) 
+            {
+                RoutePutServer.this.sessions.put(session.getConnectionId(), session);
+                session.addMessageListener(new RoutePutMessageListener() {
+                    @Override
+                    public void onMessage(RoutePutMessage message) {
+                        RoutePutServer.this.handleIncomingEvent(message, session);
+                    }
+                });
+            }
+        
+            @Override
+            public void onClose(RoutePutRemoteSession session)
+            {
+                String connectionId = session.getConnectionId();
+                if (RoutePutServer.this.sessions.containsKey(connectionId))
+                    RoutePutServer.this.sessions.remove(connectionId);                
+            }
+        });
+        client.connect();
+        this.sessions.put(client.getConnectionId(), client);
+        return client;
     }
     
     public void everySecond() throws Exception
@@ -148,7 +182,8 @@ public class RoutePutServer implements Runnable
                 if (j.has("__targetId"))
                 {
                     RoutePutSession target = findSessionById(j.optString("__targetId", ""));
-                    target.send(j);
+                    if (target != null)
+                        target.send(j);
                 } else {
                     broadcastJSONObject(eventChannel, j);
                 }
@@ -162,7 +197,8 @@ public class RoutePutServer implements Runnable
             {
                 // Ok this packet has a target in the channel
                 RoutePutSession target = findSessionById(j.optString("__targetId", ""));
-                target.send(j);
+                if (target != null)
+                   target.send(j);
             } else {
                 // Everybody but the sender should get this packet
                 broadcastJSONObject(eventChannel, j);
@@ -192,10 +228,9 @@ public class RoutePutServer implements Runnable
     
     public RoutePutSession findSessionById(String id)
     {
-        for(RoutePutSession s : this.sessions)
+        if (this.sessions.containsKey(id))
         {
-            if (s.getConnectionId().equals(id))
-                return s;
+            return this.sessions.get(id);
         }
         return null;
     }
@@ -213,7 +248,7 @@ public class RoutePutServer implements Runnable
     public JSONObject channelStats()
     {
         JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions)
+        for(RoutePutSession s : this.sessions.values())
         {
             String dChan = s.getDefaultChannel();
             JSONObject js = optJSONObject(jo, dChan);
@@ -230,7 +265,7 @@ public class RoutePutServer implements Runnable
     public JSONObject channelBreakdown()
     {
         JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions)
+        for(RoutePutSession s : this.sessions.values())
         {
             String dChan = s.getDefaultChannel();
             JSONObject js = new JSONObject();
@@ -247,7 +282,7 @@ public class RoutePutServer implements Runnable
     public JSONObject channelBreakdown(String channel)
     {
         JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions)
+        for(RoutePutSession s : this.sessions.values())
         {
             if (s.subscribedTo(channel))
             {
@@ -260,7 +295,7 @@ public class RoutePutServer implements Runnable
     public JSONArray channelMembers(String channel)
     {
         JSONArray ja = new JSONArray();
-        for(RoutePutSession s : this.sessions)
+        for(RoutePutSession s : this.sessions.values())
         {
             if (s.subscribedTo(channel))
             {
@@ -272,13 +307,18 @@ public class RoutePutServer implements Runnable
 
     public void broadcastJSONObject(String eventChannel, JSONObject jo)
     {
-        for(RoutePutSession s : this.sessions)
+        //System.err.println("Broadcast: " + jo.toString());
+        for(RoutePutSession s : this.sessions.values())
         {
-            if (s.subscribedTo(eventChannel))
+            if (s.subscribedTo(eventChannel) && s.isRootConnection())
             {
                 try
                 {
-                    s.send(jo);
+                    // Never Send the event to the creator or its relay
+                    if (!s.containsConnectionId(jo.optString("__sourceId", "")))
+                    {
+                        s.send(jo);
+                    }
                 } catch (Exception e) {
                     
                 }
@@ -293,10 +333,15 @@ public class RoutePutServer implements Runnable
         l.put("logIt",  text);
         RoutePutServer.instance.handleIncomingEvent(l, null);
     }
-    
+
     public static void logIt(Exception e)
     {
-        logIt("Exception - " + e.toString());
+        logIt("NADA", e);
+    }
+    
+    public static void logIt(String info, Exception e)
+    {
+        logIt("(" +info+ ") Exception - " + e.toString());
         try
         {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();

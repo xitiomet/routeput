@@ -51,7 +51,7 @@ public class RoutePutMessage extends JSONObject
 
     public String getResponse()
     {
-        return this.optString("__response", null);
+        return this.optString("__response", "");
     }
 
     public void setResponse(String response)
@@ -66,7 +66,7 @@ public class RoutePutMessage extends JSONObject
 
     public String getRequest()
     {
-        return this.optString("__request", null);
+        return this.optString("__request", "");
     }
 
     public void setRequest(String request)

@@ -17,7 +17,7 @@ CWD=/usr/share/routeput
 JVM_ARGS=
 JAR_PATH=/usr/share/java/routeput.jar
 PROGRAM=/usr/bin/java
-PROGRAM_ARGS="$JVM_ARGS -jar $JAR_PATH"
+PROGRAM_ARGS="$JVM_ARGS -jar $JAR_PATH -c /etc/routeput/routeput.json"
 
 start() {
     echo -n "Starting Route.put Server...."
