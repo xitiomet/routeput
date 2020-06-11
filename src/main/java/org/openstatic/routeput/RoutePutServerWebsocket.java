@@ -50,7 +50,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
 
         if (jo.isRequest())
         {
-            
+            handleRequest(jo);
         } else {
             RoutePutServer.instance.handleIncomingEvent(jo, this);
         }
@@ -165,51 +165,57 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 // this message is definitely from the directly connected client
                 this.handleMessage(jo);
             } else if (sourceId != null) {
-                if (jo.has("__sourceConnectStatus"))
-                {
-                    boolean c = jo.optBoolean("__sourceConnectStatus", false);
-                    if (c)
-                    {
-                        // If this is a message notifying us that a downstream client connected
-                        // lets find that connaction or create it and pass the message off.
-                        RoutePutLocalSession localSession = null;
-                        if (this.sessions.containsKey(sourceId))
-                        {
-                            localSession = this.sessions.get(sourceId);
-                        } else {
-                            localSession = new RoutePutLocalSession(this, sourceId);
-                            this.sessions.put(sourceId, localSession);
-                            RoutePutServer.instance.sessions.put(sourceId, localSession);
-                        }
-                        localSession.handleMessage(jo);
-                    } else {
-                        // Seems like this is a disconnect message, lets just remove the connection
-                        // and pass that status along.
-                        if (this.sessions.containsKey(sourceId))
-                        {
-                            RoutePutLocalSession localSession = this.sessions.get(sourceId);
-                            if (RoutePutServer.instance.sessions.containsKey(sourceId))
-                            {
-                                RoutePutServer.instance.sessions.remove(sourceId);
-                            }
-                            localSession.handleMessage(jo);
-                        }
-                    }
-                } else {
-                    // looks like this is a normal message for a local connection
-                    RoutePutLocalSession localSession = null;
-                    if (this.sessions.containsKey(sourceId))
-                    {
-                        localSession = this.sessions.get(sourceId);
-                        localSession.handleMessage(jo);
-                    }
-                }
+                // this message probably belongs to a subconnection
+                this.handleRoutedMessage(sourceId, jo);
             } else {
                 // this message has no sourceID, must be from the client directly connected
                 this.handleMessage(jo);
             }
         } catch (Exception e) {
             RoutePutServer.logIt(this.connectionId + " - " + message, e);
+        }
+    }
+
+    public void handleRoutedMessage(String sourceId, RoutePutMessage jo)
+    {
+        if (jo.has("__sourceConnectStatus"))
+        {
+            boolean c = jo.optBoolean("__sourceConnectStatus", false);
+            if (c)
+            {
+                // If this is a message notifying us that a downstream client connected
+                // lets find that connaction or create it and pass the message off.
+                RoutePutLocalSession localSession = null;
+                if (this.sessions.containsKey(sourceId))
+                {
+                    localSession = this.sessions.get(sourceId);
+                } else {
+                    localSession = new RoutePutLocalSession(this, sourceId);
+                    this.sessions.put(sourceId, localSession);
+                    RoutePutServer.instance.sessions.put(sourceId, localSession);
+                }
+                localSession.handleMessage(jo);
+            } else {
+                // Seems like this is a disconnect message, lets just remove the connection
+                // and pass that status along.
+                if (this.sessions.containsKey(sourceId))
+                {
+                    RoutePutLocalSession localSession = this.sessions.get(sourceId);
+                    if (RoutePutServer.instance.sessions.containsKey(sourceId))
+                    {
+                        RoutePutServer.instance.sessions.remove(sourceId);
+                    }
+                    localSession.handleMessage(jo);
+                }
+            }
+        } else {
+            // looks like this is a normal message for a local connection
+            RoutePutLocalSession localSession = null;
+            if (this.sessions.containsKey(sourceId))
+            {
+                localSession = this.sessions.get(sourceId);
+                localSession.handleMessage(jo);
+            }
         }
     }
  

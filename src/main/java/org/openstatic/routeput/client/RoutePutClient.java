@@ -50,12 +50,24 @@ public class RoutePutClient implements RoutePutSession
         this.channel = channel;
         this.websocketUri = websocketUri;
         this.collector = false;
-        //System.err.println("Upstream: " + this.websocketUri);
     }
 
     public void setCollector(boolean v)
     {
         this.collector = v;
+        if (this.isConnected())
+        {
+            if (this.collector)
+            {
+                RoutePutMessage rpm = new RoutePutMessage();
+                rpm.setRequest("becomeCollector");
+                this.send(rpm);
+            } else {
+                RoutePutMessage rpm = new RoutePutMessage();
+                rpm.setRequest("dropCollector");
+                this.send(rpm); 
+            }
+        }
     }
 
     @Override
@@ -119,7 +131,6 @@ public class RoutePutClient implements RoutePutSession
             RoutePutClient.this.upstreamClient.start();
             URI upstreamUri = new URI(this.websocketUri);
             RoutePutClient.this.upstreamClient.connect(socket, upstreamUri, new ClientUpgradeRequest());
-            //System.err.println("Connecting websocket");
         } catch (Throwable t2) {
             t2.printStackTrace(System.err);
         }
@@ -150,7 +161,6 @@ public class RoutePutClient implements RoutePutSession
     
     public void handleWebSocketEvent(RoutePutMessage j)
     {
-        //System.err.println("CLIENT " + this.connectionId + " Recieved: " + j.toString());
         if (j.isResponse())
         {
             if (j.getResponse().equals("connectionId"))
