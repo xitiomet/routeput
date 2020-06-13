@@ -1,6 +1,4 @@
-package org.openstatic.routeput.client;
-
-import org.openstatic.routeput.RoutePutMessage;
+package org.openstatic.routeput;
 
 public interface RoutePutMessageListener 
 {

@@ -1,30 +1,31 @@
-package org.openstatic.routeput.client;
+package org.openstatic.routeput;
 
 import java.util.Vector;
 import java.util.Collection;
 import java.util.Enumeration;
-import org.openstatic.routeput.RoutePutMessage;
-import org.openstatic.routeput.RoutePutSession;
 import org.json.JSONObject;
 
 public class RoutePutRemoteSession implements RoutePutSession
 {
     private String connectionId;
+    private Vector<String> channels = new Vector<String>();
     private Vector<RoutePutMessageListener> listeners;
     private boolean connected;
-    private RoutePutClient client;
+    private RoutePutSession parent;
     private JSONObject upgradeHeaders;
     private String remoteIP;
+    private String defaultChannel;
 
-    protected RoutePutRemoteSession(RoutePutClient client, String connectionId)
+    public RoutePutRemoteSession(RoutePutSession parent, String connectionId)
     {
-        this.client = client;
+        this.parent = parent;
         this.connectionId = connectionId;
         this.listeners = new Vector<RoutePutMessageListener>();
         this.connected = true;
+        this.defaultChannel = parent.getDefaultChannel();
     }
 
-    protected void handleMessage(RoutePutMessage m)
+    public void handleMessage(RoutePutMessage m)
     {
         if (this.connectionId.equals(m.getSourceId()))
         {
@@ -33,24 +34,18 @@ public class RoutePutRemoteSession implements RoutePutSession
                 this.connected = m.optBoolean("__sourceConnectStatus", false);
                 this.upgradeHeaders = m.optJSONObject("upgradeHeaders");
                 this.remoteIP = m.optString("remoteIP", null);
+                this.defaultChannel = m.optString("__eventChannel", this.parent.getDefaultChannel());
             }
-            for (Enumeration<RoutePutMessageListener> re = ((Vector<RoutePutMessageListener>) RoutePutRemoteSession.this.listeners.clone()).elements(); re.hasMoreElements();)
-            {
-                try
-                {
-                    RoutePutMessageListener r = re.nextElement();
-                    r.onMessage(m);
-                } catch (Exception e) {
-                    e.printStackTrace(System.err);
-                }
-            }
+            RoutePutRemoteSession.this.listeners.forEach((r) -> {
+                r.onMessage(m);
+            });
         }
     }
 
     @Override
     public boolean isConnected()
     {
-        return this.client.isConnected() && this.connected;
+        return this.parent.isConnected() && this.connected;
     }
 
     public void addMessageListener(RoutePutMessageListener r)
@@ -69,9 +64,9 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
     }
 
-    public RoutePutClient getClient()
+    public RoutePutSession getParent()
     {
-        return this.client;
+        return this.parent;
     }
 
     public Collection<RoutePutMessageListener> getMessageListeners()
@@ -94,7 +89,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         {
             jo.put("__targetId", this.connectionId);
         }
-        this.getClient().send(jo);
+        this.getParent().send(jo);
     }
 
     public String getConnectionId()
@@ -105,7 +100,7 @@ public class RoutePutRemoteSession implements RoutePutSession
     @Override
     public String getDefaultChannel() 
     {
-        return this.client.getDefaultChannel();
+        return this.defaultChannel;
     }
 
     @Override
@@ -114,21 +109,18 @@ public class RoutePutRemoteSession implements RoutePutSession
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
         jo.put("defaultChannel", this.getDefaultChannel());
-        if (this.upgradeHeaders != null)
-            jo.put("upgradeHeaders", this.upgradeHeaders);
+        jo.put("upgradeHeaders", this.upgradeHeaders);
         jo.put("remoteIP", this.remoteIP);
         jo.put("_class", "RoutePutRemoteSession");
+        jo.put("_listeners", this.listeners.size());
         return jo;
     }
 
-    @Override
-    public boolean subscribedTo(String channel) 
+    public boolean subscribedTo(String channel)
     {
-        if (channel != null)
-        {
-            return channel.equals(this.getDefaultChannel());
-        }
-        return false;
+        return (this.channels.contains(channel) ||      // Are we subscribed to the channel?
+                this.getDefaultChannel().equals(channel) ||  // Is our default channel the channel?
+                this.getDefaultChannel().equals("*"));       // Is our default channel * ?
     }
 
     @Override
@@ -146,7 +138,6 @@ public class RoutePutRemoteSession implements RoutePutSession
     @Override
     public boolean containsConnectionId(String connectionId)
     {
-        // TODO Auto-generated method stub
         return this.connectionId.equals(connectionId);
     }
 }

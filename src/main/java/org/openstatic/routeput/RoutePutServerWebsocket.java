@@ -30,7 +30,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
     protected String defaultChannel;
     private Vector<String> channels = new Vector<String>();
     private HashMap<String, StringBuffer> blobStorage = new HashMap<String, StringBuffer>();
-    protected LinkedHashMap<String, RoutePutLocalSession> sessions = new LinkedHashMap<String, RoutePutLocalSession>();
+    protected LinkedHashMap<String, RoutePutRemoteSession> sessions = new LinkedHashMap<String, RoutePutRemoteSession>();
     private String path;
     private String remoteIP;
     private JSONObject httpHeaders;
@@ -68,6 +68,16 @@ public class RoutePutServerWebsocket implements RoutePutSession
             RoutePutMessage resp = new RoutePutMessage();
             resp.put("__response", "becomeCollector");
             resp.put("collector", this.becomeCollector());
+            this.send(resp);
+        } else if (routeputCommand.equals("dropCollector")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.put("__response", "dropCollector");
+            resp.put("collector", this.dropCollector());
+            this.send(resp);
+        } else if (routeputCommand.equals("ping")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.put("__response", "pong");
+            resp.put("timestamp", System.currentTimeMillis());
             this.send(resp);
         } else if (routeputCommand.equals("members")) {
             String channel = jo.optString("channel", this.defaultChannel);
@@ -153,6 +163,16 @@ public class RoutePutServerWebsocket implements RoutePutSession
         return this.collector;
     }
 
+    private boolean dropCollector()
+    {
+        this.collector = false;
+        if (RoutePutServer.instance.collectors.containsKey(this.defaultChannel))
+        {
+            RoutePutServer.instance.collectors.remove(this.defaultChannel, this);
+        }
+        return this.collector;
+    }
+
     @OnWebSocketMessage
     public void onText(Session session, String message) throws IOException
     {
@@ -185,36 +205,43 @@ public class RoutePutServerWebsocket implements RoutePutSession
             {
                 // If this is a message notifying us that a downstream client connected
                 // lets find that connaction or create it and pass the message off.
-                RoutePutLocalSession localSession = null;
+                RoutePutRemoteSession remoteSession = null;
                 if (this.sessions.containsKey(sourceId))
                 {
-                    localSession = this.sessions.get(sourceId);
+                    remoteSession = this.sessions.get(sourceId);
                 } else {
-                    localSession = new RoutePutLocalSession(this, sourceId);
-                    this.sessions.put(sourceId, localSession);
-                    RoutePutServer.instance.sessions.put(sourceId, localSession);
+                    final RoutePutRemoteSession finalRemoteSession = new RoutePutRemoteSession(this, sourceId);
+                    finalRemoteSession.addMessageListener(new RoutePutMessageListener(){
+                        @Override
+                        public void onMessage(RoutePutMessage message) {
+                            RoutePutServer.instance.handleIncomingEvent(message, finalRemoteSession);
+                        }
+                    });
+                    remoteSession = finalRemoteSession;
+                    this.sessions.put(sourceId, remoteSession);
+                    RoutePutServer.instance.sessions.put(sourceId, remoteSession);
                 }
-                localSession.handleMessage(jo);
+                remoteSession.handleMessage(jo);
             } else {
                 // Seems like this is a disconnect message, lets just remove the connection
                 // and pass that status along.
                 if (this.sessions.containsKey(sourceId))
                 {
-                    RoutePutLocalSession localSession = this.sessions.get(sourceId);
+                    RoutePutRemoteSession remoteSession = this.sessions.get(sourceId);
                     if (RoutePutServer.instance.sessions.containsKey(sourceId))
                     {
                         RoutePutServer.instance.sessions.remove(sourceId);
                     }
-                    localSession.handleMessage(jo);
+                    remoteSession.handleMessage(jo);
                 }
             }
         } else {
             // looks like this is a normal message for a local connection
-            RoutePutLocalSession localSession = null;
+            RoutePutRemoteSession remoteSession = null;
             if (this.sessions.containsKey(sourceId))
             {
-                localSession = this.sessions.get(sourceId);
-                localSession.handleMessage(jo);
+                remoteSession = this.sessions.get(sourceId);
+                remoteSession.handleMessage(jo);
             }
         }
     }
@@ -276,7 +303,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
             jo.setSourceId(this.connectionId);
             jo.setChannel(this.defaultChannel);
             jo.put("__sourceConnectStatus", true);
-            jo.put("remoteIP", this.remoteIP);
+            if (RoutePutServer.instance.settings.optBoolean("remoteIPShare",false))
+                jo.put("remoteIP", this.remoteIP);
             RoutePutServer.instance.handleIncomingEvent(jo, this);
 
             RoutePutServer.logIt("New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
@@ -285,7 +313,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
             jo2.put("__response", "connectionId");
             jo2.put("connectionId", this.connectionId);
             jo2.put("upgradeHeaders", this.httpHeaders);
-            jo2.put("remoteIp", this.remoteIP);
+            if (RoutePutServer.instance.settings.optBoolean("remoteIPShare",false))
+                jo2.put("remoteIP", this.remoteIP);
             this.send(jo2);
         }
     }
@@ -414,7 +443,6 @@ public class RoutePutServerWebsocket implements RoutePutSession
     @Override
     public boolean containsConnectionId(String connectionId)
     {
-        // TODO Auto-generated method stub
         return this.sessions.containsKey(connectionId) || this.connectionId.equals(connectionId);
     }
 

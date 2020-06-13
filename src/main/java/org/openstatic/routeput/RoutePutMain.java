@@ -22,7 +22,7 @@ public class RoutePutMain
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            options.addOption(new Option("x", "client", true, "Client Mode"));
+            options.addOption(new Option("x", "client", true, "Test Client Mode"));
             Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server");
             upstreamOption.setOptionalArg(true);
             options.addOption(upstreamOption);
@@ -110,12 +110,12 @@ public class RoutePutMain
         RandomQuotes quotes = new RandomQuotes();
         try
         {
-            while(true)
+            while(rpc.isConnected())
             {
                 JSONObject msg = new JSONObject();
                 msg.put("event","chat");
                 msg.put("text", quotes.nextQuote());
-                msg.put("username", "Ghost in the machine");
+                msg.put("username", "Quote Of The Day");
                 System.err.println("Sending: " + msg.toString());
                 rpc.send(msg);
                 Thread.sleep(10000);

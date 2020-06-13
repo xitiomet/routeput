@@ -2,8 +2,6 @@ package org.openstatic.routeput;
 
 import org.json.*;
 import org.openstatic.routeput.client.RoutePutClient;
-import org.openstatic.routeput.client.RoutePutMessageListener;
-import org.openstatic.routeput.client.RoutePutRemoteSession;
 import org.openstatic.routeput.client.RoutePutRemoteSessionListener;
 
 import java.io.IOException;
@@ -114,6 +112,22 @@ public class RoutePutServer implements Runnable
                 RoutePutServer.instance.keep_running = false;
             } 
         });
+        connectUpstreams();
+    }
+
+    public void connectUpstreams()
+    {
+        JSONArray upstreams = this.settings.optJSONArray("upstreams");
+        if (upstreams != null)
+        {
+            upstreams.forEach((o) -> {
+                if (o instanceof JSONObject)
+                {
+                    JSONObject jo = (JSONObject) o;
+                    connectUpstream(jo.optString("channel","*"), jo.optString("uri", null));
+                }
+            });
+        }
     }
     
     public void run()
