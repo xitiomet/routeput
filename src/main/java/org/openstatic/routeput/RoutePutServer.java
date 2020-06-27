@@ -2,10 +2,11 @@ package org.openstatic.routeput;
 
 import org.json.*;
 import org.openstatic.routeput.client.RoutePutClient;
-import org.openstatic.routeput.client.RoutePutRemoteSessionListener;
+import org.openstatic.routeput.client.RoutePutSessionListener;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.InetAddress;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -25,7 +26,6 @@ import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
 
-import org.eclipse.jetty.http.MimeTypes;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 
@@ -33,13 +33,11 @@ public class RoutePutServer implements Runnable
 {
     private Server httpServer;
     protected LinkedHashMap<String, RoutePutSession> sessions;
-    protected LinkedHashMap<String, RoutePutSession> collectors;
     protected JSONObject settings;
     protected static RoutePutServer instance;
     private Thread mainThread;
     private boolean keep_running;
-    public static File blobRoot;
-
+    private String hostname;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -88,13 +86,16 @@ public class RoutePutServer implements Runnable
     public RoutePutServer(JSONObject settings)
     {
         RoutePutServer.instance = this;
+        InetAddress ip;
+        try 
+        {
+            ip = InetAddress.getLocalHost();
+            this.hostname = ip.getHostName();
+        } catch (Exception e) {}
         this.settings = settings;
         this.sessions = new LinkedHashMap<String, RoutePutSession>();
-        this.collectors = new LinkedHashMap<String, RoutePutSession>();
         httpServer = new Server(settings.optInt("port", 6144));
-        RoutePutServer.blobRoot = new File(settings.optString("blobRoot", "./blob/"));
-        if (!RoutePutServer.blobRoot.exists())
-            RoutePutServer.blobRoot.mkdir();
+        BLOBManager.setRoot(new File(settings.optString("blobRoot", "./blob/")));
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
@@ -124,7 +125,7 @@ public class RoutePutServer implements Runnable
                 if (o instanceof JSONObject)
                 {
                     JSONObject jo = (JSONObject) o;
-                    connectUpstream(jo.optString("channel","*"), jo.optString("uri", null));
+                    connectUpstream(RoutePutChannel.getChannel(jo.optString("channel","*")), jo.optString("uri", null));
                 }
             });
         }
@@ -145,33 +146,38 @@ public class RoutePutServer implements Runnable
         }
     }
 
-    public RoutePutSession connectUpstream(String channel, String uri)
+    public RoutePutSession connectUpstream(RoutePutChannel channel, String uri)
     {
-        RoutePutClient client = new RoutePutClient(channel, uri);
-        client.addSessionListener(new RoutePutRemoteSessionListener() {
+        final RoutePutClient client = new RoutePutClient(channel, uri);
+        client.addSessionListener(new RoutePutSessionListener() {
             
             @Override
-            public void onConnect(RoutePutRemoteSession session) 
+            public void onConnect(RoutePutSession session, boolean local) 
             {
-                RoutePutServer.this.sessions.put(session.getConnectionId(), session);
-                session.addMessageListener(new RoutePutMessageListener() {
-                    @Override
-                    public void onMessage(RoutePutMessage message) {
-                        RoutePutServer.this.handleIncomingEvent(message, session);
-                    }
-                });
+                if (!local)
+                {
+                    RoutePutServer.this.sessions.put(session.getConnectionId(), session);
+                    session.addMessageListener(new RoutePutMessageListener() {
+                        @Override
+                        public void onMessage(RoutePutMessage message) {
+                            RoutePutServer.this.handleIncomingEvent(message, session);
+                        }
+                    });
+                } else {
+                    RoutePutServer.this.sessions.put(client.getConnectionId(), client);
+                }
             }
         
             @Override
-            public void onClose(RoutePutRemoteSession session)
+            public void onClose(RoutePutSession session, boolean local)
             {
                 String connectionId = session.getConnectionId();
                 if (RoutePutServer.this.sessions.containsKey(connectionId))
                     RoutePutServer.this.sessions.remove(connectionId);                
             }
         });
+        client.setProperty("upstream", uri);
         client.connect();
-        this.sessions.put(client.getConnectionId(), client);
         return client;
     }
     
@@ -185,37 +191,44 @@ public class RoutePutServer implements Runnable
     
     public void handleIncomingEvent(RoutePutMessage j, RoutePutSession session)
     {
+        j.appendMetaArray("hops", this.hostname);
         String eventChannel = j.getChannel();
-        if (this.collectors.containsKey(eventChannel))
+        RoutePutChannel channel = j.getRoutePutChannel();
+        if (channel.hasCollector())
         {
             // This Channel has a connected collector
-            RoutePutSession collector = this.collectors.get(eventChannel);
+            RoutePutSession collector = channel.getCollector();
             if (session == collector)
             {
                 //this connection is that collector!
-                if (j.has("__targetId"))
+                if (j.hasTargetId())
                 {
-                    RoutePutSession target = findSessionById(j.optString("__targetId", ""));
+                    RoutePutSession target = findSessionById(j.getTargetId());
                     if (target != null)
+                    {
+                        j.setMetaField("collectorTargeted", true);
                         target.send(j);
+                    }
                 } else {
-                    broadcastJSONObject(eventChannel, j);
+                    j.setMetaField("collectorBroadcast", true);
+                    broadcast(eventChannel, j);
                 }
             } else {
                 // absorb all packets into collector
+                j.setMetaField("collectorAbsorbed", true);
                 collector.send(j);
             }
         } else {
             // This Channel is a complete free for all!
-            if (j.has("__targetId"))
+            if (j.hasTargetId())
             {
                 // Ok this packet has a target in the channel
-                RoutePutSession target = findSessionById(j.optString("__targetId", ""));
+                RoutePutSession target = findSessionById(j.getTargetId());
                 if (target != null)
                    target.send(j);
             } else {
                 // Everybody but the sender should get this packet
-                broadcastJSONObject(eventChannel, j);
+                broadcast(eventChannel, j);
             }
         }
     }
@@ -249,45 +262,19 @@ public class RoutePutServer implements Runnable
         return null;
     }
     
-    private JSONObject optJSONObject(JSONObject jo, String key)
-    {
-        JSONObject js = new JSONObject();
-        if (jo.has(key))
-        {
-            js = jo.getJSONObject(key);
-        }
-        return js;
-    }
-    
     public JSONObject channelStats()
     {
         JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions.values())
+        for(RoutePutChannel chan : RoutePutChannel.getChannels())
         {
-            String dChan = s.getDefaultChannel();
-            JSONObject js = optJSONObject(jo, dChan);
-            
-            js.put("members", js.optInt("members", 0) + 1);
-            if (s.isCollector())
-                js.put("collector", s.getConnectionId());
-            
-            jo.put(dChan, js);
-        }
-        return jo;
-    }
-    
-    public JSONObject channelBreakdown()
-    {
-        JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions.values())
-        {
-            String dChan = s.getDefaultChannel();
+            String dChan = chan.getName();
             JSONObject js = new JSONObject();
-            if (jo.has(dChan))
-            {
-                js = jo.getJSONObject(dChan);
-            }
-            js.put(s.getConnectionId(), s.toJSONObject());
+            js.put("rx", chan.getMessagesRxPerSecond());
+            js.put("tx", chan.getMessagesTxPerSecond());
+            js.put("members", chan.memberCount());
+            if (chan.hasCollector())
+                js.put("collector", chan.getCollector().getConnectionId());
+            
             jo.put(dChan, js);
         }
         return jo;
@@ -319,29 +306,30 @@ public class RoutePutServer implements Runnable
         return ja;
     }
 
-    public void broadcastJSONObject(String eventChannel, JSONObject jo)
+    public void broadcast(String eventChannel, RoutePutMessage jo)
     {
-        //System.err.println("Broadcast: " + jo.toString());
-        for(RoutePutSession s : this.sessions.values())
+        //System.err.println("Broadcast (" + eventChannel + "): " + jo.toString());
+        this.sessions.values().parallelStream().forEach((s) ->
         {
             if (s.subscribedTo(eventChannel) && s.isRootConnection())
             {
                 try
                 {
                     // Never Send the event to the creator or its relay
-                    if (!s.containsConnectionId(jo.optString("__sourceId", "")))
+                    if (!s.containsConnectionId(jo.getSourceId()))
                     {
                         s.send(jo);
                     }
                 } catch (Exception e) {
-                    
+                    logIt(e);
                 }
             }
-        }
+        });
     }
     
     public static void logIt(String text)
     {
+        System.err.println(text);
         RoutePutMessage l = new RoutePutMessage();
         l.setChannel("routeputDebug");
         l.put("logIt",  text);
@@ -398,94 +386,4 @@ public class RoutePutServer implements Runnable
         }
     }
     
-    public static void saveBase64Blob(String fileName, StringBuffer sb)
-    {
-        try
-        {
-            File file = new File(RoutePutServer.blobRoot, fileName);
-            byte[] fileData = java.util.Base64.getDecoder().decode(sb.substring(sb.indexOf(",") + 1));
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(fileData);
-            fos.close();
-        } catch (Exception e) {
-            logIt(e);
-        }
-    }
-    
-    public static StringBuffer loadBase64Blob(String fileName)
-    {
-        StringBuffer sb = new StringBuffer();
-        try
-        {
-            File file = new File(RoutePutServer.blobRoot, fileName);
-            String contentType = getContentTypeFor(fileName);
-            if (file.exists())
-            {
-                sb.append("data:" + contentType + ";base64,");
-                FileInputStream fis = new FileInputStream(file);
-                byte[] bFile = new byte[(int) file.length()];
-                fis.read(bFile);
-                fis.close();
-                sb.append(java.util.Base64.getEncoder().encodeToString(bFile));
-            }
-        } catch (Exception e) {
-            logIt(e);
-        }
-        return sb;
-    }
-    
-    /** Determine the content type of a local file */
-    public static String getContentTypeFor(String filename)
-    {
-        String lc_file = filename.toLowerCase();
-        if (lc_file.endsWith(".html") || lc_file.endsWith(".htm"))
-        {
-            return "text/html";
-        } else if (lc_file.endsWith(".txt")) {
-            return "text/plain";
-        } else if (lc_file.endsWith(".css")) {
-            return "text/css";
-        } else if (lc_file.endsWith(".js")) {
-            return "text/javascript";
-        } else if (lc_file.endsWith(".jpg") || lc_file.endsWith(".jpe") || lc_file.endsWith(".jpeg")) {
-            return "image/jpeg";
-        } else if (lc_file.endsWith(".gif")) {
-            return "image/gif";
-        } else if (lc_file.endsWith(".png")) {
-            return "image/png";
-        } else if (lc_file.endsWith(".bmp")) {
-            return "image/x-ms-bmp";
-        } else if (lc_file.endsWith(".mp3")) {
-            return "audio/mpeg3";
-        } else if (lc_file.endsWith(".zip")) {
-            return "application/zip";
-        } else if (lc_file.endsWith(".pdf")) {
-            return "application/pdf";
-        } else if (lc_file.endsWith(".xml")) {
-            return "text/xml";
-        } else if (lc_file.endsWith(".mid")) {
-            return "audio/midi";
-        } else if (lc_file.endsWith(".tar")) {
-            return "application/x-tar";
-        } else if (lc_file.endsWith(".ico")) {
-            return "image/x-icon";
-        } else if (lc_file.endsWith(".avi")) {
-            return "video/x-msvideo";
-        } else if (lc_file.endsWith(".mp4")) {
-            return "video/mp4";
-        } else if (lc_file.endsWith(".mkv")) {
-            return "video/x-matroska";
-        } else if (lc_file.endsWith(".mov")) {
-            return "video/quicktime";
-        } else if (lc_file.endsWith(".wmv")) {
-            return "video/x-ms-wmv";
-        } else if (lc_file.endsWith(".3gp")) {
-            return "video/3gpp";
-        } else {
-            String result = MimeTypes.getDefaultMimeByExtension(filename);
-            if ("".equals(result) || result == null)
-                result = "application/octet-stream";
-            return result;
-        }
-    }
 }

@@ -59,7 +59,7 @@ public class ApiServlet extends HttpServlet
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
-        httpServletResponse.addHeader("Server", "Route.put 1.0");
+        httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo();
         //System.err.println("Path: " + target);
         RoutePutServer.logIt("API Request: " + target);
@@ -68,11 +68,11 @@ public class ApiServlet extends HttpServlet
         {
             if ("/channels/".equals(target))
             {
-                response.put("channels", RoutePutServer.instance.channelBreakdown());
+                response.put("channels", RoutePutChannel.channelBreakdown());
             } else if ("/channels/stats/".equals(target)) {
                 response.put("channels", RoutePutServer.instance.channelStats());
             } else if ("/upstream/".equals(target)) {
-                String channel = request.getParameter("channel");
+                RoutePutChannel channel = RoutePutChannel.getChannel(request.getParameter("channel"));
                 String uri = request.getParameter("uri");
                 RoutePutSession session = RoutePutServer.instance.connectUpstream(channel, uri);
                 response.put("session", session.toJSONObject());

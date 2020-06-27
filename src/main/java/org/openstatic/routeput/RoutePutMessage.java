@@ -1,76 +1,180 @@
 package org.openstatic.routeput;
 
+import java.util.StringTokenizer;
+
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class RoutePutMessage extends JSONObject
 {
+    public static final String TYPE_CONNECTION_ID = "connectionId";
+    public static final String TYPE_CONNECTION_STATUS = "ConnectionStatus";
+    public static final String TYPE_BLOB = "blob";
+    public static final String TYPE_REQUEST = "request";
+    public static final String TYPE_RESPONSE = "response";
+    public static final String TYPE_PING = "ping";
+    public static final String TYPE_PONG = "pong";
+
     public RoutePutMessage(String json)
     {
         super(json);
+        getRoutePutMeta();
     }
 
     public RoutePutMessage()
     {
         super();
+        getRoutePutMeta();
+    }
+
+    public JSONObject getRoutePutMeta()
+    {
+        if (!this.has("__routeput"))
+        {
+            JSONObject rpm = new JSONObject();
+            this.put("__routeput", rpm);
+            return rpm;
+        } else {
+            return this.optJSONObject("__routeput");
+        }
+    }
+
+    public  boolean hasMetaField(String fieldName)
+    {
+        return this.getRoutePutMeta().has(fieldName);
+    }
+
+    public void setMetaField(String fieldName, boolean val)
+    {
+        this.getRoutePutMeta().put(fieldName, val);
+    }
+
+    public void setMetaField(String fieldName, Object val)
+    {
+        this.getRoutePutMeta().put(fieldName, val);
+    }
+
+    public void appendMetaArray(String fieldName, Object val)
+    {
+        if (this.hasMetaField(fieldName))
+        {
+            this.getRoutePutMeta().optJSONArray(fieldName).put(val);
+        } else {
+            JSONArray ary = new JSONArray();
+            ary.put(val);
+            this.setMetaField(fieldName, ary);
+        }
+    }
+
+    public Object getPathValue(String path)
+    {
+        Object ro = null;
+        JSONObject pointer = this;
+        StringTokenizer st = new StringTokenizer(path, ".");
+        while(st.hasMoreTokens())
+        {
+            String pathNext = st.nextToken();
+            ro = pointer.get(pathNext);
+            if (ro instanceof JSONObject)
+                pointer = (JSONObject) ro;
+        }
+        return ro;
     }
 
     public String getSourceId()
     {
-        return this.optString("__sourceId", null);
+        return this.getRoutePutMeta().optString("srcId", null);
     }
 
     public void setSourceId(String connectionId)
     {
-        this.put("__sourceId", connectionId);
+        this.getRoutePutMeta().put("srcId", connectionId);
+    }
+
+    public void setSourceIdIfNull(String connectionId)
+    {
+        if (!this.getRoutePutMeta().has("srcId"))
+        {
+            this.getRoutePutMeta().put("srcId", connectionId);
+        }
+    }
+
+    public boolean hasSourceId()
+    {
+        return this.getRoutePutMeta().has("srcId");
     }
     
     public String getTargetId()
     {
-        return this.optString("__targetId", null);
+        return this.getRoutePutMeta().optString("dstId", null);
     }
 
     public void setTargetId(String connectionId)
     {
-        this.put("__targetId", connectionId);
+        this.getRoutePutMeta().put("dstId", connectionId);
     }
+
+    public boolean hasTargetId()
+    {
+        return this.getRoutePutMeta().has("dstId");
+    }
+
     
     public String getChannel()
     {
-        return this.optString("__eventChannel", "*");
+        return this.getRoutePutMeta().optString("channel", "*");
+    }
+
+    public RoutePutChannel getRoutePutChannel()
+    {
+        return RoutePutChannel.getChannel(this.getChannel());
     }
 
     public void setChannel(String channel)
     {
-        this.put("__eventChannel", channel);
+        this.getRoutePutMeta().put("channel", channel);
     }
 
-    public boolean isResponse()
+    public void setChannel(RoutePutChannel channel)
     {
-        return this.has("__response");
+        this.getRoutePutMeta().put("channel", channel.getName());
     }
 
-    public String getResponse()
+    public void setChannelIfNull(RoutePutChannel channel)
     {
-        return this.optString("__response", "");
+        if (!this.getRoutePutMeta().has("channel"))
+        {
+            this.getRoutePutMeta().put("channel", channel);
+        }
     }
 
-    public void setResponse(String response)
+    public boolean isType(String type)
     {
-        this.put("__response", response);
+        if (type != null)
+            return type.equals(this.getRoutePutMeta().optString("type", null));
+        else
+            return false;
     }
 
-    public boolean isRequest()
+    public String getType()
     {
-        return this.has("__request");
+        return this.getRoutePutMeta().optString("type", null);
     }
 
-    public String getRequest()
+    public void setType(String type)
     {
-        return this.optString("__request", "");
+        this.getRoutePutMeta().put("type", type);
     }
 
-    public void setRequest(String request)
+    public void setRequest(String requestType)
     {
-        this.put("__request", request);
+        this.setType(TYPE_REQUEST);
+        this.put("request", requestType);
+    }
+
+    public void setResponse(String responseType)
+    {
+        this.setType(TYPE_RESPONSE);
+        this.put("response", responseType);
     }
 }

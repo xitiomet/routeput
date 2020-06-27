@@ -29,30 +29,25 @@ Other Clients Receive:
 ```json
 {
   "hello": "world",
-  "__sourceId": "PXpoTFSfxnAqzjoEyyMrLWuD",
-  "__eventChannel": "ANYTHING"
+  "__routeput": {
+    "srcId": "PXpoTFSfxnAqzjoEyyMrLWuD",
+    "channel": "ANYTHING"
+  }
 }
 ```
 
-The fields are prefixed with a double underscore in hopes that they will not collide with any existing fields in your packet. In future versions the names of these fields will be definable.
+As you can see an additional field called "__routeput" was added to the object. This special field contains routing information for packets.
 
-All Special fields to avoid using in your object are:
-```
-__request               String - used to send special commands to the server
-__response              String - used to mark a server response to a __request
-__sourceConnectStatus   boolean - used for when a user connects 
-__targetId              String - Target connectionId for packet routing
-__sourceId              String - Original connectionId that send this packet
-__eventChannel          String - Channel packet was transmitted on
-```
 **Targeted Messages**
 
-In order to send a message directly to another client you must know it's clientId (which is the same as the "__sourceId" field in received messages)
+In order to send a message directly to another client you must know it's clientId (which is the same as the "srcId" field in received messages)
 
 Example Targeted Message:
 ```json
 {
-  "__targetId": "PXpoTFSfxnAqzjoEyyMrLWuD",
+  "__routeput": {
+    "dstId": "PXpoTFSfxnAqzjoEyyMrLWuD"
+  }
   "hello": "world"
 }
 ```

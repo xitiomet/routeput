@@ -28,7 +28,7 @@ public class InterfaceServlet extends HttpServlet
         URL data = getClass().getResource(target);
         if (data != null)
         {
-            String contentType = RoutePutServer.getContentTypeFor(target);            
+            String contentType = BLOBManager.getContentTypeFor(target);            
             httpServletResponse.setContentType(contentType);
             httpServletResponse.setStatus(HttpServletResponse.SC_OK);
             httpServletResponse.setCharacterEncoding("iso-8859-1");

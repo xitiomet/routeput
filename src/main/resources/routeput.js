@@ -26,7 +26,9 @@ function dataURItoBlob(dataURI)
 class RouteputConnection
 {
     host;
+    properties;
     channel;
+    channelProperties;
     wsProtocol;
     wsUrl;
     reconnectTimeout;
@@ -45,6 +47,7 @@ class RouteputConnection
         this.reconnectTimeout = null;
         this.connection  = null;
         this.chunkBuffer = new Map();
+        this.properties = {};
     }
     
     connect()
@@ -77,32 +80,38 @@ class RouteputConnection
                 var rawData = e.data;
                 var jsonObject = JSON.parse(rawData);
                 console.log("Route.put Receive: " + rawData);
-                if (jsonObject.hasOwnProperty("__response"))
+                if (jsonObject.hasOwnProperty("__routeput"))
                 {
-                    var commandResponse = jsonObject.__commandResponse;
-                    if (commandResponse == "blob" && jsonObject.hasOwnProperty("i"))
+                    var routePutMeta = jsonObject.__routeput
+                    if (routePutMeta.hasOwnProperty("type"))
                     {
-                        if (jsonObject.i == 1)
+                        var messageType = routePutMeta.type;
+                        if (messageType == "blob" && jsonObject.hasOwnProperty("i"))
                         {
-                            this.chunkBuffer[jsonObject.name] = jsonObject.data;
-                        } else if (jsonObject.i == jsonObject.of) {
-                            this.chunkBuffer[jsonObject.name] += jsonObject.data;
-                            if (this.onblob != undefined)
+                            if (jsonObject.i == 1)
                             {
-                                var blob = dataURItoBlob(this.chunkBuffer[jsonObject.name]);
-                                this.onblob(jsonObject.name, blob);
-                                this.chunkBuffer.delete(jsonObject.name);
+                                this.chunkBuffer[jsonObject.name] = jsonObject.data;
+                            } else if (jsonObject.i == jsonObject.of) {
+                                this.chunkBuffer[jsonObject.name] += jsonObject.data;
+                                if (this.onblob != undefined)
+                                {
+                                    var blob = dataURItoBlob(this.chunkBuffer[jsonObject.name]);
+                                    this.onblob(jsonObject.name, blob);
+                                    this.chunkBuffer.delete(jsonObject.name);
+                                }
+                            } else {
+                                this.chunkBuffer[jsonObject.name] += jsonObject.data;
                             }
-                        } else {
-                            this.chunkBuffer[jsonObject.name] += jsonObject.data;
+                        } else if (messageType == "connectionId") {
+                            this.connectionId = jsonObject.connectionId;
+                            this.properties = jsonObject.properties;
+                            this.channelProperties = jsonObject.channelProperties;
                         }
-                    } else if (commandResponse == "connectionId") {
-                        this.connectionId = jsonObject.connectionId;
-                    }
-                } else {
-                    if (this.onmessage != undefined)
-                    {
-                        this.onmessage(jsonObject);
+                    } else {
+                        if (this.onmessage != undefined)
+                        {
+                            this.onmessage(jsonObject);
+                        }
                     }
                 }
             };
@@ -129,15 +138,27 @@ class RouteputConnection
             var sz = chunks.length;
             for (let i = 0; i < sz; i++)
             {
-                var mm = {"__request": "blob", "name": name ,"i": i+1, "of": sz, "data": chunks[i]};
+                var mm = {"__routeput": {"type": "blob"}, "name": name ,"i": i+1, "of": sz, "data": chunks[i]};
                 this.transmit(mm);
             }
         };
     }
+
+    setSessionProperty(k, v)
+    {
+        var mm = {"__routeput": {"type": "request"}, "request": "setSessionProperty", "key": k, "value": v};
+        this.transmit(mm);
+    }
     
+    setChannelProperty(k, v)
+    {
+        var mm = {"__routeput": {"type": "request"}, "request": "setChannelProperty", "key": k, "value": v};
+        this.transmit(mm);
+    }
+
     requestBlob(name)
     {
-        var mm = {"__request": "blob", "name": name};
+        var mm = {"__routeput": {"type": "blob"}, "name": name};
         this.transmit(mm);
     }
 
@@ -155,11 +176,11 @@ class RouteputConnection
     
     subscribe(channel)
     {
-        this.transmit({"__request": "subscribe", "channel": channel});
+        this.transmit({"__routeput": {"type": "request"}, "request":"subscribe", "channel": channel});
     }
     
     unsubscribe(channel)
     {
-        this.transmit({"__request": "unsubscribe", "channel": channel});
+        this.transmit({"__routeput": {"type": "request"}, "request":"subscribe", "channel": channel});
     }
 }

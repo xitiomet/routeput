@@ -4,7 +4,6 @@ import org.json.*;
 import org.eclipse.jetty.websocket.common.WebSocketSession;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -12,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 import java.util.Vector;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.UpgradeRequest;
@@ -27,38 +28,63 @@ public class RoutePutServerWebsocket implements RoutePutSession
 {
     private WebSocketSession websocketSession;
     protected String connectionId;
-    protected String defaultChannel;
+    protected RoutePutChannel defaultChannel;
     private Vector<String> channels = new Vector<String>();
-    private HashMap<String, StringBuffer> blobStorage = new HashMap<String, StringBuffer>();
+    private Vector<RoutePutMessageListener> listeners = new Vector<RoutePutMessageListener>();
     protected LinkedHashMap<String, RoutePutRemoteSession> sessions = new LinkedHashMap<String, RoutePutRemoteSession>();
     private String path;
     private String remoteIP;
-    private JSONObject httpHeaders;
+    private JSONObject httpHeaders = new JSONObject();
+    private JSONObject properties = new JSONObject();
     private boolean collector = false;
     private boolean connected;
+    private boolean handshakeComplete = false;
 
     protected void handleMessage(RoutePutMessage jo)
     {
-        if (!jo.has("__eventChannel"))
+        if (jo.hasMetaField("setSessionProperty"))
         {
-            jo.put("__eventChannel", this.defaultChannel);
+            JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
+            for(String k : storeRequest.keySet())
+            {
+                String v = storeRequest.getString(k);
+                this.properties.put(k, jo.getPathValue(v));
+            }
         }
-        if (!jo.has("__sourceId"))
+        if (jo.hasMetaField("setChannelProperty"))
         {
-            jo.put("__sourceId", this.connectionId);
+            JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setChannelProperty");
+            for(String k : storeRequest.keySet())
+            {
+                String v = storeRequest.getString(k);
+                this.defaultChannel.setProperty(k, jo.getPathValue(v));
+            }
         }
-
-        if (jo.isRequest())
+        if (jo.isType(RoutePutMessage.TYPE_REQUEST))
         {
             handleRequest(jo);
+        } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
+            // Ignore this
+        } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setType("pong");
+            resp.put("timestamp", System.currentTimeMillis());
+            this.send(resp);
         } else {
+            if (jo.isType(RoutePutMessage.TYPE_BLOB))
+            {
+                BLOBManager.handleBlobData(jo);
+            }
             RoutePutServer.instance.handleIncomingEvent(jo, this);
+            this.listeners.parallelStream().forEach((r) -> {
+                r.onMessage(jo);
+            });
         }
     }
 
     public void handleRequest(RoutePutMessage jo)
     {
-        String routeputCommand = jo.getRequest();
+        String routeputCommand = jo.optString("request", "");
         if (routeputCommand.equals("subscribe"))
         {
             this.addChannel(jo.optString("channel", null));
@@ -66,98 +92,86 @@ public class RoutePutServerWebsocket implements RoutePutSession
             this.removeChannel(jo.optString("channel", null));
         } else if (routeputCommand.equals("becomeCollector")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.put("__response", "becomeCollector");
+            resp.setResponse("becomeCollector");
             resp.put("collector", this.becomeCollector());
             this.send(resp);
         } else if (routeputCommand.equals("dropCollector")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.put("__response", "dropCollector");
+            resp.setResponse("dropCollector");
             resp.put("collector", this.dropCollector());
             this.send(resp);
-        } else if (routeputCommand.equals("ping")) {
+        } else if (routeputCommand.equals("setProperty")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.put("__response", "pong");
-            resp.put("timestamp", System.currentTimeMillis());
+            resp.setResponse("setProperty");
+            String key = jo.optString("key", null);
+            Object value = jo.opt("value");
+            if (key != null)
+            {
+                this.properties.put(key, value);
+                resp.put(key, value);
+            } else {
+                resp.put("error", "key cannot be null");
+            }
+            this.send(resp);
+        } else if (routeputCommand.equals("setChannelProperty")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("setChannelProperty");
+            String key = jo.optString("key", null);
+            Object value = jo.opt("value");
+            if (key != null)
+            {
+                this.defaultChannel.setProperty(key, value);
+                resp.put(key, value);
+            } else {
+                resp.put("error", "key cannot be null");
+            }
+            this.send(resp);
+        } else if (routeputCommand.equals("getChannelProperty")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("getChannelProperty");
+            String key = jo.optString("key", null);
+            if (key != null)
+            {
+                resp.put(key, this.defaultChannel.getProperties().opt(key));
+            } else {
+                resp.put("error", "key cannot be null");
+            }
+            this.send(resp);
+        } else if (routeputCommand.equals("getProperties")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("getProperties");
+            resp.put("properties", this.properties);
+            this.send(resp);
+        } else if (routeputCommand.equals("getChannelProperties")) {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("getChannelProperties");
+            resp.put("properties", this.defaultChannel.getProperties());
             this.send(resp);
         } else if (routeputCommand.equals("members")) {
-            String channel = jo.optString("channel", this.defaultChannel);
+            String channel = jo.optString("channel", this.defaultChannel.getName());
             if (this.subscribedTo(channel))
             {
-                JSONObject resp = new JSONObject();
-                resp.put("__response", "members");
+                RoutePutMessage resp = new RoutePutMessage();
+                resp.setResponse("members");
                 resp.put("members", RoutePutServer.instance.channelMembers(channel));
                 this.send(resp);
             }
         } else if (routeputCommand.equals("blob")) {
             if (jo.has("i") && jo.has("of") && jo.has("data") && jo.has("name"))
             {
-                int i = jo.optInt("i", 0);
-                int of = jo.optInt("of", 0);
-                String name = jo.optString("name", "");
-                StringBuffer sb = new StringBuffer();
-                if (i == 1)
-                {
-                    this.blobStorage.put(name, sb);
-                } else {
-                    sb = this.blobStorage.get(name);
-                }
-                sb.append(jo.optString("data",""));
-                if (i == of)
-                {
-                    RoutePutServer.saveBase64Blob(name, sb);
-                    this.blobStorage.remove(name);
-                    RoutePutServer.logIt("Received Blob: " + name +
-                            " on " + jo.optString("__eventChannel", this.defaultChannel) +
-                            " from " + this.getConnectionId());
-                    JSONObject resp = new JSONObject();
-                    resp.put("__response", "blob");
-                    resp.put("name", name);
-                    this.send(resp);
-                }
+                BLOBManager.handleBlobData(jo);
             } else if (jo.has("name")) {
                 String name = jo.optString("name", "");
-                StringBuffer sb = RoutePutServer.loadBase64Blob(name);
-                this.transmitBlobChunks(name, sb);
+                BLOBManager.sendBlob(this, name);
             }
-        }
-    }
-
-    // Send a chunked blob to client from byte array
-    public void sendBlob(String name, String contentType, byte[] bytes)
-    {
-        StringBuffer sb = new StringBuffer();
-        sb.append("data:" + contentType + ";base64,");
-        sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        transmitBlobChunks(name, sb);
-    }
-    
-    // Transmit a blob to this client shouldnt be called except by other sendBlob methods
-    private void transmitBlobChunks(String name, StringBuffer sb)
-    {
-        int size = sb.length();
-        int chunkSize = 4096;
-        int numChunks = (size + chunkSize - 1) / chunkSize;
-        for (int i = 0; i < numChunks; i++)
-        {
-            JSONObject mm = new JSONObject();
-            mm.put("__response", "blob");
-            mm.put("name", name);
-            mm.put("i", i+1);
-            mm.put("of", numChunks);
-            int start = i*chunkSize;
-            int end = start + chunkSize;
-            if (end > size)
-                end = size;
-            mm.put("data", sb.substring(start,end));
-            this.send(mm);
         }
     }
 
     private boolean becomeCollector()
     {
-        if (!RoutePutServer.instance.collectors.containsKey(this.defaultChannel))
+        if (!this.defaultChannel.hasCollector() && this.handshakeComplete)
         {
-            RoutePutServer.instance.collectors.put(this.defaultChannel, this);
+            this.defaultChannel.setCollector(this);
             this.collector = true;
         }
         return this.collector;
@@ -166,9 +180,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private boolean dropCollector()
     {
         this.collector = false;
-        if (RoutePutServer.instance.collectors.containsKey(this.defaultChannel))
+        if (this.defaultChannel.getCollector() == this)
         {
-            RoutePutServer.instance.collectors.remove(this.defaultChannel, this);
+            this.defaultChannel.setCollector(null);
         }
         return this.collector;
     }
@@ -179,17 +193,35 @@ public class RoutePutServerWebsocket implements RoutePutSession
         try
         {
             RoutePutMessage jo = new RoutePutMessage(message);
-            String sourceId = jo.getSourceId();
-            if (this.connectionId.equals(sourceId))
+
+            if (this.handshakeComplete)
             {
-                // this message is definitely from the directly connected client
-                this.handleMessage(jo);
-            } else if (sourceId != null) {
-                // this message probably belongs to a subconnection
-                this.handleRoutedMessage(sourceId, jo);
-            } else {
+                // Packets need a channel set if none
+                jo.setChannelIfNull(this.defaultChannel);
                 // this message has no sourceID, must be from the client directly connected
-                this.handleMessage(jo);
+                jo.setSourceIdIfNull(this.connectionId);
+
+                // Tracking for packets
+                jo.getRoutePutChannel().bumpRx();
+
+                String sourceId = jo.getSourceId();
+                if (this.connectionId.equals(sourceId))
+                {
+                    // this message is definitely from the directly connected client
+                    this.handleMessage(jo);
+                } else if (sourceId != null) {
+                    // this message probably belongs to a subconnection
+                    this.handleRoutedMessage(sourceId, jo);
+                }
+            } else if (jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
+                this.connectionId = jo.optString("connectionId", null);
+                this.defaultChannel = RoutePutChannel.getChannel(jo.optString("channel", "*"));
+                if (jo.has("properties"))
+                {
+                    this.properties = jo.optJSONObject("properties");
+                }
+                this.collector = jo.optBoolean("collector", false);
+                this.finishHandshake();
             }
         } catch (Exception e) {
             RoutePutServer.logIt(this.connectionId + " - " + message, e);
@@ -198,9 +230,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
 
     public void handleRoutedMessage(String sourceId, RoutePutMessage jo)
     {
-        if (jo.has("__sourceConnectStatus"))
+        if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
         {
-            boolean c = jo.optBoolean("__sourceConnectStatus", false);
+            boolean c = jo.optBoolean("connected", false);
             if (c)
             {
                 // If this is a message notifying us that a downstream client connected
@@ -245,16 +277,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
             }
         }
     }
- 
-    @OnWebSocketConnect
-    public void onConnect(Session session) throws IOException
+
+    private void processHeaders(Map<String, List<String>> headersMap)
     {
-        this.connected = true;
-        UpgradeRequest upgradeRequest = session.getUpgradeRequest();
-        this.path = upgradeRequest.getRequestURI().getPath();
-        this.remoteIP = session.getRemoteAddress().getAddress().getHostAddress();
-        Map<String,List<String>> headersMap = upgradeRequest.getHeaders();
-        this.httpHeaders = new JSONObject();
         for(Iterator<String> headerNames = headersMap.keySet().iterator(); headerNames.hasNext();)
         {
             String headerName = headerNames.next();
@@ -267,17 +292,61 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 {
                     this.remoteIP = value;
                 }
+                if ("Cookie".equals(headerName))
+                {
+                    Pattern cookiePattern = Pattern.compile("([^=]+)=([^\\;]*);?\\s?");
+                    Matcher matcher = cookiePattern.matcher(value);
+                    while (matcher.find())
+                    {
+                        /*
+                        int groupCount = matcher.groupCount();
+                        System.out.println("matched: " + matcher.group(0));
+                        for (int groupIndex = 0; groupIndex <= groupCount; ++groupIndex) {
+                            System.out.println("group[" + groupIndex + "]=" + matcher.group(groupIndex));
+                        }*/
+                        String cookieKey = matcher.group(1);
+                        String cookieValue = matcher.group(2);
+                        this.properties.put(cookieKey, cookieValue);
+                    }
+                }
             } else {
                 this.httpHeaders.put(headerName, new JSONArray(values));
             }
         }
+    }
+
+    private void processParameters(Map<String, List<String>> parameterMap)
+    {
+        for(Iterator<String> parameterNames = parameterMap.keySet().iterator(); parameterNames.hasNext();)
+        {
+            String parameterName = parameterNames.next();
+            List<String> values = parameterMap.get(parameterName);
+            if (values.size() == 1)
+            {
+                String value = values.get(0);
+                this.properties.put(parameterName, value);
+            }
+        }
+    }
+ 
+    @OnWebSocketConnect
+    public void onConnect(Session session) throws IOException
+    {
+        this.handshakeComplete = false;
+        this.connected = true;
+        this.collector = false;
+        UpgradeRequest upgradeRequest = session.getUpgradeRequest();
+        this.path = upgradeRequest.getRequestURI().getPath();
+        this.remoteIP = session.getRemoteAddress().getAddress().getHostAddress();
+        this.processHeaders(upgradeRequest.getHeaders());
+        this.processParameters(upgradeRequest.getParameterMap());
         StringTokenizer st = new StringTokenizer(this.path, "/");
         while (st.hasMoreTokens())
         {
             String token = st.nextToken();
             if (token.equals("channel") && st.hasMoreTokens())
             {
-                this.defaultChannel = st.nextToken();
+                this.defaultChannel = RoutePutChannel.getChannel(st.nextToken());
             }
             if (token.equals("id") && st.hasMoreTokens())
             {
@@ -285,59 +354,74 @@ public class RoutePutServerWebsocket implements RoutePutSession
             }
             if (token.equals("collector"))
             {
-                this.becomeCollector();
+                this.collector = true;
             }
-        }
-        if (this.connectionId == null)
-        {
-            this.connectionId = RoutePutServer.generateBigAlphaKey(24);
         }
         //System.out.println("path: " + this.path);
         if (session instanceof WebSocketSession)
         {
             this.websocketSession = (WebSocketSession) session;
             //System.out.println(this.websocketSession.getRemoteAddress().getHostString() + " connected!");
+            if (this.defaultChannel != null)
+            {
+                finishHandshake();
+            }
+        }
+    }
+
+    private void finishHandshake()
+    {
+        if (!this.handshakeComplete)
+        {
+            if (this.connectionId == null)
+            {
+                this.connectionId = RoutePutServer.generateBigAlphaKey(24);
+            }
             RoutePutServer.instance.sessions.put(this.connectionId,this);
-            
+            this.defaultChannel.addMember(this);
             RoutePutMessage jo = new RoutePutMessage();
             jo.setSourceId(this.connectionId);
-            jo.setChannel(this.defaultChannel);
-            jo.put("__sourceConnectStatus", true);
+            jo.setChannel(this.defaultChannel.getName());
+            jo.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+            jo.put("connected", true);
             if (RoutePutServer.instance.settings.optBoolean("remoteIPShare",false))
                 jo.put("remoteIP", this.remoteIP);
+            jo.put("properties", this.properties);
             RoutePutServer.instance.handleIncomingEvent(jo, this);
 
             RoutePutServer.logIt("New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
             
-            JSONObject jo2 = new JSONObject();
-            jo2.put("__response", "connectionId");
+            RoutePutMessage jo2 = new RoutePutMessage();
+            jo2.setType("connectionId");
             jo2.put("connectionId", this.connectionId);
-            jo2.put("upgradeHeaders", this.httpHeaders);
+            //jo2.put("upgradeHeaders", this.httpHeaders);
+            jo2.put("channel", this.defaultChannel.getName());
+            jo2.put("properties", this.properties);
+            jo2.put("channelProperties", this.defaultChannel.getProperties());
             if (RoutePutServer.instance.settings.optBoolean("remoteIPShare",false))
                 jo2.put("remoteIP", this.remoteIP);
             this.send(jo2);
+
+            this.defaultChannel.transmitMembers(this);
+            this.handshakeComplete = true;
+            if (this.collector && !this.defaultChannel.hasCollector())
+            {
+                this.defaultChannel.setCollector(this);
+            }
         }
     }
 
     private void cleanUp()
     {
+        this.defaultChannel.removeMember(this);
         if (RoutePutServer.instance.sessions.containsKey(this.connectionId))
             RoutePutServer.instance.sessions.remove(this.connectionId);
-        for(String connectionId : this.sessions.keySet())
+        for(RoutePutRemoteSession session : this.sessions.values())
         {
+            String connectionId = session.getConnectionId();
             if (RoutePutServer.instance.sessions.containsKey(connectionId))
                 RoutePutServer.instance.sessions.remove(connectionId);
-        }
-        if (this.collector)
-        {
-            if (RoutePutServer.instance.collectors.containsKey(this.defaultChannel))
-            {
-                RoutePutSession collect = RoutePutServer.instance.collectors.get(this.defaultChannel);
-                if (collect == this)
-                {
-                    RoutePutServer.instance.collectors.remove(this.defaultChannel);
-                }
-            }
+            session.getDefaultChannel().removeMember(session);
         }
     }
  
@@ -345,11 +429,15 @@ public class RoutePutServerWebsocket implements RoutePutSession
     public void onClose(Session session, int status, String reason)
     {
         this.connected = false;
-        RoutePutMessage jo = new RoutePutMessage();
-        jo.setSourceId(this.connectionId);
-        jo.setChannel(this.defaultChannel);
-        jo.put("__sourceConnectStatus", false);
-        RoutePutServer.instance.handleIncomingEvent(jo, this);
+        if (this.handshakeComplete)
+        {
+            RoutePutMessage jo = new RoutePutMessage();
+            jo.setSourceId(this.connectionId);
+            jo.setChannel(this.defaultChannel.getName());
+            jo.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+            jo.put("connected", false);
+            RoutePutServer.instance.handleIncomingEvent(jo, this);
+        }
         this.cleanUp();
     }
     
@@ -366,16 +454,19 @@ public class RoutePutServerWebsocket implements RoutePutSession
     }
 
     @Override
-    public void send(JSONObject jo)
+    public void send(RoutePutMessage jo)
     {
         if (this.websocketSession != null && jo != null)
         {
+            jo.setSourceIdIfNull(this.connectionId);
+            jo.setChannelIfNull(this.getDefaultChannel());
+            jo.getRoutePutChannel().bumpTx();
             this.websocketSession.getRemote().sendStringByFuture(jo.toString());
         }
     }
 
     @Override
-    public String getDefaultChannel() 
+    public RoutePutChannel getDefaultChannel() 
     {
         return this.defaultChannel;
     }
@@ -419,10 +510,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
         jo.put("collector", this.isCollector());
-        jo.put("defaultChannel", this.defaultChannel);
+        jo.put("defaultChannel", this.defaultChannel.getName());
         jo.put("socketPath", this.path);
         jo.put("channels", new JSONArray(this.channels));
-        jo.put("upgradeHeaders", this.httpHeaders);
+        //jo.put("upgradeHeaders", this.httpHeaders);
+        jo.put("properties", this.properties);
         jo.put("remoteIP", this.remoteIP);
         jo.put("_class", "RoutePutServerWebsocket");
         return jo;
@@ -450,5 +542,38 @@ public class RoutePutServerWebsocket implements RoutePutSession
     public boolean isConnected()
     {
         return this.connected;
+    }
+
+    @Override
+    public String getProperty(String key, String defaultValue)
+    {
+        if (this.properties != null)
+        {
+            return this.properties.optString(key, defaultValue);
+        } else {
+            return defaultValue;
+        }
+    }
+
+    @Override
+    public JSONObject getProperties()
+    {
+        return this.properties;
+    }
+
+    public void addMessageListener(RoutePutMessageListener r)
+    {
+        if (!this.listeners.contains(r))
+        {
+            this.listeners.add(r);
+        }
+    }
+    
+    public void removeMessageListener(RoutePutMessageListener r)
+    {
+        if (this.listeners.contains(r))
+        {
+            this.listeners.remove(r);
+        }
     }
 }

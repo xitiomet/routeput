@@ -19,7 +19,7 @@ PROGRAM_ARGS="-c /etc/routeput/routeput.json"
 
 start() {
     echo -n "Starting Route.put Server...."
-    start-stop-daemon --start --make-pidfile --pidfile $PIDFILE --chuid $USER --user $USER --group $GROUP --chdir $CWD --umask 0 --exec $PROGRAM --background -- $PROGRAM_ARGS
+    start-stop-daemon --start --make-pidfile --pidfile $PIDFILE --chuid $USER --user $USER --group $GROUP --chdir $CWD --no-close --umask 0 --exec $PROGRAM --background -- $PROGRAM_ARGS  >> /var/log/routeput.log 2>&1
     echo DONE
 }
 

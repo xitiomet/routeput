@@ -4,10 +4,12 @@ import org.json.JSONObject;
 
 public interface RoutePutSession 
 {
-    public void send(JSONObject jo);
+    public void send(RoutePutMessage jo);
 
     public String getConnectionId();
-    public String getDefaultChannel();
+    public RoutePutChannel getDefaultChannel();
+    public String getProperty(String key, String defaultValue);
+    public JSONObject getProperties();
 
     public JSONObject toJSONObject();
 
@@ -16,4 +18,7 @@ public interface RoutePutSession
     public boolean isRootConnection();
     public boolean containsConnectionId(String connectionId);
     public boolean subscribedTo(String channel);
+
+    public void addMessageListener(RoutePutMessageListener r);
+    public void removeMessageListener(RoutePutMessageListener r);
 }

@@ -74,7 +74,7 @@ routeput.onmessage = function (jsonObject) {
                 channelTR.id = key + "TR";
                 channelStatsTable.appendChild(channelTR);
             }
-            channelTR.innerHTML = "<td>" + key + "</td><td>" + value.members + "</td>";
+            channelTR.innerHTML = "<td>" + key + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
         }
     }
 };
