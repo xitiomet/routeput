@@ -134,11 +134,14 @@ public class RoutePutServer implements Runnable
     public void run()
     {
         this.keep_running = true;
+        int tick = 0;
         while(this.keep_running)
         {
             try
             {
-                everySecond();
+                everySecond(tick);
+                tick++;
+                if (tick >= 60) tick = 0;
                 Thread.sleep(1000);
             } catch (Exception e) {
                 logIt(e);
@@ -181,12 +184,22 @@ public class RoutePutServer implements Runnable
         return client;
     }
     
-    public void everySecond() throws Exception
+    public void everySecond(int tick) throws Exception
     {
         RoutePutMessage jo = new RoutePutMessage();
         jo.put("channelStats", this.channelStats());
         jo.setChannel("routeputDebug");
         this.handleIncomingEvent(jo, null);
+        if (tick % settings.optInt("pingPongSecs", 20) == 0)
+        {
+            RoutePutServer.this.sessions.values().parallelStream().forEach((s) -> {
+                if (s instanceof RoutePutServerWebsocket)
+                {
+                    RoutePutServerWebsocket sws = (RoutePutServerWebsocket) s;
+                    sws.ping();
+                }
+            });
+        }
     }
     
     public void handleIncomingEvent(RoutePutMessage j, RoutePutSession session)

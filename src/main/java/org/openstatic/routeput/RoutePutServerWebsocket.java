@@ -520,6 +520,15 @@ public class RoutePutServerWebsocket implements RoutePutSession
         return jo;
     }
 
+    public void ping()
+    {
+        RoutePutMessage pingMessage = new RoutePutMessage();
+        pingMessage.setType("ping");
+        pingMessage.setChannel(this.getDefaultChannel());
+        pingMessage.put("timestamp", System.currentTimeMillis());
+        this.send(pingMessage);
+    }
+
     @Override
     public boolean isCollector()
     {

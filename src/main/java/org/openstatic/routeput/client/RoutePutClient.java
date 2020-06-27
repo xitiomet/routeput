@@ -47,7 +47,6 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private String remoteIP;
     private boolean collector;
     private Thread keepAliveThread;
-    private Thread reconnectThread;
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
     {
@@ -84,6 +83,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
         pingMessage.setChannel(this.getDefaultChannel());
+        pingMessage.put("timestamp", System.currentTimeMillis());
         this.send(pingMessage);
     }
 
@@ -219,7 +219,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setType("pong");
-            resp.put("timestamp", System.currentTimeMillis());
+            resp.put("pingTimestamp", j.optLong("timestamp", 0));
+            resp.put("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else {
             if (j.isType(RoutePutMessage.TYPE_BLOB))

@@ -106,6 +106,9 @@ class RouteputConnection
                             this.connectionId = jsonObject.connectionId;
                             this.properties = jsonObject.properties;
                             this.channelProperties = jsonObject.channelProperties;
+                        } else if (messageType == "ping") {
+                            var mm = {"__routeput": {"type": "pong"}};
+                            this.transmit(mm);
                         }
                     } else {
                         if (this.onmessage != undefined)
