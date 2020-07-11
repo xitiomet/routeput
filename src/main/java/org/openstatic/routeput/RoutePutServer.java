@@ -37,7 +37,8 @@ public class RoutePutServer implements Runnable
     protected static RoutePutServer instance;
     private Thread mainThread;
     private boolean keep_running;
-    private String hostname;
+    public String hostname;
+    public RoutePutChannel routeputDebug;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -93,6 +94,7 @@ public class RoutePutServer implements Runnable
             this.hostname = ip.getHostName();
         } catch (Exception e) {}
         this.settings = settings;
+        this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
         this.sessions = new LinkedHashMap<String, RoutePutSession>();
         httpServer = new Server(settings.optInt("port", 6144));
         BLOBManager.setRoot(new File(settings.optString("blobRoot", "./blob/")));
@@ -157,18 +159,13 @@ public class RoutePutServer implements Runnable
             @Override
             public void onConnect(RoutePutSession session, boolean local) 
             {
-                if (!local)
-                {
-                    RoutePutServer.this.sessions.put(session.getConnectionId(), session);
-                    session.addMessageListener(new RoutePutMessageListener() {
-                        @Override
-                        public void onMessage(RoutePutMessage message) {
-                            RoutePutServer.this.handleIncomingEvent(message, session);
-                        }
-                    });
-                } else {
-                    RoutePutServer.this.sessions.put(client.getConnectionId(), client);
-                }
+                RoutePutServer.this.sessions.put(session.getConnectionId(), session);
+                session.addMessageListener(new RoutePutMessageListener() {
+                    @Override
+                    public void onMessage(RoutePutMessage message) {
+                        RoutePutServer.this.handleIncomingEvent(message, session);
+                    }
+                });
             }
         
             @Override
@@ -207,6 +204,26 @@ public class RoutePutServer implements Runnable
         j.appendMetaArray("hops", this.hostname);
         String eventChannel = j.getChannel();
         RoutePutChannel channel = j.getRoutePutChannel();
+
+        if (j.hasMetaField("setChannelProperty"))
+        {
+            JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setChannelProperty");
+            for(String k : storeRequest.keySet())
+            {
+                String v = storeRequest.getString(k);
+                channel.setProperty(k, j.getPathValue(v));
+            }
+        }
+        if (j.hasMetaField("setSessionProperty") && session != null)
+        {
+            JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setSessionProperty");
+            for(String k : storeRequest.keySet())
+            {
+                String v = storeRequest.getString(k);
+                session.getProperties().put(k, j.getPathValue(v));
+            }
+        }
+        
         if (channel.hasCollector())
         {
             // This Channel has a connected collector
@@ -321,21 +338,32 @@ public class RoutePutServer implements Runnable
 
     public void broadcast(String eventChannel, RoutePutMessage jo)
     {
-        //System.err.println("Broadcast (" + eventChannel + "): " + jo.toString());
+        boolean showBroadcasts = (routeputDebug.getProperties().optBoolean("showBroadcasts", false) && !"routeputDebug".equals(eventChannel));
+        if (showBroadcasts)
+        {
+            System.err.println("Broadcast (" + eventChannel + "): " + jo.toString());
+        }
         this.sessions.values().parallelStream().forEach((s) ->
         {
             if (s.subscribedTo(eventChannel) && s.isRootConnection())
             {
+                if (showBroadcasts)
+                    System.err.println("   ----Root Connection " + s.getConnectionId());
                 try
                 {
                     // Never Send the event to the creator or its relay
                     if (!s.containsConnectionId(jo.getSourceId()))
                     {
                         s.send(jo);
+                        if (showBroadcasts)
+                            System.err.println("   --------SENT  " + s.getConnectionId());
                     }
                 } catch (Exception e) {
                     logIt(e);
                 }
+            } else {
+                if (showBroadcasts)
+                    System.err.println("   ----Skipping Connection " + s.getConnectionId());
             }
         });
     }

@@ -15,6 +15,12 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_PING = "ping";
     public static final String TYPE_PONG = "pong";
 
+    public RoutePutMessage(JSONObject jsonObject)
+    {
+        super(jsonObject.toString());
+        getRoutePutMeta();
+    }
+
     public RoutePutMessage(String json)
     {
         super(json);
@@ -44,6 +50,16 @@ public class RoutePutMessage extends JSONObject
         return this.getRoutePutMeta().has(fieldName);
     }
 
+    public void setMetaField(String fieldName, int val)
+    {
+        this.getRoutePutMeta().put(fieldName, val);
+    }
+
+    public void setMetaField(String fieldName, long val)
+    {
+        this.getRoutePutMeta().put(fieldName, val);
+    }
+
     public void setMetaField(String fieldName, boolean val)
     {
         this.getRoutePutMeta().put(fieldName, val);
@@ -70,13 +86,18 @@ public class RoutePutMessage extends JSONObject
     {
         Object ro = null;
         JSONObject pointer = this;
-        StringTokenizer st = new StringTokenizer(path, ".");
-        while(st.hasMoreTokens())
+        if (!"".equals(path) && path != null)
         {
-            String pathNext = st.nextToken();
-            ro = pointer.get(pathNext);
-            if (ro instanceof JSONObject)
-                pointer = (JSONObject) ro;
+            StringTokenizer st = new StringTokenizer(path, ".");
+            while(st.hasMoreTokens())
+            {
+                String pathNext = st.nextToken();
+                ro = pointer.get(pathNext);
+                if (ro instanceof JSONObject)
+                    pointer = (JSONObject) ro;
+            }
+        } else {
+            return this.toCleanJSONObject();
         }
         return ro;
     }
@@ -169,12 +190,43 @@ public class RoutePutMessage extends JSONObject
     public void setRequest(String requestType)
     {
         this.setType(TYPE_REQUEST);
-        this.put("request", requestType);
+        this.getRoutePutMeta().put("request", requestType);
     }
 
     public void setResponse(String responseType)
     {
         this.setType(TYPE_RESPONSE);
-        this.put("response", responseType);
+        this.getRoutePutMeta().put("response", responseType);
+    }
+
+    public String getRequest()
+    {
+        return this.getRoutePutMeta().optString("request","");
+    }
+
+    public String getResponse()
+    {
+        return this.getRoutePutMeta().optString("response","");
+    }
+
+    public JSONObject toCleanJSONObject()
+    {
+        JSONObject jo = new JSONObject();
+        try
+        {
+            JSONArray names = this.names();
+            for(int i = 0; i < names.length(); i++)
+            {
+                String name = names.getString(i);
+                if (!"__routeput".equals(name))
+                {
+                    Object value = this.get(name);
+                    jo.put(name, value);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+        return jo;
     }
 }

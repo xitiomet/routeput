@@ -42,25 +42,25 @@ class RouteputConnection
     {
         this.host = location.host;
         this.channel = channel;
+        
         this.wsProtocol = 'ws';
-        this.wsUrl = '';
-        this.reconnectTimeout = null;
-        this.connection  = null;
-        this.chunkBuffer = new Map();
-        this.properties = {};
-    }
-    
-    connect()
-    {
         var protocol = location.protocol;
         if (protocol.startsWith('https'))
         {
             this.wsProtocol = 'wss';
         }
-        
+
+        this.reconnectTimeout = null;
+        this.connection  = null;
+        this.chunkBuffer = new Map();
+        this.properties = {};
+        this.wsUrl = this.wsProtocol + '://' + this.host + '/channel/' + this.channel + '/';
+    }
+    
+    connect()
+    {   
         try
         {
-            this.wsUrl = this.wsProtocol + '://' + this.host + '/channel/' + this.channel + '/';
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
                 console.log("routeput connected - " + this.wsUrl);
@@ -90,22 +90,22 @@ class RouteputConnection
                         {
                             if (jsonObject.i == 1)
                             {
-                                this.chunkBuffer[jsonObject.name] = jsonObject.data;
+                                this.chunkBuffer[routePutMeta.name] = routePutMeta.data;
                             } else if (jsonObject.i == jsonObject.of) {
-                                this.chunkBuffer[jsonObject.name] += jsonObject.data;
+                                this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
                                 if (this.onblob != undefined)
                                 {
-                                    var blob = dataURItoBlob(this.chunkBuffer[jsonObject.name]);
-                                    this.onblob(jsonObject.name, blob);
-                                    this.chunkBuffer.delete(jsonObject.name);
+                                    var blob = dataURItoBlob(this.chunkBuffer[routePutMeta.name]);
+                                    this.onblob(routePutMeta.name, blob);
+                                    this.chunkBuffer.delete(routePutMeta.name);
                                 }
                             } else {
-                                this.chunkBuffer[jsonObject.name] += jsonObject.data;
+                                this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
                             }
                         } else if (messageType == "connectionId") {
-                            this.connectionId = jsonObject.connectionId;
-                            this.properties = jsonObject.properties;
-                            this.channelProperties = jsonObject.channelProperties;
+                            this.connectionId = routePutMeta.connectionId;
+                            this.properties = routePutMeta.properties;
+                            this.channelProperties = routePutMeta.channelProperties;
                         } else if (messageType == "ping") {
                             var mm = {"__routeput": {"type": "pong"}};
                             this.transmit(mm);
@@ -141,7 +141,7 @@ class RouteputConnection
             var sz = chunks.length;
             for (let i = 0; i < sz; i++)
             {
-                var mm = {"__routeput": {"type": "blob"}, "name": name ,"i": i+1, "of": sz, "data": chunks[i]};
+                var mm = {"__routeput": {"type": "blob", "name": name ,"i": i+1, "of": sz, "data": chunks[i]}};
                 this.transmit(mm);
             }
         };
@@ -149,19 +149,19 @@ class RouteputConnection
 
     setSessionProperty(k, v)
     {
-        var mm = {"__routeput": {"type": "request"}, "request": "setSessionProperty", "key": k, "value": v};
+        var mm = {"__routeput": {"type": "request", "request": "setSessionProperty", "key": k, "value": v}};
         this.transmit(mm);
     }
     
     setChannelProperty(k, v)
     {
-        var mm = {"__routeput": {"type": "request"}, "request": "setChannelProperty", "key": k, "value": v};
+        var mm = {"__routeput": {"type": "request", "request": "setChannelProperty", "key": k, "value": v}};
         this.transmit(mm);
     }
 
     requestBlob(name)
     {
-        var mm = {"__routeput": {"type": "blob"}, "name": name};
+        var mm = {"__routeput": {"type": "blob", "name": name}};
         this.transmit(mm);
     }
 
@@ -179,11 +179,11 @@ class RouteputConnection
     
     subscribe(channel)
     {
-        this.transmit({"__routeput": {"type": "request"}, "request":"subscribe", "channel": channel});
+        this.transmit({"__routeput": {"type": "request", "request":"subscribe", "channel": channel}});
     }
     
     unsubscribe(channel)
     {
-        this.transmit({"__routeput": {"type": "request"}, "request":"subscribe", "channel": channel});
+        this.transmit({"__routeput": {"type": "request", "request":"subscribe", "channel": channel}});
     }
 }

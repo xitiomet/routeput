@@ -6,6 +6,7 @@ import java.io.FileOutputStream;
 import java.util.HashMap;
 
 import org.eclipse.jetty.http.MimeTypes;
+import org.json.JSONObject;
 
 public class BLOBManager 
 {
@@ -30,11 +31,12 @@ public class BLOBManager
     public static void handleBlobData(RoutePutMessage jo)
     {
         BLOBManager.init();
-        if (jo.has("i") && jo.has("of") && jo.has("data") && jo.has("name"))
+        if (jo.hasMetaField("i") && jo.hasMetaField("of") && jo.hasMetaField("data") && jo.hasMetaField("name"))
         {
-            int i = jo.optInt("i", 0);
-            int of = jo.optInt("of", 0);
-            String name = jo.optString("name", "");
+            JSONObject rpm = jo.getRoutePutMeta();
+            int i = rpm.optInt("i", 0);
+            int of = rpm.optInt("of", 0);
+            String name = rpm.optString("name", "");
             StringBuffer sb;
             if (i == 1)
             {
@@ -43,7 +45,7 @@ public class BLOBManager
             } else {
                 sb = BLOBManager.blobStorage.get(name);
             }
-            sb.append(jo.optString("data",""));
+            sb.append(rpm.optString("data",""));
             if (i == of)
             {
                 BLOBManager.saveBase64Blob(name, sb);
@@ -89,14 +91,14 @@ public class BLOBManager
             {
                 RoutePutMessage mm = new RoutePutMessage();
                 mm.setType("blob");
-                mm.put("name", name);
-                mm.put("i", i+1);
-                mm.put("of", numChunks);
+                mm.setMetaField("name", name);
+                mm.setMetaField("i", i+1);
+                mm.setMetaField("of", numChunks);
                 int start = i*chunkSize;
                 int end = start + chunkSize;
                 if (end > size)
                     end = size;
-                mm.put("data", sb.substring(start,end));
+                mm.setMetaField("data", sb.substring(start,end));
                 session.send(mm);
             }
         });

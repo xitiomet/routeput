@@ -117,7 +117,7 @@ public class RoutePutMain
                     System.err.println("Local client connected");
                 }
             }
-        
+            
             @Override
             public void onClose(RoutePutSession session, boolean local) {
                 if (!local)
@@ -126,6 +126,13 @@ public class RoutePutMain
                 } else {
                     System.err.println("Local client disconnected");
                 }
+            }
+        });
+        rpc.addMessageListener(new RoutePutMessageListener(){
+                    
+            @Override
+            public void onMessage(RoutePutMessage message) {
+                System.err.println("CLIENT Received " + message.toString());
             }
         });
         rpc.setProperty("details", "random quote bot for testing");

@@ -30,30 +30,12 @@ public class RoutePutRemoteSession implements RoutePutSession
     {
         if (this.connectionId.equals(m.getSourceId()))
         {
-            if (m.hasMetaField("setSessionProperty"))
-            {
-                JSONObject storeRequest = m.getRoutePutMeta().optJSONObject("setSessionProperty");
-                for(String k : storeRequest.keySet())
-                {
-                    String v = storeRequest.getString(k);
-                    this.properties.put(k, m.getPathValue(v));
-                }
-            }
-            if (m.hasMetaField("setChannelProperty"))
-            {
-                JSONObject storeRequest = m.getRoutePutMeta().optJSONObject("setChannelProperty");
-                for(String k : storeRequest.keySet())
-                {
-                    String v = storeRequest.getString(k);
-                    this.defaultChannel.setProperty(k, m.getPathValue(v));
-                }
-            }
             if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
             {
-                this.connected = m.optBoolean("connected", false);
-                this.upgradeHeaders = m.optJSONObject("upgradeHeaders");
-                this.properties = m.optJSONObject("properties");
-                this.remoteIP = m.optString("remoteIP", null);
+                this.connected = m.getRoutePutMeta().optBoolean("connected", false);
+                this.upgradeHeaders = m.getRoutePutMeta().optJSONObject("upgradeHeaders");
+                this.properties = m.getRoutePutMeta().optJSONObject("properties");
+                this.remoteIP = m.getRoutePutMeta().optString("remoteIP", null);
                 this.defaultChannel = m.getRoutePutChannel();
                 if (this.connected)
                 {

@@ -75,6 +75,8 @@ public class RoutePutChannel
             c.msgRxPerSecond = c.messagesRx;
             c.messagesRx = 0;
         });
+        long idleTimeout = 600l * 1000l;
+        RoutePutChannel.channels.values().removeIf((c) -> { return (c.getIdle() > idleTimeout); });
     }
 
     public int getMessagesTxPerSecond()
@@ -95,11 +97,13 @@ public class RoutePutChannel
     public void bumpTx()
     {
         this.messagesTx++;
+        this.touch();
     }
     
     public void bumpRx()
     {
         this.messagesRx++;
+        this.touch();
     }
 
     public void touch()
@@ -157,8 +161,8 @@ public class RoutePutChannel
                 jo.setSourceId(m.getConnectionId());
                 jo.setChannel(this);
                 jo.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
-                jo.put("connected", true);
-                jo.put("properties", m.getProperties());
+                jo.setMetaField("connected", true);
+                jo.setMetaField("properties", m.getProperties());
                 session.send(jo);
             }
         });
@@ -187,6 +191,11 @@ public class RoutePutChannel
     public void setProperty(String key, Object value)
     {
         this.properties.put(key, value);
+    }
+
+    public void removeProperty(String key)
+    {
+        this.properties.remove(key);
     }
 
     public JSONObject getProperties()
@@ -239,11 +248,17 @@ public class RoutePutChannel
         return this.name;
     }
 
+    public long getIdle()
+    {
+        return System.currentTimeMillis() - this.lastAccess;
+    }
+
     public JSONObject toJSONObject()
     {
         JSONObject jo = new JSONObject();
         jo.put("name", this.name);
         jo.put("lastAccess", this.lastAccess);
+        jo.put("idle", this.getIdle());
         jo.put("members", this.membersAsJSONObject());
         jo.put("memberCount", this.memberCount());
         jo.put("properties", this.getProperties());

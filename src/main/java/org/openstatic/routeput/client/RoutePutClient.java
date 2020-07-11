@@ -46,6 +46,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private JSONObject properties;
     private String remoteIP;
     private boolean collector;
+    private boolean enableRemoteSessions;
     private Thread keepAliveThread;
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
@@ -56,6 +57,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.channel = channel;
         this.websocketUri = websocketUri;
         this.collector = false;
+        this.enableRemoteSessions = false;
         this.stayConnected = true;
         this.properties = new JSONObject();
     }
@@ -83,8 +85,16 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
         pingMessage.setChannel(this.getDefaultChannel());
-        pingMessage.put("timestamp", System.currentTimeMillis());
+        pingMessage.setMetaField("timestamp", System.currentTimeMillis());
         this.send(pingMessage);
+    }
+
+    /** Should remote sessions be managed seperately?
+     *  Must be on to use addSessionListeter
+     * **/
+    public void setRemoteSessions(boolean v)
+    {
+        this.enableRemoteSessions = v;
     }
 
     public void setAutoReconnect(boolean v)
@@ -195,12 +205,12 @@ public class RoutePutClient implements RoutePutSession, Runnable
     {
         if (j.isType(RoutePutMessage.TYPE_CONNECTION_ID))
         {
-            this.connectionId = j.optString("connectionId", null);
-            this.upgradeHeaders = j.optJSONObject("upgradeHeaders");
-            this.remoteIP = j.optString("remoteIP", null);
-            if (j.has("properties"))
+            this.connectionId = j.getRoutePutMeta().optString("connectionId", null);
+            this.upgradeHeaders = j.getRoutePutMeta().optJSONObject("upgradeHeaders");
+            this.remoteIP = j.getRoutePutMeta().optString("remoteIP", null);
+            if (j.hasMetaField("properties"))
             {
-                this.properties = j.optJSONObject("properties");
+                this.properties = j.getRoutePutMeta().optJSONObject("properties");
             }
             if (this.collector)
             {
@@ -219,8 +229,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setType("pong");
-            resp.put("pingTimestamp", j.optLong("timestamp", 0));
-            resp.put("pongTimestamp", System.currentTimeMillis());
+            resp.setMetaField("pingTimestamp", j.optLong("timestamp", 0));
+            resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else {
             if (j.isType(RoutePutMessage.TYPE_BLOB))
@@ -228,31 +238,41 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 BLOBManager.handleBlobData(j);
             }
             String sourceId = j.getSourceId();
-            if (sourceId != null)
+            if (sourceId != null && enableRemoteSessions)
             {
                 RoutePutRemoteSession remoteSession = null;
                 if (this.sessions.containsKey(sourceId))
                 {
                     remoteSession = this.sessions.get(sourceId);
-                } else {
-                    remoteSession = new RoutePutRemoteSession(this, sourceId);
-                    this.sessions.put(sourceId, remoteSession);
                 }
-                remoteSession.handleMessage(j);
                 if (j.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
                 {
-                    boolean sourceConnected = j.optBoolean("connected", false);
+                    boolean sourceConnected = j.getRoutePutMeta().optBoolean("connected", false);
                     if (sourceConnected)
                     {
+                        if (remoteSession == null)
+                        {
+                            remoteSession = new RoutePutRemoteSession(this, sourceId);
+                            this.sessions.put(sourceId, remoteSession);
+                        }
+                        remoteSession.handleMessage(j);
                         fireSessionConnected(remoteSession, false);
-                    } else {
+                    } else if (remoteSession != null) {
+                        remoteSession.handleMessage(j);
                         fireSessionClosed(remoteSession, false);
                     }
+                } else if (remoteSession != null) {
+                    remoteSession.handleMessage(j);
+                } else {
+                    RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
+                        r.onMessage(j);
+                    });
                 }
+            } else {
+                RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
+                    r.onMessage(j);
+                });
             }
-            RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
-                r.onMessage(j);
-            });
         }
     }
 
@@ -286,6 +306,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void addSessionListener(RoutePutSessionListener r)
     {
+        this.enableRemoteSessions = true;
         if (!this.sessionListeners.contains(r))
         {
             this.sessionListeners.add(r);
@@ -353,10 +374,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 //System.out.println(RoutePutClient.this.session.getRemoteAddress().getHostString() + " connected!");
                 RoutePutMessage connectionIdMessage = new RoutePutMessage();
                 connectionIdMessage.setType(RoutePutMessage.TYPE_CONNECTION_ID);
-                connectionIdMessage.put("connectionId", RoutePutClient.this.connectionId);
-                connectionIdMessage.put("collector", RoutePutClient.this.collector);
-                connectionIdMessage.put("channel", RoutePutClient.this.channel.getName());
-                connectionIdMessage.put("properties", RoutePutClient.this.properties);
+                connectionIdMessage.setMetaField("connectionId", RoutePutClient.this.connectionId);
+                connectionIdMessage.setMetaField("collector", RoutePutClient.this.collector);
+                connectionIdMessage.setMetaField("channel", RoutePutClient.this.channel.getName());
+                connectionIdMessage.setMetaField("properties", RoutePutClient.this.properties);
                 RoutePutClient.this.send(connectionIdMessage);
             } else {
                 //System.err.println("Not an instance of WebSocketSession");
@@ -455,8 +476,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         {
             RoutePutMessage setPropertyMessage = new RoutePutMessage();
             setPropertyMessage.setRequest("setProperty");
-            setPropertyMessage.put("key", key);
-            setPropertyMessage.put("value", value);
+            setPropertyMessage.setMetaField("key", key);
+            setPropertyMessage.setMetaField("value", value);
             this.send(setPropertyMessage);
         }
     }
