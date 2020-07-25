@@ -23,7 +23,9 @@ public class RoutePutMain
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            options.addOption(new Option("x", "client", true, "Test Client Mode"));
+            options.addOption(new Option("x", "client", true, "Quote Bot Client Mode"));
+            options.addOption(new Option("y", "clienty", true, "Test Client Mode"));
+            options.addOption(new Option("m", "message", true, "Set Message for test client"));
 
             Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server");
             upstreamOption.setOptionalArg(true);
@@ -68,7 +70,12 @@ public class RoutePutMain
             {
                 channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
             }
-            
+
+            if (cmd.hasOption("m"))
+            {
+                settings.put("message", cmd.getOptionValue('m',"Hello World!"));
+            }
+
             if (cmd.hasOption("p"))
             {
                 int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
@@ -79,6 +86,13 @@ public class RoutePutMain
             {
                 if (channel == null) channel = RoutePutChannel.getChannel("lobby");
                 clientTest(cmd.getOptionValue('x',"openstatic.org"), settings.optInt("port", 6144), channel);
+                System.exit(0);
+            }
+
+            if (cmd.hasOption("y"))
+            {
+                if (channel == null) channel = RoutePutChannel.getChannel("LoRa");
+                clientTest2(cmd.getOptionValue('y',"openstatic.org"), settings.optInt("port", 6144), channel, settings.optString("message", "Hello World!"));
                 System.exit(0);
             }
             
@@ -150,6 +164,65 @@ public class RoutePutMain
                 System.err.println("Sending: " + msg.toString());
                 rpc.send(msg);
                 Thread.sleep(10000);
+            }
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+    }
+
+    public static void clientTest2(String host, int port, RoutePutChannel channel, String message)
+    {
+        RoutePutClient rpc = new RoutePutClient(channel, "ws://" + host + ":" + String.valueOf(port) + "/channel/");
+        rpc.addSessionListener(new RoutePutSessionListener(){
+        
+            @Override
+            public void onConnect(RoutePutSession session, boolean local) {
+                if (!local)
+                {
+                    System.err.println("Remote Session Connected: " + session.getConnectionId());
+                    session.addMessageListener(new RoutePutMessageListener(){
+                    
+                        @Override
+                        public void onMessage(RoutePutMessage message) {
+                            System.err.println(session.getConnectionId() + " Received " + message.toString());
+                        }
+                    });
+                } else {
+                    System.err.println("Local client connected");
+                }
+            }
+            
+            @Override
+            public void onClose(RoutePutSession session, boolean local) {
+                if (!local)
+                {
+                    System.err.println("Remote Session Disconnected: " + session.getConnectionId());
+                } else {
+                    System.err.println("Local client disconnected");
+                }
+            }
+        });
+        rpc.addMessageListener(new RoutePutMessageListener(){
+                    
+            @Override
+            public void onMessage(RoutePutMessage message) {
+                System.err.println("CLIENT Received " + message.toString());
+            }
+        });
+        rpc.connect();
+        //rpc.becomeCollector();
+        try
+        {
+            while(rpc.isConnected())
+            {
+                RoutePutMessage msg = new RoutePutMessage();
+                msg.setChannel(channel);
+                msg.setSourceId(rpc.getConnectionId());
+                msg.put("event","chat");
+                msg.put("text", message);
+                System.err.println("Sending: " + msg.toString());
+                rpc.send(msg);
+                Thread.sleep(2000);
             }
         } catch (Exception e) {
             e.printStackTrace(System.err);

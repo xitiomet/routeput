@@ -64,10 +64,6 @@ class RouteputConnection
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
                 console.log("routeput connected - " + this.wsUrl);
-                if (this.onconnect != undefined)
-                {
-                    this.onconnect();
-                }
             };
             
             this.connection.onerror = (error) => {
@@ -106,6 +102,10 @@ class RouteputConnection
                             this.connectionId = routePutMeta.connectionId;
                             this.properties = routePutMeta.properties;
                             this.channelProperties = routePutMeta.channelProperties;
+                            if (this.onconnect != undefined)
+                            {
+                                this.onconnect();
+                            }
                         } else if (messageType == "ping") {
                             var mm = {"__routeput": {"type": "pong"}};
                             this.transmit(mm);
