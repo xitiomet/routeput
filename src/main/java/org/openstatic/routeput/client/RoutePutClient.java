@@ -229,7 +229,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setType("pong");
-            resp.setMetaField("pingTimestamp", j.optLong("timestamp", 0));
+            resp.setMetaField("pingTimestamp", j.getRoutePutMeta().optLong("timestamp", 0));
             resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else {

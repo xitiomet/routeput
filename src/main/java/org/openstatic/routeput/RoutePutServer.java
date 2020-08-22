@@ -204,7 +204,12 @@ public class RoutePutServer implements Runnable
         j.appendMetaArray("hops", this.hostname);
         String eventChannel = j.getChannel();
         RoutePutChannel channel = j.getRoutePutChannel();
-
+        if (j.hasMetaField("rssi"))
+        {
+            int rssi = j.getRoutePutMeta().optInt("rssi",-120);
+            channel.setProperty("rssi", rssi);
+            session.getProperties().put("rssi", rssi);
+        }
         if (j.hasMetaField("setChannelProperty"))
         {
             JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setChannelProperty");
@@ -222,6 +227,10 @@ public class RoutePutServer implements Runnable
                 String v = storeRequest.getString(k);
                 session.getProperties().put(k, j.getPathValue(v));
             }
+        }
+        if (j.isType(RoutePutMessage.TYPE_ERROR))
+        {
+            RoutePutServer.logIt("<b style=\"color: #8b0000;\">" + eventChannel + " ERROR: " + j.getRoutePutMeta().optString("message","") + "</b>");
         }
         
         if (channel.hasCollector())
@@ -302,6 +311,14 @@ public class RoutePutServer implements Runnable
             js.put("rx", chan.getMessagesRxPerSecond());
             js.put("tx", chan.getMessagesTxPerSecond());
             js.put("members", chan.memberCount());
+            if (chan.getProperties().has("rssi"))
+            {
+                int signal = 0;
+                signal = 120 - Math.abs(chan.getProperties().optInt("rssi", -120));
+                if (signal < 0) signal = 0;
+                if (signal > 100) signal = 100;
+                js.put("signal", signal);
+            }
             if (chan.hasCollector())
                 js.put("collector", chan.getCollector().getConnectionId());
             
@@ -391,7 +408,10 @@ public class RoutePutServer implements Runnable
             PrintStream ps = new PrintStream(baos);
             e.printStackTrace(ps);
             logIt(baos.toString());
-        } catch (Exception e2) {}
+        } catch (Exception e2) {
+            System.err.println("Logging Exception");
+            e2.printStackTrace(System.err);
+        }
     }
 
     

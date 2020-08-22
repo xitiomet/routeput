@@ -3,7 +3,11 @@
   <script src="routeput.js"></script>
   <script src="index.js"></script>
   <style type="text/css">
-  .radio-toolbar {
+    progress::-webkit-progress-bar {background-color: #fff; width: 100%;}
+    progress::-webkit-progress-value {background-color: green !important;}
+    progress {border: 1px solid black;}
+
+   .radio-toolbar {
     margin: 5px;
     }
 
@@ -19,7 +23,7 @@
         padding: 5px 5px;
         font-family: sans-serif, Arial;
         font-size: 16px;
-        border: 2px solid #444;
+        border: 2px solid rgb(145, 139, 139);
         border-radius: 4px;
     }
 
@@ -51,7 +55,7 @@
 </div>
 <div id="channelStats" style="position: fixed; right: 20px; top: 60px; border: 1px black dotted; background-color: white;">
     <table id="channelStatsTable" style="text-align: center;" cellpadding="5" cellspacing="0">
-        <tr style="background-color: #CCCCCC;"><th>Channel</th><th>Members</th><th>Rx/s</th><th>Tx/s</th></tr>
+        <tr style="background-color: #CCCCCC;"><th>Channel</th><th></th><th>Members</th><th>Rx/s</th><th>Tx/s</th></tr>
     </table>
 </div>
 <div id="console" style="width:99%; padding: 50px 5px 5px 5px; font-family: monospace; font-size: 10px;">

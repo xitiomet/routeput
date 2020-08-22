@@ -1,7 +1,26 @@
 package org.openstatic.routeput;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.nio.Buffer;
+
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.SourceDataLine;
+
 import org.openstatic.routeput.client.*;
+import org.openstatic.routeput.io.RoutePutInputStream;
+import org.openstatic.routeput.io.RoutePutOutputStream;
 import org.apache.commons.cli.*;
 import org.json.*;
 
@@ -23,11 +42,12 @@ public class RoutePutMain
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            options.addOption(new Option("x", "client", true, "Quote Bot Client Mode"));
-            options.addOption(new Option("y", "clienty", true, "Test Client Mode"));
+            options.addOption(new Option("x", "client", true, "Target URL to connect in test client"));
             options.addOption(new Option("m", "message", true, "Set Message for test client"));
+            options.addOption(new Option("t", "test", true, "run named test mode"));
 
-            Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server");
+
+            Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server URL");
             upstreamOption.setOptionalArg(true);
             options.addOption(upstreamOption);
             
@@ -66,6 +86,8 @@ public class RoutePutMain
             }
 
             RoutePutChannel channel = null;
+            String xTarget = "wss://openstatic.org/channel/";
+
             if (cmd.hasOption("n"))
             {
                 channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
@@ -84,16 +106,30 @@ public class RoutePutMain
 
             if (cmd.hasOption("x"))
             {
-                if (channel == null) channel = RoutePutChannel.getChannel("lobby");
-                clientTest(cmd.getOptionValue('x',"openstatic.org"), settings.optInt("port", 6144), channel);
-                System.exit(0);
+                xTarget = cmd.getOptionValue('x',"wss://openstatic.org/channel/");
             }
 
-            if (cmd.hasOption("y"))
+            if (cmd.hasOption("t"))
             {
-                if (channel == null) channel = RoutePutChannel.getChannel("LoRa");
-                clientTest2(cmd.getOptionValue('y',"openstatic.org"), settings.optInt("port", 6144), channel, settings.optString("message", "Hello World!"));
-                System.exit(0);
+                String test = cmd.getOptionValue('t',"binary_tx");
+                if ("binary_tx".equals(test))
+                {
+                    if (channel == null) channel = RoutePutChannel.getChannel("binary");
+                    binaryTx(xTarget, channel);
+                    System.exit(0);
+                } else if ("binary_rx".equals(test)) {
+                    if (channel == null) channel = RoutePutChannel.getChannel("binary");
+                    binaryRx(xTarget, channel);
+                    System.exit(0);
+                } else if ("quote".equals(test)) {
+                    if (channel == null) channel = RoutePutChannel.getChannel("lobby");
+                    clientTest(xTarget, channel);
+                    System.exit(0);
+                } else if ("message".equals(test)) {
+                    if (channel == null) channel = RoutePutChannel.getChannel("LoRa");
+                    clientTest2(xTarget, channel, settings.optString("message", "Hello World!"));
+                    System.exit(0);
+                }
             }
             
             RoutePutServer rps = new RoutePutServer(settings);
@@ -110,9 +146,102 @@ public class RoutePutMain
         
     }
 
-    public static void clientTest(String host, int port, RoutePutChannel channel)
+    public static void binaryTx(String url, RoutePutChannel channel)
     {
-        RoutePutClient rpc = new RoutePutClient(channel, "ws://" + host + ":" + String.valueOf(port) + "/channel/");
+        RoutePutClient rpc = new RoutePutClient(channel, url);
+        RoutePutOutputStream rpos = new RoutePutOutputStream(rpc);
+        //PrintWriter pw = new PrintWriter(rpos);
+        //RandomQuotes quotes = new RandomQuotes();
+        rpc.connect();
+        //int qid = 0;
+                
+        while(true)
+        {
+            try
+            {
+                File file = new File("sof.wav");
+                AudioFileFormat aff = AudioSystem.getAudioFileFormat(file);
+                AudioFormat af =  aff.getFormat();
+                System.err.println("Sample Rate: " + String.valueOf(af.getSampleRate()));
+                System.err.println("Sample Bits: " + String.valueOf(af.getSampleSizeInBits()));
+                System.err.println("Channels: " + String.valueOf(af.getChannels()));
+                System.err.println("Encoding: " + af.getEncoding().toString());
+                System.err.println("Frame Size: " + String.valueOf(af.getFrameSize()));
+                if (af.isBigEndian())
+                    System.err.println("Big-Endian");
+                else
+                    System.err.println("Little-Endian");
+                FileInputStream in = new FileInputStream(file);
+                AudioInputStream aInputStream = new AudioInputStream(in, af, aff.getFrameLength());
+                int count;
+                byte buffer[] = new byte[2048];
+                while ((count = aInputStream.read(buffer)) != -1)
+                {
+                    rpos.write(buffer, 0, count);
+                    Thread.sleep(20);
+                }
+                in.close();
+                System.err.println("Streamed sof.wav");
+            } catch (Exception e) {
+                e.printStackTrace(System.err);
+            }
+        }
+    }
+
+    public static void binaryRx(String url, RoutePutChannel channel) throws Exception
+    {
+        RoutePutClient rpc = new RoutePutClient(channel, url);
+        rpc.connect();
+
+        RoutePutInputStream rpis = new RoutePutInputStream();
+        //BufferedInputStream bis = new BufferedInputStream(rpis);
+        rpc.addMessageListener(rpis);
+
+        SourceDataLine _speaker;
+        AudioFormat _format = new AudioFormat(
+            44100,  // Sample Rate
+            16,     // Size of SampleBits
+            1,      // Number of Channels
+            true,   // Is Signed?
+            false   // Is Big Endian?
+        );
+
+        //  creating the DataLine Info for the speaker format
+        DataLine.Info speakerInfo = new DataLine.Info(SourceDataLine.class, _format);
+
+        //  getting the mixer for the speaker
+        _speaker = (SourceDataLine) AudioSystem.getLine(speakerInfo);
+        _speaker.open(_format);
+        _speaker.start();
+
+        byte[] data = new byte[32];
+        while(true)
+        {
+            try
+            {
+                if (rpis.available() > 128)
+                {
+                    //  count of the data bytes read 
+                    int readCount = rpis.read(data, 0, data.length);
+
+                    if(readCount > 0)
+                    {
+                        _speaker.write(data, 0, readCount);
+                    }
+                } else {
+                    //System.err.println("Waiting for data....");
+                    Thread.sleep(1);
+                }
+                
+            } catch (Exception e) {
+                e.printStackTrace(System.err);
+            }
+        }
+    }
+
+    public static void clientTest(String url, RoutePutChannel channel)
+    {
+        RoutePutClient rpc = new RoutePutClient(channel, url);
         rpc.addSessionListener(new RoutePutSessionListener(){
         
             @Override
@@ -161,6 +290,7 @@ public class RoutePutMain
                 msg.put("event","chat");
                 msg.put("text", quotes.nextQuote());
                 msg.put("username", "Quote Of The Day");
+                msg.setChannel(channel);
                 System.err.println("Sending: " + msg.toString());
                 rpc.send(msg);
                 Thread.sleep(10000);
@@ -170,9 +300,9 @@ public class RoutePutMain
         }
     }
 
-    public static void clientTest2(String host, int port, RoutePutChannel channel, String message)
+    public static void clientTest2(String url, RoutePutChannel channel, String message)
     {
-        RoutePutClient rpc = new RoutePutClient(channel, "ws://" + host + ":" + String.valueOf(port) + "/channel/");
+        RoutePutClient rpc = new RoutePutClient(channel, url);
         rpc.addSessionListener(new RoutePutSessionListener(){
         
             @Override

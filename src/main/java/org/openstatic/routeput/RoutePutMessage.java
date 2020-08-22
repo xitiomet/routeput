@@ -14,6 +14,8 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_RESPONSE = "response";
     public static final String TYPE_PING = "ping";
     public static final String TYPE_PONG = "pong";
+    public static final String TYPE_ERROR = "error";
+    public static final String TYPE_BINARY_STREAM = "binary";
 
     public RoutePutMessage(JSONObject jsonObject)
     {

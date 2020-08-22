@@ -110,7 +110,7 @@ public class ApiServlet extends HttpServlet
                     }
                 }
                 post.setSourceIdIfNull(sourceId);
-                RoutePutServer.logIt("API: " + target + "\n" + post.toString());
+                //RoutePutServer.logIt("API: " + target + "\n" + post.toString());
                 post.setMetaField("apiPost", true);
                 RoutePutChannel chan = post.getRoutePutChannel();
                 chan.bumpRx();
@@ -139,7 +139,7 @@ public class ApiServlet extends HttpServlet
                         RoutePutMessage rMsg = new RoutePutMessage((JSONObject) msg);
                         rMsg.setChannelIfNull(finalChannel);
                         rMsg.setSourceIdIfNull(finalSourceId);
-                        RoutePutServer.logIt("API: " + target + "\n" + rMsg.toString());
+                        //RoutePutServer.logIt("API: " + target + "\n" + rMsg.toString());
                         rMsg.setMetaField("apiBatch", true);
                         RoutePutChannel chan = rMsg.getRoutePutChannel();
                         chan.bumpRx();
@@ -162,7 +162,7 @@ public class ApiServlet extends HttpServlet
         httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo();
         //System.err.println("Path: " + target);
-        RoutePutServer.logIt("API Request: " + target);
+        //RoutePutServer.logIt("API Request: " + target);
         JSONObject response = new JSONObject();
         try
         {

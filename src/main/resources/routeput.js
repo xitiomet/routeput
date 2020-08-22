@@ -38,6 +38,7 @@ class RouteputConnection
     onmessage;
     onblob;
     onconnect;
+    onresponse;
     constructor(channel)
     {
         this.host = location.host;
@@ -107,8 +108,13 @@ class RouteputConnection
                                 this.onconnect();
                             }
                         } else if (messageType == "ping") {
-                            var mm = {"__routeput": {"type": "pong"}};
+                            var mm = {"__routeput": {"type": "pong", "pingTimestamp": routePutMeta.timestamp}};
                             this.transmit(mm);
+                        } else if (messageType == "response") {
+                            if (this.onresponse != undefined)
+                            {
+                                this.onresponse(routePutMeta.response, routePutMeta);
+                            }
                         }
                     } else {
                         if (this.onmessage != undefined)

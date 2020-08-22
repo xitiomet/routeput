@@ -66,6 +66,7 @@ routeput.onmessage = function (jsonObject) {
         {
             //console.log(key);
             var value = channelStats[key];
+            var icons = "";
             //console.log(value)
             var channelTR = document.getElementById(key + "TR");
             if (channelTR == undefined)
@@ -74,7 +75,11 @@ routeput.onmessage = function (jsonObject) {
                 channelTR.id = key + "TR";
                 channelStatsTable.appendChild(channelTR);
             }
-            channelTR.innerHTML = "<td>" + key + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
+            if (value.hasOwnProperty("signal"))
+            {
+                icons += "<img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.signal + "\" max=\"100\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress>";
+            }
+            channelTR.innerHTML = "<td>" + key + "</td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
         }
     }
 };

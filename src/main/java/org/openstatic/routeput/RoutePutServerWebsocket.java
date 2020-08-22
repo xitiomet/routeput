@@ -39,6 +39,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private boolean collector = false;
     private boolean connected;
     private boolean handshakeComplete = false;
+    private long pingTime;
+    private long rxPackets;
+    private long txPackets;
+    private RoutePutMessage lastRxPacket;
+    private RoutePutMessage lastTxPacket;
 
     protected void handleMessage(RoutePutMessage jo)
     {
@@ -54,7 +59,12 @@ public class RoutePutServerWebsocket implements RoutePutSession
             resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
-            // Absorb
+            long cts = System.currentTimeMillis();
+            JSONObject meta = jo.getRoutePutMeta();
+            if (meta.has("pingTimestamp"))
+            {
+                this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
+            }
         } else {
             if (jo.isType(RoutePutMessage.TYPE_BLOB))
             {
@@ -73,9 +83,18 @@ public class RoutePutServerWebsocket implements RoutePutSession
         JSONObject rpm = jo.getRoutePutMeta();
         if (routeputCommand.equals("subscribe"))
         {
-            this.addChannel(jo.optString("channel", null));
+            RoutePutChannel chan = RoutePutChannel.getChannel(rpm.optString("channel", null));
+            this.addChannel(chan.getName());
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("subscribe");
+            resp.setChannel(chan);
+            resp.setMetaField("channelProperties", chan.getProperties());
+            this.send(resp);
         } else if (routeputCommand.equals("unsubscribe")) {
-            this.removeChannel(jo.optString("channel", null));
+            this.removeChannel(rpm.optString("channel", null));
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("unsubscribe");
+            this.send(resp);
         } else if (routeputCommand.equals("becomeCollector")) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setResponse("becomeCollector");
@@ -182,7 +201,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
         try
         {
             RoutePutMessage jo = new RoutePutMessage(message);
-
+            this.rxPackets++;
+            this.lastRxPacket = jo;
             if (this.handshakeComplete)
             {
                 // Packets need a channel set if none
@@ -322,6 +342,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
     @OnWebSocketConnect
     public void onConnect(Session session) throws IOException
     {
+        this.rxPackets = 0;
+        this.txPackets = 0;
+        this.pingTime = -1;
         this.handshakeComplete = false;
         this.connected = true;
         this.collector = false;
@@ -452,6 +475,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
             jo.setChannelIfNull(this.getDefaultChannel());
             jo.getRoutePutChannel().bumpTx();
             this.websocketSession.getRemote().sendStringByFuture(jo.toString());
+            this.txPackets++;
+            this.lastTxPacket = jo;
         }
     }
 
@@ -503,6 +528,23 @@ public class RoutePutServerWebsocket implements RoutePutSession
         jo.put("defaultChannel", this.defaultChannel.getName());
         jo.put("socketPath", this.path);
         jo.put("channels", new JSONArray(this.channels));
+        if (this.pingTime != -1)
+        {
+            jo.put("ping", this.pingTime);
+        }
+        if (this.rxPackets > 0)
+        {
+            jo.put("rx", this.rxPackets);
+        }
+        if (this.txPackets > 0)
+        {
+            jo.put("tx", this.txPackets);
+        }
+        if (RoutePutServer.instance.settings.optBoolean("showLastTxRx" , false))
+        {
+            jo.put("lastTx", this.lastTxPacket);
+            jo.put("lastRx", this.lastRxPacket);
+        }
         //jo.put("upgradeHeaders", this.httpHeaders);
         jo.put("properties", this.properties);
         jo.put("remoteIP", this.remoteIP);
