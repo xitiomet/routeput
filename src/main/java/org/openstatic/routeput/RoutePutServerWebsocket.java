@@ -74,6 +74,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
             this.listeners.parallelStream().forEach((r) -> {
                 r.onMessage(jo);
             });
+            if (jo.optMetaField("echo",false) && this.websocketSession != null)
+            {
+                jo.removeMetaField("echo");
+                this.websocketSession.getRemote().sendStringByFuture(jo.toString());
+            }
         }
     }
 

@@ -72,6 +72,24 @@ public class RoutePutMessage extends JSONObject
         this.getRoutePutMeta().put(fieldName, val);
     }
 
+    public boolean optMetaField(String fieldName, boolean defaultValue)
+    {
+        return this.getRoutePutMeta().optBoolean(fieldName, defaultValue);
+    }
+
+    public String optMetaField(String fieldName, String defaultValue)
+    {
+        return this.getRoutePutMeta().optString(fieldName, defaultValue);
+    }
+
+    public void removeMetaField(String fieldName)
+    {
+        if (this.hasMetaField(fieldName))
+        {
+            this.getRoutePutMeta().remove(fieldName);
+        }
+    }
+
     public void appendMetaArray(String fieldName, Object val)
     {
         if (this.hasMetaField(fieldName))
