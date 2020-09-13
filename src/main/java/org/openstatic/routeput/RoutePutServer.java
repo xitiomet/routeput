@@ -2,7 +2,6 @@ package org.openstatic.routeput;
 
 import org.json.*;
 import org.openstatic.routeput.client.RoutePutClient;
-import org.openstatic.routeput.client.RoutePutSessionListener;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -32,13 +31,13 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 public class RoutePutServer implements Runnable
 {
     private Server httpServer;
-    protected LinkedHashMap<String, RoutePutSession> sessions;
+    protected LinkedHashMap<String, RoutePutServerWebsocket> sessions;
     protected JSONObject settings;
     protected static RoutePutServer instance;
     private Thread mainThread;
     private boolean keep_running;
-    public String hostname;
     public RoutePutChannel routeputDebug;
+    public File channelRoot;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -87,17 +86,14 @@ public class RoutePutServer implements Runnable
     public RoutePutServer(JSONObject settings)
     {
         RoutePutServer.instance = this;
-        InetAddress ip;
-        try 
-        {
-            ip = InetAddress.getLocalHost();
-            this.hostname = ip.getHostName();
-        } catch (Exception e) {}
         this.settings = settings;
+        this.channelRoot = new File(settings.optString("channelRoot", "./channel/"));
+        RoutePutChannel.setChannelRoot(this.channelRoot);
+
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
-        this.sessions = new LinkedHashMap<String, RoutePutSession>();
+        this.routeputDebug.setPermanent(true);
+        this.sessions = new LinkedHashMap<String, RoutePutServerWebsocket>();
         httpServer = new Server(settings.optInt("port", 6144));
-        BLOBManager.setRoot(new File(settings.optString("blobRoot", "./blob/")));
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
@@ -154,28 +150,6 @@ public class RoutePutServer implements Runnable
     public RoutePutSession connectUpstream(RoutePutChannel channel, String uri)
     {
         final RoutePutClient client = new RoutePutClient(channel, uri);
-        client.addSessionListener(new RoutePutSessionListener() {
-            
-            @Override
-            public void onConnect(RoutePutSession session, boolean local) 
-            {
-                RoutePutServer.this.sessions.put(session.getConnectionId(), session);
-                session.addMessageListener(new RoutePutMessageListener() {
-                    @Override
-                    public void onMessage(RoutePutMessage message) {
-                        RoutePutServer.this.handleIncomingEvent(message, session);
-                    }
-                });
-            }
-        
-            @Override
-            public void onClose(RoutePutSession session, boolean local)
-            {
-                String connectionId = session.getConnectionId();
-                if (RoutePutServer.this.sessions.containsKey(connectionId))
-                    RoutePutServer.this.sessions.remove(connectionId);                
-            }
-        });
         client.setProperty("upstream", uri);
         client.connect();
         return client;
@@ -183,10 +157,15 @@ public class RoutePutServer implements Runnable
     
     public void everySecond(int tick) throws Exception
     {
-        RoutePutMessage jo = new RoutePutMessage();
-        jo.put("channelStats", this.channelStats());
-        jo.setChannel("routeputDebug");
-        this.handleIncomingEvent(jo, null);
+        if (this.routeputDebug != null)
+        {
+            RoutePutMessage jo = new RoutePutMessage();
+            jo.put("channelStats", this.channelStats());
+            jo.setChannel(this.routeputDebug);
+            this.routeputDebug.broadcast(jo);
+        } else {
+            System.err.println("routeputDebug is null");
+        }
         if (tick % settings.optInt("pingPongSecs", 20) == 0)
         {
             RoutePutServer.this.sessions.values().parallelStream().forEach((s) -> {
@@ -196,79 +175,6 @@ public class RoutePutServer implements Runnable
                     sws.ping();
                 }
             });
-        }
-    }
-    
-    public void handleIncomingEvent(RoutePutMessage j, RoutePutSession session)
-    {
-        j.appendMetaArray("hops", this.hostname);
-        String eventChannel = j.getChannel();
-        RoutePutChannel channel = j.getRoutePutChannel();
-        if (j.hasMetaField("rssi"))
-        {
-            int rssi = j.getRoutePutMeta().optInt("rssi",-120);
-            channel.setProperty("rssi", rssi);
-            session.getProperties().put("rssi", rssi);
-        }
-        if (j.hasMetaField("setChannelProperty"))
-        {
-            JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setChannelProperty");
-            for(String k : storeRequest.keySet())
-            {
-                String v = storeRequest.getString(k);
-                channel.setProperty(k, j.getPathValue(v));
-            }
-        }
-        if (j.hasMetaField("setSessionProperty") && session != null)
-        {
-            JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setSessionProperty");
-            for(String k : storeRequest.keySet())
-            {
-                String v = storeRequest.getString(k);
-                session.getProperties().put(k, j.getPathValue(v));
-            }
-        }
-        if (j.isType(RoutePutMessage.TYPE_ERROR))
-        {
-            RoutePutServer.logIt("<b style=\"color: #8b0000;\">" + eventChannel + " ERROR: " + j.getRoutePutMeta().optString("message","") + "</b>");
-        }
-        
-        if (channel.hasCollector())
-        {
-            // This Channel has a connected collector
-            RoutePutSession collector = channel.getCollector();
-            if (session == collector)
-            {
-                //this connection is that collector!
-                if (j.hasTargetId())
-                {
-                    RoutePutSession target = findSessionById(j.getTargetId());
-                    if (target != null)
-                    {
-                        j.setMetaField("collectorTargeted", true);
-                        target.send(j);
-                    }
-                } else {
-                    j.setMetaField("collectorBroadcast", true);
-                    broadcast(eventChannel, j);
-                }
-            } else {
-                // absorb all packets into collector
-                j.setMetaField("collectorAbsorbed", true);
-                collector.send(j);
-            }
-        } else {
-            // This Channel is a complete free for all!
-            if (j.hasTargetId())
-            {
-                // Ok this packet has a target in the channel
-                RoutePutSession target = findSessionById(j.getTargetId());
-                if (target != null)
-                   target.send(j);
-            } else {
-                // Everybody but the sender should get this packet
-                broadcast(eventChannel, j);
-            }
         }
     }
     
@@ -327,71 +233,19 @@ public class RoutePutServer implements Runnable
         return jo;
     }
     
-    public JSONObject channelBreakdown(String channel)
-    {
-        JSONObject jo = new JSONObject();
-        for(RoutePutSession s : this.sessions.values())
-        {
-            if (s.subscribedTo(channel))
-            {
-                jo.put(s.getConnectionId(), s.toJSONObject());
-            }
-        }
-        return jo;
-    }
-
-    public JSONArray channelMembers(String channel)
-    {
-        JSONArray ja = new JSONArray();
-        for(RoutePutSession s : this.sessions.values())
-        {
-            if (s.subscribedTo(channel))
-            {
-                ja.put(s.getConnectionId());
-            }
-        }
-        return ja;
-    }
-
-    public void broadcast(String eventChannel, RoutePutMessage jo)
-    {
-        boolean showBroadcasts = (routeputDebug.getProperties().optBoolean("showBroadcasts", false) && !"routeputDebug".equals(eventChannel));
-        if (showBroadcasts)
-        {
-            System.err.println("Broadcast (" + eventChannel + "): " + jo.toString());
-        }
-        this.sessions.values().parallelStream().forEach((s) ->
-        {
-            if (s.subscribedTo(eventChannel) && s.isRootConnection())
-            {
-                if (showBroadcasts)
-                    System.err.println("   ----Root Connection " + s.getConnectionId());
-                try
-                {
-                    // Never Send the event to the creator or its relay
-                    if (!s.containsConnectionId(jo.getSourceId()))
-                    {
-                        s.send(jo);
-                        if (showBroadcasts)
-                            System.err.println("   --------SENT  " + s.getConnectionId());
-                    }
-                } catch (Exception e) {
-                    logIt(e);
-                }
-            } else {
-                if (showBroadcasts)
-                    System.err.println("   ----Skipping Connection " + s.getConnectionId());
-            }
-        });
-    }
-    
     public static void logIt(String text)
     {
         System.err.println(text);
-        RoutePutMessage l = new RoutePutMessage();
-        l.setChannel("routeputDebug");
-        l.put("logIt",  text);
-        RoutePutServer.instance.handleIncomingEvent(l, null);
+        if (RoutePutServer.instance != null)
+        {
+            if (RoutePutServer.instance.routeputDebug != null)
+            {
+                RoutePutMessage l = new RoutePutMessage();
+                l.setChannel("routeputDebug");
+                l.put("logIt",  text);
+                RoutePutServer.instance.routeputDebug.handleMessage(null, l);
+            }
+        }
     }
 
     public static void logIt(Exception e)

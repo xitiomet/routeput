@@ -22,6 +22,7 @@ public class RoutePutMain
     public static void main(String[] args)
     {
         Thread channelTracker = RoutePutChannel.initTracker();
+        RoutePutRemoteSession.init();
         //System.setProperty("org.eclipse.jetty.util.log.class", "org.eclipse.jetty.util.log.StdErrLog");
         //System.setProperty("org.eclipse.jetty.LEVEL", "OFF");
         CommandLine cmd = null;
@@ -234,11 +235,11 @@ public class RoutePutMain
     public static void clientTest(String url, RoutePutChannel channel)
     {
         RoutePutClient rpc = new RoutePutClient(channel, url);
-        rpc.addSessionListener(new RoutePutSessionListener(){
+        channel.addChannelListener(new RoutePutChannelListener(){
         
             @Override
-            public void onConnect(RoutePutSession session, boolean local) {
-                if (!local)
+            public void onJoin(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
                 {
                     System.err.println("Remote Session Connected: " + session.getConnectionId());
                     session.addMessageListener(new RoutePutMessageListener(){
@@ -254,13 +255,19 @@ public class RoutePutMain
             }
             
             @Override
-            public void onClose(RoutePutSession session, boolean local) {
-                if (!local)
+            public void onLeave(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
                 {
                     System.err.println("Remote Session Disconnected: " + session.getConnectionId());
                 } else {
                     System.err.println("Local client disconnected");
                 }
+            }
+
+            @Override
+            public void onError(RoutePutChannel channel, String details, RoutePutMessage message) {
+                // TODO Auto-generated method stub
+
             }
         });
         rpc.addMessageListener(new RoutePutMessageListener(){
@@ -271,6 +278,7 @@ public class RoutePutMain
             }
         });
         rpc.setProperty("details", "random quote bot for testing");
+        rpc.setProperty("username", "QuoteBot 5000");
         rpc.connect();
         //rpc.becomeCollector();
         RandomQuotes quotes = new RandomQuotes();
@@ -295,11 +303,11 @@ public class RoutePutMain
     public static void clientTest2(String url, RoutePutChannel channel, String message)
     {
         RoutePutClient rpc = new RoutePutClient(channel, url);
-        rpc.addSessionListener(new RoutePutSessionListener(){
+        channel.addChannelListener(new RoutePutChannelListener() {
         
             @Override
-            public void onConnect(RoutePutSession session, boolean local) {
-                if (!local)
+            public void onJoin(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
                 {
                     System.err.println("Remote Session Connected: " + session.getConnectionId());
                     session.addMessageListener(new RoutePutMessageListener(){
@@ -315,13 +323,19 @@ public class RoutePutMain
             }
             
             @Override
-            public void onClose(RoutePutSession session, boolean local) {
-                if (!local)
+            public void onLeave(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
                 {
                     System.err.println("Remote Session Disconnected: " + session.getConnectionId());
                 } else {
                     System.err.println("Local client disconnected");
                 }
+            }
+
+            @Override
+            public void onError(RoutePutChannel channel, String details, RoutePutMessage message) {
+                // TODO Auto-generated method stub
+
             }
         });
         rpc.addMessageListener(new RoutePutMessageListener(){

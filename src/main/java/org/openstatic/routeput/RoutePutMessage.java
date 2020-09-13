@@ -7,14 +7,28 @@ import org.json.JSONObject;
 
 public class RoutePutMessage extends JSONObject
 {
+    // This is the first message exchanged by a client/server to start the connection
     public static final String TYPE_CONNECTION_ID = "connectionId";
+
+    // This message is for letting a channel know you've joined or left a channel this message should always travel the network
+    // to let all servers know that a user has joined a channel
     public static final String TYPE_CONNECTION_STATUS = "ConnectionStatus";
+
+    // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
     public static final String TYPE_BLOB = "blob";
+
+    // These messages should NEVER travel, they are simply for making requests between two endpoints
     public static final String TYPE_REQUEST = "request";
     public static final String TYPE_RESPONSE = "response";
+
+    // Pretty self explanitory.
     public static final String TYPE_PING = "ping";
     public static final String TYPE_PONG = "pong";
+
+    // If somebody throws an error in the stream, everyone should know about it
     public static final String TYPE_ERROR = "error";
+
+    // For Binary streams inside a channel
     public static final String TYPE_BINARY_STREAM = "binary";
 
     public RoutePutMessage(JSONObject jsonObject)

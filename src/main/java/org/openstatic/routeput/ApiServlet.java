@@ -92,7 +92,7 @@ public class ApiServlet extends HttpServlet
         JSONObject response = new JSONObject();
         try
         {
-            String sourceId = "api-" + RoutePutServer.instance.hostname;
+            String sourceId = "api-" + RoutePutChannel.getHostname();
             if (target.startsWith("/post/"))
             {
                 RoutePutMessage post = readRoutePutMessagePOST(request);
@@ -113,8 +113,7 @@ public class ApiServlet extends HttpServlet
                 //RoutePutServer.logIt("API: " + target + "\n" + post.toString());
                 post.setMetaField("apiPost", true);
                 RoutePutChannel chan = post.getRoutePutChannel();
-                chan.bumpRx();
-                RoutePutServer.instance.handleIncomingEvent(post, null);
+                chan.handleMessage(null, post);
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
                 StringTokenizer st = new StringTokenizer(target, "/");
@@ -142,8 +141,7 @@ public class ApiServlet extends HttpServlet
                         //RoutePutServer.logIt("API: " + target + "\n" + rMsg.toString());
                         rMsg.setMetaField("apiBatch", true);
                         RoutePutChannel chan = rMsg.getRoutePutChannel();
-                        chan.bumpRx();
-                        RoutePutServer.instance.handleIncomingEvent(rMsg, null);
+                        chan.handleMessage(null, rMsg);
                     }
                 });
             }
@@ -200,6 +198,27 @@ public class ApiServlet extends HttpServlet
                                         channel.setProperty(key, value[0]);
                                     }
                                 });
+                            } else if ("transmit".equals(token)) {
+                                RoutePutMessage msg = new RoutePutMessage();
+                                msg.setChannel(channel);
+                                request.getParameterMap().forEach((key, value) -> {
+                                    if ("srcId".equals(key))
+                                    {
+                                        msg.setSourceId(value[0]);
+                                    } else if ("dstId".equals(key)) {
+                                        msg.setTargetId(value[0]);
+                                    } else {
+                                        if ("true".equals(value[0]))
+                                        {
+                                            msg.put(key, true);
+                                        } else if ("false".equals(value[0])) {
+                                            msg.put(key, false);
+                                        } else {
+                                            msg.put(key, value[0]);
+                                        }
+                                    }
+                                });
+                                channel.handleMessage(null, msg);
                             }
                         }
                     }

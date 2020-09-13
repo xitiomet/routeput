@@ -79,42 +79,43 @@ class RouteputConnection
                 console.log("Route.put Receive: " + rawData);
                 if (jsonObject.hasOwnProperty("__routeput"))
                 {
-                    var routePutMeta = jsonObject.__routeput
+                    var routePutMeta = jsonObject.__routeput;
+                    var messageType = undefined;
                     if (routePutMeta.hasOwnProperty("type"))
                     {
                         var messageType = routePutMeta.type;
-                        if (messageType == "blob" && jsonObject.hasOwnProperty("i"))
+                    }
+                    if (messageType == "blob" && jsonObject.hasOwnProperty("i"))
+                    {
+                        if (jsonObject.i == 1)
                         {
-                            if (jsonObject.i == 1)
+                            this.chunkBuffer[routePutMeta.name] = routePutMeta.data;
+                        } else if (jsonObject.i == jsonObject.of) {
+                            this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
+                            if (this.onblob != undefined)
                             {
-                                this.chunkBuffer[routePutMeta.name] = routePutMeta.data;
-                            } else if (jsonObject.i == jsonObject.of) {
-                                this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
-                                if (this.onblob != undefined)
-                                {
-                                    var blob = dataURItoBlob(this.chunkBuffer[routePutMeta.name]);
-                                    this.onblob(routePutMeta.name, blob);
-                                    this.chunkBuffer.delete(routePutMeta.name);
-                                }
-                            } else {
-                                this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
+                                var blob = dataURItoBlob(this.chunkBuffer[routePutMeta.name]);
+                                this.onblob(routePutMeta.name, blob);
+                                this.chunkBuffer.delete(routePutMeta.name);
                             }
-                        } else if (messageType == "connectionId") {
-                            this.connectionId = routePutMeta.connectionId;
-                            this.properties = routePutMeta.properties;
-                            this.channelProperties = routePutMeta.channelProperties;
-                            if (this.onconnect != undefined)
-                            {
-                                this.onconnect();
-                            }
-                        } else if (messageType == "ping") {
-                            var mm = {"__routeput": {"type": "pong", "pingTimestamp": routePutMeta.timestamp}};
-                            this.transmit(mm);
-                        } else if (messageType == "response") {
-                            if (this.onresponse != undefined)
-                            {
-                                this.onresponse(routePutMeta.response, routePutMeta);
-                            }
+                        } else {
+                            this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
+                        }
+                    } else if (messageType == "connectionId") {
+                        this.connectionId = routePutMeta.connectionId;
+                        this.properties = routePutMeta.properties;
+                        this.channelProperties = routePutMeta.channelProperties;
+                        if (this.onconnect != undefined)
+                        {
+                            this.onconnect();
+                        }
+                    } else if (messageType == "ping") {
+                        var mm = {"__routeput": {"type": "pong", "pingTimestamp": routePutMeta.timestamp}};
+                        this.transmit(mm);
+                    } else if (messageType == "response") {
+                        if (this.onresponse != undefined)
+                        {
+                            this.onresponse(routePutMeta.response, routePutMeta);
                         }
                     } else {
                         if (this.onmessage != undefined)

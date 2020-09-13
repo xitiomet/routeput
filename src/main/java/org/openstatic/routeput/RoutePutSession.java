@@ -9,6 +9,7 @@ public interface RoutePutSession
     public String getConnectionId();
     public RoutePutChannel getDefaultChannel();
     public String getProperty(String key, String defaultValue);
+    public String getRemoteIP();
     public JSONObject getProperties();
 
     public JSONObject toJSONObject();
@@ -17,7 +18,6 @@ public interface RoutePutSession
     public boolean isCollector();
     public boolean isRootConnection();
     public boolean containsConnectionId(String connectionId);
-    public boolean subscribedTo(String channel);
 
     public void addMessageListener(RoutePutMessageListener r);
     public void removeMessageListener(RoutePutMessageListener r);

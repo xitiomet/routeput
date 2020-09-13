@@ -10,15 +10,7 @@ import org.json.JSONObject;
 
 public class BLOBManager 
 {
-    public static File blobRoot = new File("./blob/");
     private static HashMap<String, StringBuffer> blobStorage;
-
-    public static void setRoot(File file)
-    {
-        BLOBManager.blobRoot = file;
-        if (!BLOBManager.blobRoot.exists())
-            BLOBManager.blobRoot.mkdir();
-    }
 
     public static void init()
     {
@@ -48,8 +40,13 @@ public class BLOBManager
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
-                BLOBManager.saveBase64Blob(name, sb);
-                BLOBManager.blobStorage.remove(name);
+                File blobFolder = jo.getRoutePutChannel().getBlobFolder();
+                if (blobFolder != null)
+                {
+                    File blobFile = new File(blobFolder, name);
+                    BLOBManager.saveBase64Blob(blobFile, sb);
+                    BLOBManager.blobStorage.remove(name);
+                }
                 /*
                 RoutePutServer.logIt("Received Blob: " + name +
                         " on " + jo.optString("__eventChannel", this.defaultChannel.getName()) +
@@ -67,8 +64,13 @@ public class BLOBManager
 
     public static void sendBlob(RoutePutSession session, String name)
     {
-        StringBuffer sb = BLOBManager.loadBase64Blob(name);
-        transmitBlobChunks(session, name, sb);
+        File blobFolder = session.getDefaultChannel().getBlobFolder();
+        if (blobFolder != null)
+        {
+            File blobFile = new File(blobFolder, name);
+            StringBuffer sb = BLOBManager.loadBase64Blob(blobFile);
+            transmitBlobChunks(session, name, sb);
+        }
     }
 
     // Send a chunked blob to client from byte array
@@ -105,11 +107,10 @@ public class BLOBManager
         x.start();
     }
 
-    public static File saveBase64Blob(String fileName, StringBuffer sb)
+    public static File saveBase64Blob(File file, StringBuffer sb)
     {
         try
         {
-            File file = new File(BLOBManager.blobRoot, fileName);
             byte[] fileData = java.util.Base64.getDecoder().decode(sb.substring(sb.indexOf(",") + 1));
             FileOutputStream fos = new FileOutputStream(file);
             fos.write(fileData);
@@ -121,13 +122,12 @@ public class BLOBManager
         return null;
     }
     
-    public static StringBuffer loadBase64Blob(String fileName)
+    public static StringBuffer loadBase64Blob(File file)
     {
         StringBuffer sb = new StringBuffer();
         try
         {
-            File file = new File(BLOBManager.blobRoot, fileName);
-            String contentType = getContentTypeFor(fileName);
+            String contentType = getContentTypeFor(file.getName());
             if (file.exists())
             {
                 sb.append("data:" + contentType + ";base64,");
