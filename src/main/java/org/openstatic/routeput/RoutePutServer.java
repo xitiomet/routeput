@@ -12,9 +12,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Random;
 import java.util.LinkedHashMap;
 import java.util.EnumSet;
+import java.text.SimpleDateFormat;
 
 import javax.servlet.DispatcherType;
 import javax.servlet.ServletException;
@@ -38,6 +40,8 @@ public class RoutePutServer implements Runnable
     private boolean keep_running;
     public RoutePutChannel routeputDebug;
     public File channelRoot;
+    private SimpleDateFormat dateFormat;
+    protected ApiServlet apiServlet;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -85,6 +89,7 @@ public class RoutePutServer implements Runnable
     
     public RoutePutServer(JSONObject settings)
     {
+        this.dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
         RoutePutServer.instance = this;
         this.settings = settings;
         this.channelRoot = new File(settings.optString("channelRoot", "./channel/"));
@@ -92,6 +97,22 @@ public class RoutePutServer implements Runnable
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
         this.routeputDebug.setPermanent(true);
+        this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
+
+            @Override
+            public void onMessage(RoutePutMessage message) {
+                String msgType = message.getType();
+                if (msgType != null)
+                {
+                    if (msgType.equals(RoutePutMessage.TYPE_LOG_ERROR) || msgType.equals(RoutePutMessage.TYPE_LOG_INFO) || msgType.equals(RoutePutMessage.TYPE_LOG_WARNING))
+                    {
+                        String text = message.optString("text","");
+                        System.err.println("<" + RoutePutServer.this.dateFormat.format(new Date()) + "> " + msgType.toUpperCase() + " " + text);
+                    }
+                }
+            }
+            
+        });
         this.sessions = new LinkedHashMap<String, RoutePutServerWebsocket>();
         httpServer = new Server(settings.optInt("port", 6144));
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
@@ -142,7 +163,7 @@ public class RoutePutServer implements Runnable
                 if (tick >= 60) tick = 0;
                 Thread.sleep(1000);
             } catch (Exception e) {
-                logIt(e);
+                logError(e);
             }
         }
     }
@@ -162,7 +183,7 @@ public class RoutePutServer implements Runnable
             RoutePutMessage jo = new RoutePutMessage();
             jo.put("channelStats", this.channelStats());
             jo.setChannel(this.routeputDebug);
-            this.routeputDebug.broadcast(jo);
+            this.routeputDebug.handleMessage(null, jo);
         } else {
             System.err.println("routeputDebug is null");
         }
@@ -176,6 +197,14 @@ public class RoutePutServer implements Runnable
                 }
             });
         }
+        RoutePutRemoteSession.children(this.apiServlet).stream().forEach((c) -> {
+            long idleDestruct = c.getProperties().optLong("idleDestruct", 0);
+            if (c.getIdle() > idleDestruct && idleDestruct > 0)
+            {
+                logIt("Connection " + c.getConnectionId() + " destroyed due to idleDestruct, parent was " + c.getParent().getConnectionId());
+                RoutePutChannel.removeFromAllChannels(c);
+            }
+        });
     }
     
     public void setState(boolean b)
@@ -233,35 +262,46 @@ public class RoutePutServer implements Runnable
         return jo;
     }
     
+
     public static void logIt(String text)
     {
-        System.err.println(text);
+        log(RoutePutMessage.TYPE_LOG_INFO, text);
+    }
+
+    public static void logWarning(String text)
+    {
+        log(RoutePutMessage.TYPE_LOG_WARNING, text);
+    }
+
+    public static void log(String type, String text)
+    {
         if (RoutePutServer.instance != null)
         {
             if (RoutePutServer.instance.routeputDebug != null)
             {
                 RoutePutMessage l = new RoutePutMessage();
+                l.setType(type);
                 l.setChannel("routeputDebug");
-                l.put("logIt",  text);
+                l.put("text",  text);
                 RoutePutServer.instance.routeputDebug.handleMessage(null, l);
             }
         }
     }
 
-    public static void logIt(Exception e)
+    public static void logError(Exception e)
     {
-        logIt("NADA", e);
+        logError("NADA", e);
     }
     
-    public static void logIt(String info, Exception e)
+    public static void logError(String info, Exception e)
     {
-        logIt("(" +info+ ") Exception - " + e.toString());
         try
         {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             PrintStream ps = new PrintStream(baos);
             e.printStackTrace(ps);
-            logIt(baos.toString());
+            String text = "(" +info+ ") Exception - " + e.toString() + "\n" + baos.toString();
+            log(RoutePutMessage.TYPE_LOG_ERROR, text);
         } catch (Exception e2) {
             System.err.println("Logging Exception");
             e2.printStackTrace(System.err);
@@ -297,7 +337,7 @@ public class RoutePutServer implements Runnable
             ps.close();
             fos.close();
         } catch (Exception e) {
-            logIt(e);
+            logError(e);
         }
     }
     

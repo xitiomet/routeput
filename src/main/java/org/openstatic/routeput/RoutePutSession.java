@@ -10,8 +10,8 @@ public interface RoutePutSession
     public RoutePutChannel getDefaultChannel();
     public String getProperty(String key, String defaultValue);
     public String getRemoteIP();
+    
     public JSONObject getProperties();
-
     public JSONObject toJSONObject();
 
     public boolean isConnected();

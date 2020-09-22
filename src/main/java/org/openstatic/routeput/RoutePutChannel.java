@@ -26,9 +26,10 @@ public class RoutePutChannel
     private int messagesTx;
     private int messagesRx;
     private ArrayList<RoutePutChannelListener> listeners;
+    private ArrayList<RoutePutMessageListener> messageListeners;
+
     private int msgTxPerSecond;
     private int msgRxPerSecond;
-    private boolean permanent;
 
     private RoutePutChannel(String name)
     {
@@ -41,9 +42,9 @@ public class RoutePutChannel
         this.lastAccess = System.currentTimeMillis();
         this.members = new LinkedHashMap<String, RoutePutSession>();
         this.listeners = new ArrayList<RoutePutChannelListener>();
+        this.messageListeners = new ArrayList<RoutePutMessageListener>();
         this.collector = null;
         this.properties = new JSONObject();
-        this.permanent = false;
         File propertiesFile = this.getPropertiesFile();
         if (propertiesFile != null)
         {
@@ -56,12 +57,13 @@ public class RoutePutChannel
 
     public void setPermanent(boolean v)
     {
-        this.permanent = v;
+        this.properties.put("permanent", true);
+        saveChannelProperties();
     }
 
     public boolean isPermanent()
     {
-        return this.permanent;
+        return this.properties.optBoolean("permanent", false);
     }
 
     private void saveChannelProperties()
@@ -267,6 +269,12 @@ public class RoutePutChannel
                 l.onLeave(this, session);
             });
             this.touch();
+            // I know this is sloppy but i need to know when a remote session leaves its last channel
+            if (session instanceof RoutePutRemoteSession)
+            {
+                RoutePutRemoteSession rprs = (RoutePutRemoteSession) session;
+                rprs.maybeDestroy();
+            }
         }
         if (session == this.collector)
             this.collector = null;
@@ -285,6 +293,22 @@ public class RoutePutChannel
         if (this.listeners.contains(rpcl))
         {
             this.listeners.remove(rpcl);
+        }
+    }
+
+    public void addMessageListener(RoutePutMessageListener rpml)
+    {
+        if (!this.messageListeners.contains(rpml))
+        {
+            this.messageListeners.add(rpml);
+        }
+    }
+    
+    public void removeMessageListener(RoutePutMessageListener rpml)
+    {
+        if (this.messageListeners.contains(rpml))
+        {
+            this.messageListeners.remove(rpml);
         }
     }
 
@@ -346,7 +370,7 @@ public class RoutePutChannel
             if (j.hasMetaField("rssi"))
             {
                 int rssi = j.getRoutePutMeta().optInt("rssi",-120);
-                this.setProperty("rssi", rssi);
+                this.properties.put("rssi", rssi);
                 if (session !=null)
                 {
                     session.getProperties().put("rssi", rssi);
@@ -358,7 +382,8 @@ public class RoutePutChannel
                 for(String k : storeRequest.keySet())
                 {
                     String v = storeRequest.getString(k);
-                    this.setProperty(k, j.getPathValue(v));
+                    this.properties.put(k, j.getPathValue(v));
+                    saveChannelProperties();
                 }
             }
             if (j.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
@@ -413,27 +438,34 @@ public class RoutePutChannel
                         bumpTx();
                         target.send(j);
                     } else {
-                        RoutePutServer.logIt("PACKET LOST (Target wasn't found): " + j.toString());
+                        RoutePutServer.logWarning("PACKET LOST (Target wasn't found): " + j.toString());
                     }
                 } else {
                     // Everybody but the sender should get this packet
                     this.broadcast(j);
                 }
             }
-            if (j.isType(RoutePutMessage.TYPE_ERROR))
+            if (!"routeputDebug".equals(mChan.getName()))
             {
-                String details = j.getRoutePutMeta().optString("message","");
-                RoutePutServer.logIt("<b style=\"color: #8b0000;\">" + this.getName() + " ERROR: " + details + "</b>");
-                listeners.parallelStream().forEach((l) -> {
-                    l.onError(this, details, j);
-                });
+                if (j.isType(RoutePutMessage.TYPE_LOG_ERROR) || j.isType(RoutePutMessage.TYPE_LOG_INFO) || j.isType(RoutePutMessage.TYPE_LOG_WARNING))
+                {
+                    RoutePutMessage l = new RoutePutMessage();
+                    //l.setSourceId("debug-" + RoutePutChannel.getHostname());
+                    l.setType(j.getType());
+                    l.setChannel("routeputDebug");
+                    l.put("text",  j.getChannel() + "(" + j.getSourceId() + ") " + j.getType().toUpperCase() + " - " + j.optString("text", "No details provided"));
+                    RoutePutChannel.getChannel("routeputDebug").broadcast(l);
+                }
             }
+            messageListeners.parallelStream().forEach((l) -> {
+                l.onMessage(j);
+            });
         } else {
-            RoutePutServer.logIt(this.getName() + " was asked to handle a packet that didnt belong to it! Intended for " + mChan.getName());
+            RoutePutServer.logWarning(this.getName() + " was asked to handle a packet that didnt belong to it! Intended for " + mChan.getName());
         }
     }
 
-    public void broadcast(RoutePutMessage jo)
+    private void broadcast(RoutePutMessage jo)
     {
         this.members.values().parallelStream().forEach((s) ->
         {
@@ -479,13 +511,25 @@ public class RoutePutChannel
         return ja;
     }
 
-    public void setProperty(String key, Object value)
+    public void setProperty(RoutePutSession session, String key, Object value)
     {
         this.properties.put(key, value);
+        
+        RoutePutMessage setChannelPropertyMessage = new RoutePutMessage();
+        setChannelPropertyMessage.setSource(session);
+        setChannelPropertyMessage.setChannel(this);
+        setChannelPropertyMessage.put(key,value);
+
+        JSONObject setDirective = new JSONObject();
+        setDirective.put(key, key);
+        
+        setChannelPropertyMessage.getRoutePutMeta().put("setChannelProperty", setDirective);
+        this.broadcast(setChannelPropertyMessage);
+
         this.saveChannelProperties();
     }
 
-    public void removeProperty(String key)
+    public void removeProperty(RoutePutSession session, String key)
     {
         this.properties.remove(key);
         this.saveChannelProperties();
@@ -576,7 +620,6 @@ public class RoutePutChannel
         jo.put("members", this.membersAsJSONObject());
         jo.put("memberCount", this.memberCount());
         jo.put("properties", this.getProperties());
-        jo.put("permanent", this.permanent);
         jo.put("msgTxPerSecond", this.msgTxPerSecond);
         jo.put("msgRxPerSecond", this.msgRxPerSecond);
         if (this.collector != null)

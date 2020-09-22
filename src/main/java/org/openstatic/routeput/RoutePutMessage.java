@@ -26,7 +26,9 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_PONG = "pong";
 
     // If somebody throws an error in the stream, everyone should know about it
-    public static final String TYPE_ERROR = "error";
+    public static final String TYPE_LOG_ERROR = "error";
+    public static final String TYPE_LOG_WARNING = "warning";
+    public static final String TYPE_LOG_INFO = "info";
 
     // For Binary streams inside a channel
     public static final String TYPE_BINARY_STREAM = "binary";
@@ -152,6 +154,11 @@ public class RoutePutMessage extends JSONObject
         {
             this.getRoutePutMeta().put("srcId", connectionId);
         }
+    }
+
+    public void setSource(RoutePutSession session)
+    {
+        this.getRoutePutMeta().put("srcId", session.getConnectionId());
     }
 
     public boolean hasSourceId()

@@ -4,7 +4,9 @@ import java.util.Vector;
 import java.util.stream.Collectors;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class RoutePutRemoteSession implements RoutePutSession
@@ -17,6 +19,9 @@ public class RoutePutRemoteSession implements RoutePutSession
     private String remoteIP;
     private RoutePutChannel defaultChannel;
     private JSONObject properties;
+    private long rxPackets;
+    private long txPackets;
+    private long lastReceived;
 
     public static void init()
     {
@@ -59,7 +64,7 @@ public class RoutePutRemoteSession implements RoutePutSession
                 {
                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                     remoteSession.handleMessage(jo);
-                    RoutePutRemoteSession.sessions.remove(sourceId);
+                    // If this is the last channel lets get rid of this connection entirely
                 }
             }
         } else {
@@ -69,10 +74,6 @@ public class RoutePutRemoteSession implements RoutePutSession
             {
                 remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                 remoteSession.handleMessage(jo);
-            } else {
-                // FOR NOW ONLY... LETS LET PACKETS WITH UNIDENTIFIED SOURCES PASS ALONG...
-                RoutePutChannel c = jo.getRoutePutChannel();
-                c.handleMessage(null, jo);
             }
         }
     }
@@ -80,16 +81,32 @@ public class RoutePutRemoteSession implements RoutePutSession
     public RoutePutRemoteSession(RoutePutSession parent, String connectionId)
     {
         this.parent = parent;
+        this.rxPackets = 0;
+        this.txPackets = 0;
         this.connectionId = connectionId;
         this.listeners = new Vector<RoutePutMessageListener>();
         this.defaultChannel = parent.getDefaultChannel();
         this.properties = new JSONObject();
+        this.lastReceived = System.currentTimeMillis();
+    }
+
+    public void maybeDestroy()
+    {
+        if (RoutePutChannel.channelsWithMember(this).size() == 0)
+        {
+            if (RoutePutRemoteSession.sessions.containsKey(this.connectionId))
+            {
+                RoutePutRemoteSession.sessions.remove(this.connectionId);
+            }
+        }
     }
 
     public void handleMessage(RoutePutMessage m)
     {
         if (this.connectionId.equals(m.getSourceId()))
         {
+            this.rxPackets++;
+            this.lastReceived = System.currentTimeMillis();
             RoutePutChannel msgChannel = m.getRoutePutChannel();
             if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
             {
@@ -106,22 +123,23 @@ public class RoutePutRemoteSession implements RoutePutSession
                 } else {
                     msgChannel.removeMember(this);
                 }
-            }
-            if (m.hasMetaField("setSessionProperty"))
-            {
-                JSONObject storeRequest = m.getRoutePutMeta().optJSONObject("setSessionProperty");
-                for(String k : storeRequest.keySet())
+            } else {
+                if (m.hasMetaField("setSessionProperty"))
                 {
-                    String v = storeRequest.getString(k);
-                    this.getProperties().put(k, m.getPathValue(v));
+                    JSONObject storeRequest = m.getRoutePutMeta().optJSONObject("setSessionProperty");
+                    for(String k : storeRequest.keySet())
+                    {
+                        String v = storeRequest.getString(k);
+                        this.getProperties().put(k, m.getPathValue(v));
+                    }
                 }
+                msgChannel.handleMessage(this, m);
+                RoutePutRemoteSession.this.listeners.parallelStream().forEach((r) -> {
+                    r.onMessage(m);
+                });
             }
-            msgChannel.handleMessage(this, m);
-            RoutePutRemoteSession.this.listeners.parallelStream().forEach((r) -> {
-                r.onMessage(m);
-            });
         } else {
-            RoutePutServer.logIt("PACKET LOST (RoutePutRemoteSession asked to handle stray packet): " + m.toString());
+            RoutePutServer.logWarning("PACKET LOST (RoutePutRemoteSession asked to handle stray packet): " + m.toString());
         }
     }
 
@@ -172,6 +190,11 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
     }
 
+    public static RoutePutRemoteSession findRemoteSession(String childConnectionId)
+    {
+        return RoutePutRemoteSession.sessions.get(childConnectionId);
+    }
+
     public Collection<RoutePutMessageListener> getMessageListeners()
     {
         return this.listeners;
@@ -187,6 +210,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         jo.setChannelIfNull(this.getDefaultChannel());
         jo.setTargetId(this.connectionId);
         this.getParent().send(jo);
+        this.txPackets++;
     }
 
     public String getRemoteIP()
@@ -205,17 +229,38 @@ public class RoutePutRemoteSession implements RoutePutSession
         return this.defaultChannel;
     }
 
+    public long getIdle()
+    {
+        return System.currentTimeMillis() - this.lastReceived;
+    }
+
     @Override
     public JSONObject toJSONObject()
     {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
-        jo.put("defaultChannel", this.getDefaultChannel().getName());
+        if (this.defaultChannel != null)
+        {
+            jo.put("defaultChannel", this.defaultChannel.getName());
+        }
+        List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map(
+            (c) -> {return c.getName();}
+        ).collect(Collectors.toList());
+        jo.put("channels", new JSONArray(channels));
         //jo.put("upgradeHeaders", this.upgradeHeaders);
         jo.put("_parentConnected", this.parent.isConnected());
         jo.put("_parentConnectionId", this.parent.getConnectionId());
         jo.put("remoteIP", this.remoteIP);
         jo.put("properties", this.properties);
+        jo.put("idle", getIdle());
+        if (this.rxPackets > 0)
+        {
+            jo.put("rx", this.rxPackets);
+        }
+        if (this.txPackets > 0)
+        {
+            jo.put("tx", this.txPackets);
+        }
         jo.put("_class", "RoutePutRemoteSession");
         jo.put("_listeners", this.listeners.size());
         return jo;

@@ -263,12 +263,6 @@ public class RoutePutMain
                     System.err.println("Local client disconnected");
                 }
             }
-
-            @Override
-            public void onError(RoutePutChannel channel, String details, RoutePutMessage message) {
-                // TODO Auto-generated method stub
-
-            }
         });
         rpc.addMessageListener(new RoutePutMessageListener(){
                     
@@ -330,12 +324,6 @@ public class RoutePutMain
                 } else {
                     System.err.println("Local client disconnected");
                 }
-            }
-
-            @Override
-            public void onError(RoutePutChannel channel, String details, RoutePutMessage message) {
-                // TODO Auto-generated method stub
-
             }
         });
         rpc.addMessageListener(new RoutePutMessageListener(){

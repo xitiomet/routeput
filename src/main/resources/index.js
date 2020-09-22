@@ -37,16 +37,26 @@ function blobToHTML(fileName, blob)
 }
 
 var routeput = new RouteputConnection("routeputDebug");
+routeput.debug = true;
 
 routeput.onblob = function(name, blob) {
     logIt(blobToHTML(name, blob));
 }
 
 routeput.onmessage = function (jsonObject) {
-    var evChannel = jsonObject.__eventChannel;
-    if (jsonObject.hasOwnProperty('logIt'))
+    var routePutMeta = jsonObject.__routeput;
+    var messageType = undefined;
+    if (routePutMeta.hasOwnProperty("type"))
     {
-        logIt(jsonObject.logIt);
+        messageType = routePutMeta.type;
+    }
+    if (messageType == "info")
+    {
+        logIt(jsonObject.text);
+    } else if (messageType == "warning") {
+        logIt("<b style=\"color: #AAAA00;\">" + jsonObject.text + "</b>");
+    } else if (messageType == "error") {
+        logIt("<b style=\"color: red;\">" + jsonObject.text + "</b>");
     } else if (jsonObject.hasOwnProperty('channelStats')) {
         var channelStats = jsonObject.channelStats;
         var channelStatsTable = document.getElementById('channelStatsTable');
