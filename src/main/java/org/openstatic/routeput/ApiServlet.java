@@ -13,34 +13,30 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
+import java.beans.PropertyChangeListener;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 
-public class ApiServlet extends HttpServlet implements RoutePutSession
-{
+public class ApiServlet extends HttpServlet implements RoutePutSession {
     private JSONObject properties;
     private long rxPackets;
     private long txPackets;
 
-    public ApiServlet()
-    {
+    public ApiServlet() {
         this.properties = new JSONObject();
         this.rxPackets = 0;
         this.txPackets = 0;
         System.err.println("** API SERVLET INITIALIZED **");
         RoutePutServer.instance.apiServlet = this;
     }
-    
-    public RoutePutMessage readRoutePutMessagePOST(HttpServletRequest request)
-    {
+
+    public RoutePutMessage readRoutePutMessagePOST(HttpServletRequest request) {
         StringBuffer jb = new StringBuffer();
         String line = null;
-        try
-        {
+        try {
             BufferedReader reader = request.getReader();
-            while ((line = reader.readLine()) != null)
-            {
+            while ((line = reader.readLine()) != null) {
                 jb.append(line);
             }
         } catch (Exception e) {
@@ -48,9 +44,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             RoutePutServer.logError(e);
         }
 
-        try
-        {
-            RoutePutMessage jsonObject =  new RoutePutMessage(jb.toString().trim());
+        try {
+            RoutePutMessage jsonObject = new RoutePutMessage(jb.toString().trim());
             return jsonObject;
         } catch (JSONException e) {
             RoutePutServer.logError(e);
@@ -58,15 +53,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         }
     }
 
-    public JSONArray readJSONArrayPOST(HttpServletRequest request)
-    {
+    public JSONArray readJSONArrayPOST(HttpServletRequest request) {
         StringBuffer jb = new StringBuffer();
         String line = null;
-        try
-        {
+        try {
             BufferedReader reader = request.getReader();
-            while ((line = reader.readLine()) != null)
-            {
+            while ((line = reader.readLine()) != null) {
                 jb.append(line);
             }
         } catch (Exception e) {
@@ -74,9 +66,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             RoutePutServer.logError(e);
         }
 
-        try
-        {
-            JSONArray jsonArray =  new JSONArray(jb.toString().trim());
+        try {
+            JSONArray jsonArray = new JSONArray(jb.toString().trim());
             return jsonArray;
         } catch (JSONException e) {
             RoutePutServer.logError(e);
@@ -84,43 +75,35 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         }
     }
 
-    public boolean isNumber(String v)
-    {
-        try
-        {
+    public boolean isNumber(String v) {
+        try {
             Integer.parseInt(v);
             return true;
-        } catch(NumberFormatException e){
+        } catch (NumberFormatException e) {
             return false;
         }
     }
 
-    private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg)
-    {
+    private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg) {
         RoutePutChannel channel = msg.getRoutePutChannel();
         String sourceId = msg.getSourceId();
-        if (sourceId != null)
-        {
-            if (sourceId.equals(this.getConnectionId()))
-            {
-                if (!channel.hasMember(this))
-                {
+        if (sourceId != null) {
+            if (sourceId.equals(this.getConnectionId())) {
+                if (!channel.hasMember(this)) {
                     channel.addMember(this);
                 }
                 channel.handleMessage(this, msg);
             } else {
                 boolean sendConnect = false;
                 RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
-                if (remoteSession == null)
-                {
+                if (remoteSession == null) {
                     // This connection doesnt even exist lets create it
                     sendConnect = true;
                 } else if (remoteSession.hasParent(this) && !channel.hasMember(remoteSession)) {
                     // This connection exists, and belongs to the api, lets join the channel
                     sendConnect = true;
                 }
-                if (sendConnect)
-                {
+                if (sendConnect) {
                     RoutePutMessage cMsg = new RoutePutMessage();
                     cMsg.setSourceId(sourceId);
                     cMsg.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
@@ -139,36 +122,32 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     }
 
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse httpServletResponse) throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse httpServletResponse)
+            throws ServletException, IOException {
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
         httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo();
         String remoteIP = request.getRemoteAddr();
-        //System.err.println("Path: " + target);
+        // System.err.println("Path: " + target);
         JSONObject response = new JSONObject();
-        try
-        {
+        try {
             String sourceId = ApiServlet.this.getConnectionId();
-            if (target.startsWith("/post/"))
-            {
+            if (target.startsWith("/post/")) {
                 RoutePutMessage post = readRoutePutMessagePOST(request);
                 StringTokenizer st = new StringTokenizer(target, "/");
-                while (st.hasMoreTokens())
-                {
+                while (st.hasMoreTokens()) {
                     String token = st.nextToken();
-                    if (token.equals("channel") && st.hasMoreTokens())
-                    {
+                    if (token.equals("channel") && st.hasMoreTokens()) {
                         post.setChannel(RoutePutChannel.getChannel(st.nextToken()));
                     }
-                    if (token.equals("id") && st.hasMoreTokens())
-                    {
+                    if (token.equals("id") && st.hasMoreTokens()) {
                         sourceId = st.nextToken();
                     }
                 }
                 post.setSourceIdIfNull(sourceId);
-                //RoutePutServer.logIt("API: " + target + "\n" + post.toString());
+                // RoutePutServer.logIt("API: " + target + "\n" + post.toString());
                 post.setMetaField("apiPost", true);
                 RoutePutChannel chan = post.getRoutePutChannel();
                 this.rxPackets++;
@@ -176,15 +155,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
                 StringTokenizer st = new StringTokenizer(target, "/");
-                while (st.hasMoreTokens())
-                {
+                while (st.hasMoreTokens()) {
                     String token = st.nextToken();
-                    if (token.equals("channel") && st.hasMoreTokens())
-                    {
+                    if (token.equals("channel") && st.hasMoreTokens()) {
                         channel = RoutePutChannel.getChannel(st.nextToken());
                     }
-                    if (token.equals("id") && st.hasMoreTokens())
-                    {
+                    if (token.equals("id") && st.hasMoreTokens()) {
                         sourceId = st.nextToken();
                     }
                 }
@@ -192,12 +168,11 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                 final String finalSourceId = sourceId;
                 JSONArray post = readJSONArrayPOST(request);
                 post.forEach((msg) -> {
-                    if (msg instanceof JSONObject)
-                    {
+                    if (msg instanceof JSONObject) {
                         RoutePutMessage rMsg = new RoutePutMessage((JSONObject) msg);
                         rMsg.setChannelIfNull(finalChannel);
                         rMsg.setSourceIdIfNull(finalSourceId);
-                        //RoutePutServer.logIt("API: " + target + "\n" + rMsg.toString());
+                        // RoutePutServer.logIt("API: " + target + "\n" + rMsg.toString());
                         rMsg.setMetaField("apiBatch", true);
                         RoutePutChannel chan = rMsg.getRoutePutChannel();
                         this.rxPackets++;
@@ -210,37 +185,31 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         }
         httpServletResponse.getWriter().println(response.toString());
     }
-    
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse httpServletResponse) throws ServletException, IOException
-    {
+    protected void doGet(HttpServletRequest request, HttpServletResponse httpServletResponse)
+            throws ServletException, IOException {
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
         httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo();
         String remoteIP = request.getRemoteAddr();
-        //System.err.println("Path: " + target);
-        //RoutePutServer.logIt("API Request: " + target);
+        // System.err.println("Path: " + target);
+        // RoutePutServer.logIt("API Request: " + target);
         JSONObject response = new JSONObject();
-        try
-        {
-            if (target.startsWith("/channel/"))
-            {
+        try {
+            if (target.startsWith("/channel/")) {
                 StringTokenizer st = new StringTokenizer(target, "/");
-                while (st.hasMoreTokens())
-                {
+                while (st.hasMoreTokens()) {
                     String token = st.nextToken();
-                    if (token.equals("channel") && st.hasMoreTokens())
-                    {
+                    if (token.equals("channel") && st.hasMoreTokens()) {
                         String channelName = st.nextToken();
                         RoutePutChannel channel = RoutePutChannel.getChannel(channelName);
                         response = channel.toJSONObject();
-                        if (st.hasMoreTokens())
-                        {
+                        if (st.hasMoreTokens()) {
                             token = st.nextToken();
-                            if ("removeProperty".equals(token) && st.hasMoreTokens())
-                            {
+                            if ("removeProperty".equals(token) && st.hasMoreTokens()) {
                                 token = st.nextToken();
                                 channel.removeProperty(this, token);
                                 response = channel.toJSONObject();
@@ -250,8 +219,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 response = channel.membersAsJSONObject();
                             } else if ("setProperty".equals(token)) {
                                 request.getParameterMap().forEach((key, value) -> {
-                                    if ("true".equals(value[0]))
-                                    {
+                                    if ("true".equals(value[0])) {
                                         channel.setProperty(this, key, true);
                                     } else if ("false".equals(value[0])) {
                                         channel.setProperty(this, key, false);
@@ -264,8 +232,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 RoutePutMessage msg = new RoutePutMessage();
                                 msg.setChannel(channel);
                                 request.getParameterMap().forEach((key, value) -> {
-                                    if ("srcId".equals(key))
-                                    {
+                                    if ("srcId".equals(key)) {
                                         msg.setSourceId(value[0]);
                                     } else if ("dstId".equals(key)) {
                                         msg.setTargetId(value[0]);
@@ -274,8 +241,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                     } else if ("idleDestruct".equals(key)) {
                                         msg.getRoutePutMeta().put("idleDestruct", Long.valueOf(value[0]).longValue());
                                     } else {
-                                        if ("true".equals(value[0]))
-                                        {
+                                        if ("true".equals(value[0])) {
                                             msg.put(key, true);
                                         } else if ("false".equals(value[0])) {
                                             msg.put(key, false);
@@ -288,7 +254,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 handleAPIMessage(remoteIP, msg);
                             } else if ("blob".equals(token)) {
                                 token = st.nextToken();
-                                String contentType = BLOBManager.getContentTypeFor(token);            
+                                String contentType = BLOBManager.getContentTypeFor(token);
                                 httpServletResponse.setContentType(contentType);
                                 httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                                 httpServletResponse.setCharacterEncoding("iso-8859-1");
@@ -316,69 +282,54 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             RoutePutServer.logError("doGET API", x);
         }
         httpServletResponse.getWriter().println(response.toString());
-        //request.setHandled(true);
+        // request.setHandled(true);
     }
 
     @Override
-    public void send(RoutePutMessage jo)
-    {
+    public void send(RoutePutMessage jo) {
         // TODO Auto-generated method stub
         this.txPackets++;
     }
 
     @Override
-    public String getConnectionId()
-    {
+    public String getConnectionId() {
         // TODO Auto-generated method stub
         return "api-" + RoutePutChannel.getHostname();
     }
 
     @Override
-    public RoutePutChannel getDefaultChannel() 
-    {
+    public RoutePutChannel getDefaultChannel() {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public String getProperty(String key, String defaultValue)
-    {
-        // TODO Auto-generated method stub
-        return this.properties.optString(key, defaultValue);
-    }
-
-    @Override
-    public String getRemoteIP()
-    {
+    public String getRemoteIP() {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public JSONObject getProperties()
-    {
+    public JSONObject getProperties() {
         // TODO Auto-generated method stub
         return this.properties;
     }
 
     @Override
-    public JSONObject toJSONObject()
-    {
+    public JSONObject toJSONObject() {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
         jo.put("collector", this.isCollector());
-        List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map(
-            (c) -> {return c.getName();}
-        ).collect(Collectors.toList());
-        
+        List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
+            return c.getName();
+        }).collect(Collectors.toList());
+
         jo.put("channels", new JSONArray(channels));
-        
-        if (this.rxPackets > 0)
-        {
+
+        if (this.rxPackets > 0) {
             jo.put("rx", this.rxPackets);
         }
-        if (this.txPackets > 0)
-        {
+        if (this.txPackets > 0) {
             jo.put("tx", this.txPackets);
         }
         jo.put("properties", this.properties);
@@ -387,41 +338,47 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     }
 
     @Override
-    public boolean isConnected()
-    {
+    public boolean isConnected() {
         // TODO Auto-generated method stub
         return RoutePutServer.instance.apiServlet == this;
     }
 
     @Override
-    public boolean isCollector()
-    {
+    public boolean isCollector() {
         // TODO Auto-generated method stub
         return false;
     }
 
     @Override
-    public boolean isRootConnection()
-    {
+    public boolean isRootConnection() {
         // TODO Auto-generated method stub
         return true;
     }
 
     @Override
-    public boolean containsConnectionId(String connectionId)
-    {
-       return RoutePutRemoteSession.isChild(this, connectionId) || this.getConnectionId().equals(connectionId);
+    public boolean containsConnectionId(String connectionId) {
+        return RoutePutRemoteSession.isChild(this, connectionId) || this.getConnectionId().equals(connectionId);
     }
 
     @Override
-    public void addMessageListener(RoutePutMessageListener r)
-    {
+    public void addMessageListener(RoutePutMessageListener r) {
         // TODO Auto-generated method stub
     }
 
     @Override
-    public void removeMessageListener(RoutePutMessageListener r)
-    {
+    public void removeMessageListener(RoutePutMessageListener r) {
         // TODO Auto-generated method stub
+    }
+
+    @Override
+    public void addPropertyChangeListener(PropertyChangeListener listener) {
+        // TODO Auto-generated method stub
+
+    }
+
+    @Override
+    public void removePropertyChangeListener(PropertyChangeListener listener) {
+        // TODO Auto-generated method stub
+
     }
 }

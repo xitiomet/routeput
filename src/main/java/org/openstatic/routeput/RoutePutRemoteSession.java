@@ -2,6 +2,8 @@ package org.openstatic.routeput;
 
 import java.util.Vector;
 import java.util.stream.Collectors;
+import java.beans.PropertyChangeListener;
+import java.beans.PropertyChangeSupport;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -13,6 +15,7 @@ public class RoutePutRemoteSession implements RoutePutSession
 {
     private static HashMap<String, RoutePutRemoteSession> sessions;
 
+    private PropertyChangeSupport propertyChangeSupport;
     private String connectionId;
     private Vector<RoutePutMessageListener> listeners;
     private RoutePutSession parent;
@@ -23,33 +26,26 @@ public class RoutePutRemoteSession implements RoutePutSession
     private long txPackets;
     private long lastReceived;
 
-    public static void init()
-    {
-        if (RoutePutRemoteSession.sessions == null)
-        {
+    public static void init() {
+        if (RoutePutRemoteSession.sessions == null) {
             RoutePutRemoteSession.sessions = new HashMap<String, RoutePutRemoteSession>();
         }
     }
 
-    public static boolean isInitialized()
-    {
+    public static boolean isInitialized() {
         return RoutePutRemoteSession.sessions != null;
     }
 
-    public static synchronized void handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo)
-    {
+    public static synchronized void handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo) {
         init();
         String sourceId = jo.getSourceId();
-        if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
-        {
+        if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
             boolean c = jo.getRoutePutMeta().optBoolean("connected", false);
-            if (c)
-            {
+            if (c) {
                 // If this is a message notifying us that a downstream client connected
                 // lets find that connaction or create it and pass the message off.
                 RoutePutRemoteSession remoteSession = null;
-                if (RoutePutRemoteSession.sessions.containsKey(sourceId))
-                {
+                if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                     remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                 } else {
                     final RoutePutRemoteSession finalRemoteSession = new RoutePutRemoteSession(parent, sourceId);
@@ -60,8 +56,7 @@ public class RoutePutRemoteSession implements RoutePutSession
             } else {
                 // Seems like this is a disconnect message, lets just remove the connection
                 // and pass that status along.
-                if (RoutePutRemoteSession.sessions.containsKey(sourceId))
-                {
+                if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                     remoteSession.handleMessage(jo);
                     // If this is the last channel lets get rid of this connection entirely
@@ -70,8 +65,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         } else {
             // looks like this is a normal message for a stored remote connection
             RoutePutRemoteSession remoteSession = null;
-            if (RoutePutRemoteSession.sessions.containsKey(sourceId))
-            {
+            if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                 remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                 remoteSession.handleMessage(jo);
             }
@@ -80,6 +74,7 @@ public class RoutePutRemoteSession implements RoutePutSession
 
     public RoutePutRemoteSession(RoutePutSession parent, String connectionId)
     {
+        this.propertyChangeSupport = new PropertyChangeSupport(this);
         this.parent = parent;
         this.rxPackets = 0;
         this.txPackets = 0;
@@ -90,47 +85,41 @@ public class RoutePutRemoteSession implements RoutePutSession
         this.lastReceived = System.currentTimeMillis();
     }
 
-    public void maybeDestroy()
-    {
-        if (RoutePutChannel.channelsWithMember(this).size() == 0)
-        {
-            if (RoutePutRemoteSession.sessions.containsKey(this.connectionId))
-            {
+    public void maybeDestroy() {
+        if (RoutePutChannel.channelsWithMember(this).size() == 0) {
+            if (RoutePutRemoteSession.sessions.containsKey(this.connectionId)) {
                 RoutePutRemoteSession.sessions.remove(this.connectionId);
             }
         }
     }
 
-    public void handleMessage(RoutePutMessage m)
-    {
-        if (this.connectionId.equals(m.getSourceId()))
-        {
+    public void handleMessage(RoutePutMessage m) {
+        if (this.connectionId.equals(m.getSourceId())) {
             this.rxPackets++;
             this.lastReceived = System.currentTimeMillis();
             RoutePutChannel msgChannel = m.getRoutePutChannel();
-            if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
-            {
+            if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
                 boolean connected = m.getRoutePutMeta().optBoolean("connected", false);
                 this.properties = m.getRoutePutMeta().optJSONObject("properties");
                 this.remoteIP = m.getRoutePutMeta().optString("remoteIP", null);
-                if (this.defaultChannel == null)
-                {
+                if (this.defaultChannel == null) {
                     this.defaultChannel = msgChannel;
                 }
-                if (connected)
-                {
+                if (connected) {
                     msgChannel.addMember(this);
                 } else {
                     msgChannel.removeMember(this);
                 }
             } else {
-                if (m.hasMetaField("setSessionProperty"))
-                {
+                if (m.hasMetaField("setSessionProperty")) {
                     JSONObject storeRequest = m.getRoutePutMeta().optJSONObject("setSessionProperty");
-                    for(String k : storeRequest.keySet())
+                    for (String k : storeRequest.keySet())
                     {
                         String v = storeRequest.getString(k);
-                        this.getProperties().put(k, m.getPathValue(v));
+                        Object oldValue = this.properties.opt(k);
+                        Object newValue = m.getPathValue(v);
+                        this.getProperties().put(k, newValue);
+                        this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
                     }
                 }
                 msgChannel.handleMessage(this, m);
@@ -139,126 +128,106 @@ public class RoutePutRemoteSession implements RoutePutSession
                 });
             }
         } else {
-            RoutePutServer.logWarning("PACKET LOST (RoutePutRemoteSession asked to handle stray packet): " + m.toString());
+            RoutePutServer
+                    .logWarning("PACKET LOST (RoutePutRemoteSession asked to handle stray packet): " + m.toString());
         }
     }
 
     @Override
-    public boolean isConnected()
-    {
+    public boolean isConnected() {
         return this.parent.isConnected() && (RoutePutChannel.channelsWithMember(this).size() > 0);
     }
 
-    public void addMessageListener(RoutePutMessageListener r)
-    {
-        if (!this.listeners.contains(r))
-        {
+    public void addMessageListener(RoutePutMessageListener r) {
+        if (!this.listeners.contains(r)) {
             this.listeners.add(r);
         }
     }
-    
-    public void removeMessageListener(RoutePutMessageListener r)
-    {
-        if (this.listeners.contains(r))
-        {
+
+    public void removeMessageListener(RoutePutMessageListener r) {
+        if (this.listeners.contains(r)) {
             this.listeners.remove(r);
         }
     }
 
-    public RoutePutSession getParent()
-    {
+    public RoutePutSession getParent() {
         return this.parent;
     }
 
-    public boolean hasParent(RoutePutSession session)
-    {
+    public boolean hasParent(RoutePutSession session) {
         return this.parent == session;
     }
 
-    public static Collection<RoutePutRemoteSession> children(RoutePutSession parent)
-    {
-        return RoutePutRemoteSession.sessions.values().stream().filter((c) -> (c.hasParent(parent))).collect(Collectors.toList());
+    public static Collection<RoutePutRemoteSession> children(RoutePutSession parent) {
+        return RoutePutRemoteSession.sessions.values().stream().filter((c) -> (c.hasParent(parent)))
+                .collect(Collectors.toList());
     }
 
-    public static boolean isChild(RoutePutSession parent, String childConnectionId)
-    {
-        if (RoutePutRemoteSession.sessions.containsKey(childConnectionId))
-        {
+    public static boolean isChild(RoutePutSession parent, String childConnectionId) {
+        if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) {
             return RoutePutRemoteSession.sessions.get(childConnectionId).hasParent(parent);
         } else {
             return false;
         }
     }
 
-    public static RoutePutRemoteSession findRemoteSession(String childConnectionId)
-    {
+    public static RoutePutRemoteSession findRemoteSession(String childConnectionId) {
         return RoutePutRemoteSession.sessions.get(childConnectionId);
     }
 
-    public Collection<RoutePutMessageListener> getMessageListeners()
-    {
+    public Collection<RoutePutMessageListener> getMessageListeners() {
         return this.listeners;
     }
 
-    public boolean hasMessageListener(RoutePutMessageListener r)
-    {
+    public boolean hasMessageListener(RoutePutMessageListener r) {
         return this.listeners.contains(r);
     }
 
-    public void send(RoutePutMessage jo)
-    {
+    public void send(RoutePutMessage jo) {
         jo.setChannelIfNull(this.getDefaultChannel());
         jo.setTargetId(this.connectionId);
         this.getParent().send(jo);
         this.txPackets++;
     }
 
-    public String getRemoteIP()
-    {
+    public String getRemoteIP() {
         return this.remoteIP;
     }
 
-    public String getConnectionId()
-    {
+    public String getConnectionId() {
         return this.connectionId;
     }
 
     @Override
-    public RoutePutChannel getDefaultChannel() 
-    {
+    public RoutePutChannel getDefaultChannel() {
         return this.defaultChannel;
     }
 
-    public long getIdle()
-    {
+    public long getIdle() {
         return System.currentTimeMillis() - this.lastReceived;
     }
 
     @Override
-    public JSONObject toJSONObject()
-    {
+    public JSONObject toJSONObject() {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
-        if (this.defaultChannel != null)
-        {
+        if (this.defaultChannel != null) {
             jo.put("defaultChannel", this.defaultChannel.getName());
         }
-        List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map(
-            (c) -> {return c.getName();}
-        ).collect(Collectors.toList());
+        List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
+            return c.getName();
+        }).collect(Collectors.toList());
         jo.put("channels", new JSONArray(channels));
-        //jo.put("upgradeHeaders", this.upgradeHeaders);
+        // jo.put("upgradeHeaders", this.upgradeHeaders);
         jo.put("_parentConnected", this.parent.isConnected());
         jo.put("_parentConnectionId", this.parent.getConnectionId());
         jo.put("remoteIP", this.remoteIP);
         jo.put("properties", this.properties);
         jo.put("idle", getIdle());
-        if (this.rxPackets > 0)
-        {
+        if (this.rxPackets > 0) {
             jo.put("rx", this.rxPackets);
         }
-        if (this.txPackets > 0)
-        {
+        if (this.txPackets > 0) {
             jo.put("tx", this.txPackets);
         }
         jo.put("_class", "RoutePutRemoteSession");
@@ -267,37 +236,35 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     @Override
-    public boolean isCollector()
-    {
+    public boolean isCollector() {
         return false;
     }
 
     @Override
-    public boolean isRootConnection()
-    {
+    public boolean isRootConnection() {
         return false;
     }
 
     @Override
-    public boolean containsConnectionId(String connectionId)
-    {
+    public boolean containsConnectionId(String connectionId) {
         return this.connectionId.equals(connectionId);
-    }
-
-    @Override
-    public String getProperty(String key, String defaultValue)
-    {
-        if (this.properties != null)
-        {
-            return this.properties.optString(key, defaultValue);
-        } else {
-            return defaultValue;
-        }
     }
 
     @Override
     public JSONObject getProperties()
     {
         return this.properties;
+    }
+
+    @Override
+    public void addPropertyChangeListener(PropertyChangeListener listener)
+    {
+        this.propertyChangeSupport.addPropertyChangeListener(listener);
+    }
+
+    @Override
+    public void removePropertyChangeListener(PropertyChangeListener listener)
+    {
+        this.propertyChangeSupport.removePropertyChangeListener(listener);
     }
 }

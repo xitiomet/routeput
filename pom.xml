@@ -15,6 +15,13 @@
     <imageName>routeput</imageName>
     <jettyVersion>9.4.28.v20200408</jettyVersion>
   </properties>
+  <distributionManagement>
+   <repository>
+     <id>github-xitiomet</id>
+     <name>GitHub OWNER Apache Maven Packages</name>
+     <url>https://maven.pkg.github.com/xitiomet/routeput</url>
+   </repository>
+  </distributionManagement>
   <repositories>
     <repository>
       <id>local.repo</id>

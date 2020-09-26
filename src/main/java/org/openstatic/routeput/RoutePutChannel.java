@@ -1,5 +1,8 @@
 package org.openstatic.routeput;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.beans.PropertyChangeSupport;
 import java.io.File;
 import java.net.InetAddress;
 import java.util.ArrayList;
@@ -18,6 +21,7 @@ public class RoutePutChannel
     private static File channelRoot;
     private static String hostname;
 
+    private PropertyChangeSupport propertyChangeSupport;
     private String name;
     private JSONObject properties;
     protected LinkedHashMap<String, RoutePutSession> members;
@@ -34,6 +38,7 @@ public class RoutePutChannel
     private RoutePutChannel(String name)
     {
         RoutePutServer.logIt("Channel created " + name);
+        this.propertyChangeSupport = new PropertyChangeSupport(this);
         this.msgTxPerSecond = 0;
         this.msgRxPerSecond = 0;
         this.messagesTx = 0;
@@ -382,9 +387,12 @@ public class RoutePutChannel
                 for(String k : storeRequest.keySet())
                 {
                     String v = storeRequest.getString(k);
-                    this.properties.put(k, j.getPathValue(v));
-                    saveChannelProperties();
+                    Object oldValue = this.properties.opt(k);
+                    Object newValue = j.getPathValue(v);
+                    this.properties.put(k, newValue);
+                    this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
                 }
+                saveChannelProperties();
             }
             if (j.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
             {
@@ -513,6 +521,7 @@ public class RoutePutChannel
 
     public void setProperty(RoutePutSession session, String key, Object value)
     {
+        Object oldValue = this.properties.opt(key);
         this.properties.put(key, value);
         
         RoutePutMessage setChannelPropertyMessage = new RoutePutMessage();
@@ -527,12 +536,15 @@ public class RoutePutChannel
         this.broadcast(setChannelPropertyMessage);
 
         this.saveChannelProperties();
+        this.propertyChangeSupport.firePropertyChange(key, oldValue, value);
     }
 
     public void removeProperty(RoutePutSession session, String key)
     {
+        Object oldValue = this.properties.opt(key);
         this.properties.remove(key);
         this.saveChannelProperties();
+        this.propertyChangeSupport.firePropertyChange(key, oldValue, null);
     }
 
     public JSONObject getProperties()
@@ -609,6 +621,16 @@ public class RoutePutChannel
     public long getIdle()
     {
         return System.currentTimeMillis() - this.lastAccess;
+    }
+
+    public void addPropertyChangeListener(PropertyChangeListener listener) 
+    {
+        this.propertyChangeSupport.addPropertyChangeListener(listener);
+    }
+
+    public void removePropertyChangeListener(PropertyChangeListener listener)
+    {
+        this.propertyChangeSupport.removePropertyChangeListener(listener);
     }
 
     public JSONObject toJSONObject()

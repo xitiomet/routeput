@@ -1,14 +1,14 @@
 package org.openstatic.routeput;
 
 import org.json.JSONObject;
+import java.beans.PropertyChangeListener;
 
-public interface RoutePutSession 
+public interface RoutePutSession
 {
     public void send(RoutePutMessage jo);
 
     public String getConnectionId();
     public RoutePutChannel getDefaultChannel();
-    public String getProperty(String key, String defaultValue);
     public String getRemoteIP();
     
     public JSONObject getProperties();
@@ -21,4 +21,7 @@ public interface RoutePutSession
 
     public void addMessageListener(RoutePutMessageListener r);
     public void removeMessageListener(RoutePutMessageListener r);
+
+    public void addPropertyChangeListener(PropertyChangeListener listener);
+    public void removePropertyChangeListener(PropertyChangeListener listener);
 }
