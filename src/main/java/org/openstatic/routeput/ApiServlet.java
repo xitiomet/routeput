@@ -27,7 +27,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         this.properties = new JSONObject();
         this.rxPackets = 0;
         this.txPackets = 0;
-        System.err.println("** API SERVLET INITIALIZED **");
+        RoutePutServer.logIt("** API SERVLET INITIALIZED **");
         RoutePutServer.instance.apiServlet = this;
     }
 
@@ -40,7 +40,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 jb.append(line);
             }
         } catch (Exception e) {
-            e.printStackTrace(System.err);
             RoutePutServer.logError(e);
         }
 
@@ -62,7 +61,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 jb.append(line);
             }
         } catch (Exception e) {
-            e.printStackTrace(System.err);
             RoutePutServer.logError(e);
         }
 
@@ -92,7 +90,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 if (!channel.hasMember(this)) {
                     channel.addMember(this);
                 }
-                channel.handleMessage(this, msg);
+                channel.onMessage(this, msg);
             } else {
                 boolean sendConnect = false;
                 RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
@@ -319,7 +317,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     public JSONObject toJSONObject() {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
-        jo.put("collector", this.isCollector());
         List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
             return c.getName();
         }).collect(Collectors.toList());
@@ -341,12 +338,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     public boolean isConnected() {
         // TODO Auto-generated method stub
         return RoutePutServer.instance.apiServlet == this;
-    }
-
-    @Override
-    public boolean isCollector() {
-        // TODO Auto-generated method stub
-        return false;
     }
 
     @Override

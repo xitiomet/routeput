@@ -245,7 +245,7 @@ public class RoutePutMain
                     session.addMessageListener(new RoutePutMessageListener(){
                     
                         @Override
-                        public void onMessage(RoutePutMessage message) {
+                        public void onMessage(RoutePutSession session, RoutePutMessage message) {
                             System.err.println(session.getConnectionId() + " Received " + message.toString());
                         }
                     });
@@ -267,7 +267,7 @@ public class RoutePutMain
         rpc.addMessageListener(new RoutePutMessageListener(){
                     
             @Override
-            public void onMessage(RoutePutMessage message) {
+            public void onMessage(RoutePutSession session, RoutePutMessage message) {
                 System.err.println("CLIENT Received " + message.toString());
             }
         });
@@ -307,7 +307,7 @@ public class RoutePutMain
                     session.addMessageListener(new RoutePutMessageListener(){
                     
                         @Override
-                        public void onMessage(RoutePutMessage message) {
+                        public void onMessage(RoutePutSession session, RoutePutMessage message) {
                             System.err.println(session.getConnectionId() + " Received " + message.toString());
                         }
                     });
@@ -329,7 +329,7 @@ public class RoutePutMain
         rpc.addMessageListener(new RoutePutMessageListener(){
                     
             @Override
-            public void onMessage(RoutePutMessage message) {
+            public void onMessage(RoutePutSession session, RoutePutMessage message) {
                 System.err.println("CLIENT Received " + message.toString());
             }
         });

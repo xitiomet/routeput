@@ -111,14 +111,9 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         jo.put("remoteIP", this.remoteIP);
         jo.put("properties", this.properties);
         jo.put("_class", "RoutePutClient");
-        // jo.put("_listeners", this.listeners.size());
+        jo.put("_listeners", this.listeners.size());
         // jo.put("_sessionListeners", this.remoteSessionListeners.size());
         return jo;
-    }
-
-    @Override
-    public boolean isCollector() {
-        return this.collector;
     }
 
     @Override
@@ -171,6 +166,9 @@ public class RoutePutClient implements RoutePutSession, Runnable {
             if (j.hasMetaField("properties")) {
                 this.properties = j.getRoutePutMeta().optJSONObject("properties");
             }
+            if (j.hasMetaField("channelProperties")) {
+                this.getDefaultChannel().mergeProperties(this, j.getRoutePutMeta().optJSONObject("channelProperties"));
+            }
             if (this.collector) {
                 RoutePutMessage rpm = new RoutePutMessage();
                 rpm.setRequest("becomeCollector");
@@ -178,7 +176,10 @@ public class RoutePutClient implements RoutePutSession, Runnable {
             }
             this.getDefaultChannel().addMember(this);
         } else if (j.isType(RoutePutMessage.TYPE_RESPONSE)) {
-            // Handle response data
+            if ("subscribe".equals(j.getResponse()))
+            {
+                j.getRoutePutChannel().mergeProperties(this, j.getRoutePutMeta().optJSONObject("channelProperties"));
+            }
         } else if (j.isType(RoutePutMessage.TYPE_REQUEST)) {
 
         } else if (j.isType(RoutePutMessage.TYPE_PONG)) {
@@ -198,7 +199,7 @@ public class RoutePutClient implements RoutePutSession, Runnable {
                 RoutePutRemoteSession.handleRoutedMessage(this, j);
             } else {
                 RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
-                    r.onMessage(j);
+                    r.onMessage(this, j);
                 });
             }
         }

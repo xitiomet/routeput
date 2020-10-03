@@ -100,7 +100,7 @@ public class RoutePutServer implements Runnable
         this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
 
             @Override
-            public void onMessage(RoutePutMessage message) {
+            public void onMessage(RoutePutSession session, RoutePutMessage message) {
                 String msgType = message.getType();
                 if (msgType != null)
                 {
@@ -183,7 +183,7 @@ public class RoutePutServer implements Runnable
             RoutePutMessage jo = new RoutePutMessage();
             jo.put("channelStats", this.channelStats());
             jo.setChannel(this.routeputDebug);
-            this.routeputDebug.handleMessage(null, jo);
+            this.routeputDebug.onMessage(null, jo);
         } else {
             System.err.println("routeputDebug is null");
         }
@@ -283,7 +283,7 @@ public class RoutePutServer implements Runnable
                 l.setType(type);
                 l.setChannel("routeputDebug");
                 l.put("text",  text);
-                RoutePutServer.instance.routeputDebug.handleMessage(null, l);
+                RoutePutServer.instance.routeputDebug.onMessage(null, l);
             }
         }
     }

@@ -1,6 +1,5 @@
 package org.openstatic.routeput;
 
-import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.File;
@@ -14,7 +13,7 @@ import java.util.stream.Collectors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class RoutePutChannel
+public class RoutePutChannel implements RoutePutMessageListener
 {
     private static HashMap<String, RoutePutChannel> channels;
     private static Thread channelTracker = null;
@@ -35,6 +34,7 @@ public class RoutePutChannel
     private int msgTxPerSecond;
     private int msgRxPerSecond;
 
+    /* Nobody should ever create a RoutePutChannel! it should always be pulled by static method getChannel() */
     private RoutePutChannel(String name)
     {
         RoutePutServer.logIt("Channel created " + name);
@@ -60,6 +60,7 @@ public class RoutePutChannel
         }
     }
 
+    /* Disable auto-disposing of channel */
     public void setPermanent(boolean v)
     {
         this.properties.put("permanent", true);
@@ -74,6 +75,17 @@ public class RoutePutChannel
     private void saveChannelProperties()
     {
         RoutePutServer.saveJSONObject(this.getPropertiesFile(), this.properties);
+    }
+
+    public JSONArray getBlobs()
+    {
+        JSONArray ja = new JSONArray();
+        File blobFolder = getBlobFolder();
+        if (blobFolder != null)
+        {
+            ja = new JSONArray(blobFolder.list());
+        }
+        return ja;
     }
 
     public File getBlobFolder()
@@ -233,6 +245,7 @@ public class RoutePutChannel
         return this.members.containsValue(session);
     }
 
+    /* should always be called when a member joins, even if a remote member joins  */
     public synchronized void addMember(RoutePutSession session)
     {
         String connectionId = session.getConnectionId();
@@ -256,6 +269,7 @@ public class RoutePutChannel
         }
     }
 
+    /* should always be called when a member leaves, even if a remote member leaves  */
     public synchronized void removeMember(RoutePutSession session)
     {
         if (this.members.containsValue(session))
@@ -356,13 +370,15 @@ public class RoutePutChannel
                 jo.setChannel(this);
                 jo.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
                 jo.setMetaField("connected", true);
+                jo.setMetaField("remoteIP", m.getRemoteIP());
                 jo.setMetaField("properties", m.getProperties());
                 session.send(jo);
             }
         });
     }
 
-    public void handleMessage(RoutePutSession session, RoutePutMessage j)
+    @Override
+    public void onMessage(RoutePutSession session, RoutePutMessage j)
     {
         RoutePutChannel mChan = j.getRoutePutChannel();
         if (this.equals(mChan))
@@ -466,13 +482,14 @@ public class RoutePutChannel
                 }
             }
             messageListeners.parallelStream().forEach((l) -> {
-                l.onMessage(j);
+                l.onMessage(session, j);
             });
         } else {
             RoutePutServer.logWarning(this.getName() + " was asked to handle a packet that didnt belong to it! Intended for " + mChan.getName());
         }
     }
 
+    /* transmit a message to all members of this channel, should be used internally only */
     private void broadcast(RoutePutMessage jo)
     {
         this.members.values().parallelStream().forEach((s) ->
@@ -519,6 +536,29 @@ public class RoutePutChannel
         return ja;
     }
 
+    public void mergeProperties(RoutePutSession session, JSONObject props)
+    {
+        if (props != null)
+        {
+            RoutePutMessage setChannelPropertyMessage = new RoutePutMessage();
+            setChannelPropertyMessage.setSource(session);
+            setChannelPropertyMessage.setChannel(this);
+            JSONObject setDirective = new JSONObject();
+            for(String key : props.keySet())
+            {
+                Object oldValue = this.properties.opt(key);
+                Object newValue = props.opt(key);
+                this.properties.put(key, newValue);
+                setChannelPropertyMessage.put(key, newValue);
+                setDirective.put(key, key);
+                this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
+            }
+            setChannelPropertyMessage.getRoutePutMeta().put("setChannelProperty", setDirective);
+            this.broadcast(setChannelPropertyMessage);
+            this.saveChannelProperties();
+        }
+    }
+
     public void setProperty(RoutePutSession session, String key, Object value)
     {
         Object oldValue = this.properties.opt(key);
@@ -557,6 +597,7 @@ public class RoutePutChannel
         return RoutePutChannel.channels.values();
     }
 
+    /* static method for getting a channel object by its name, this should be the only way to retrieve a channel */
     public static synchronized RoutePutChannel getChannel(String name)
     {
         initTracker();
@@ -571,6 +612,7 @@ public class RoutePutChannel
         return chan;
     }
 
+    /* Remove a session from all channels that exist in memory */
     public static synchronized void removeFromAllChannels(RoutePutSession session)
     {
         RoutePutChannel.channels.values().stream().forEach((c) -> {
@@ -640,6 +682,7 @@ public class RoutePutChannel
         jo.put("lastAccess", this.lastAccess);
         jo.put("idle", this.getIdle());
         jo.put("members", this.membersAsJSONObject());
+        jo.put("blobs", this.getBlobs());
         jo.put("memberCount", this.memberCount());
         jo.put("properties", this.getProperties());
         jo.put("msgTxPerSecond", this.msgTxPerSecond);

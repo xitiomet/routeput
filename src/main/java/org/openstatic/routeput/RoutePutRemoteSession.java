@@ -36,7 +36,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         return RoutePutRemoteSession.sessions != null;
     }
 
-    public static synchronized void handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo) {
+    public static synchronized RoutePutRemoteSession handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo) {
         init();
         String sourceId = jo.getSourceId();
         if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
@@ -53,12 +53,14 @@ public class RoutePutRemoteSession implements RoutePutSession
                     RoutePutRemoteSession.sessions.put(sourceId, remoteSession);
                 }
                 remoteSession.handleMessage(jo);
+                return remoteSession;
             } else {
                 // Seems like this is a disconnect message, lets just remove the connection
                 // and pass that status along.
                 if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                     remoteSession.handleMessage(jo);
+                    return remoteSession;
                     // If this is the last channel lets get rid of this connection entirely
                 }
             }
@@ -68,8 +70,10 @@ public class RoutePutRemoteSession implements RoutePutSession
             if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                 remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                 remoteSession.handleMessage(jo);
+                return remoteSession;
             }
         }
+        return null;
     }
 
     public RoutePutRemoteSession(RoutePutSession parent, String connectionId)
@@ -93,7 +97,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
     }
 
-    public void handleMessage(RoutePutMessage m) {
+    private void handleMessage(RoutePutMessage m) {
         if (this.connectionId.equals(m.getSourceId())) {
             this.rxPackets++;
             this.lastReceived = System.currentTimeMillis();
@@ -122,9 +126,9 @@ public class RoutePutRemoteSession implements RoutePutSession
                         this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
                     }
                 }
-                msgChannel.handleMessage(this, m);
+                msgChannel.onMessage(this, m);
                 RoutePutRemoteSession.this.listeners.parallelStream().forEach((r) -> {
-                    r.onMessage(m);
+                    r.onMessage(this, m);
                 });
             }
         } else {
@@ -233,11 +237,6 @@ public class RoutePutRemoteSession implements RoutePutSession
         jo.put("_class", "RoutePutRemoteSession");
         jo.put("_listeners", this.listeners.size());
         return jo;
-    }
-
-    @Override
-    public boolean isCollector() {
-        return false;
     }
 
     @Override

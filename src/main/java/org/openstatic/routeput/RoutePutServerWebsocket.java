@@ -44,7 +44,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private RoutePutMessage lastRxPacket;
     private RoutePutMessage lastTxPacket;
 
-    protected void handleMessage(RoutePutMessage jo) {
+    private void handleMessage(RoutePutMessage jo) {
         if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
             handleRequest(jo);
         } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
@@ -76,10 +76,10 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                     this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
                 }
             }
-            channel.handleMessage(this, jo);
+            channel.onMessage(this, jo);
 
             this.listeners.parallelStream().forEach((r) -> {
-                r.onMessage(jo);
+                r.onMessage(this, jo);
             });
             if (jo.optMetaField("echo", false) && this.websocketSession != null) {
                 jo.removeMetaField("echo");
@@ -412,7 +412,6 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     public JSONObject toJSONObject() {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
-        jo.put("collector", this.isCollector());
         jo.put("defaultChannel", this.defaultChannel.getName());
         jo.put("socketPath", this.path);
         List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
@@ -435,6 +434,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         jo.put("properties", this.properties);
         jo.put("remoteIP", this.remoteIP);
         jo.put("_class", "RoutePutServerWebsocket");
+        jo.put("_listeners", this.listeners.size());
         return jo;
     }
 
@@ -444,11 +444,6 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         pingMessage.setChannel(this.getDefaultChannel());
         pingMessage.setMetaField("timestamp", System.currentTimeMillis());
         this.send(pingMessage);
-    }
-
-    @Override
-    public boolean isCollector() {
-        return this.collector;
     }
 
     @Override
