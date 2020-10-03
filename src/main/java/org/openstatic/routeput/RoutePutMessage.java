@@ -1,5 +1,6 @@
 package org.openstatic.routeput;
 
+import java.util.Random;
 import java.util.StringTokenizer;
 
 import org.json.JSONArray;
@@ -51,15 +52,39 @@ public class RoutePutMessage extends JSONObject
         getRoutePutMeta();
     }
 
+    public static synchronized String generateMessageId()
+    {
+        int key_length = 10;
+        try
+        {
+            Thread.sleep(1);
+        } catch (Exception e) {}
+        Random n = new Random(System.currentTimeMillis());
+        String alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        StringBuffer return_key = new StringBuffer();
+        for (int i = 0; i < key_length; i++)
+        {
+            return_key.append(alpha.charAt(n.nextInt(alpha.length())));
+        }
+        String randKey = return_key.toString();
+        return randKey;
+    }
+
     public JSONObject getRoutePutMeta()
     {
         if (!this.has("__routeput"))
         {
             JSONObject rpm = new JSONObject();
+            rpm.put("msgId", generateMessageId());
             this.put("__routeput", rpm);
             return rpm;
         } else {
-            return this.optJSONObject("__routeput");
+            JSONObject rpm = this.optJSONObject("__routeput");
+            if (!rpm.has("msgId"))
+            {
+                rpm.put("msgId", generateMessageId());
+            }
+            return rpm;
         }
     }
 
@@ -136,6 +161,11 @@ public class RoutePutMessage extends JSONObject
             return this.toCleanJSONObject();
         }
         return ro;
+    }
+
+    public String getMessageId()
+    {
+        return this.getRoutePutMeta().optString("msgId", null);
     }
 
     public String getSourceId()

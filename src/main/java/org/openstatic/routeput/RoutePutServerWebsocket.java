@@ -326,7 +326,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private void finishHandshake() {
         if (!this.handshakeComplete) {
             if (this.connectionId == null) {
-                this.connectionId = RoutePutServer.generateBigAlphaKey(24);
+                this.connectionId = RoutePutServer.generateBigAlphaKey(10);
             }
             RoutePutServer.instance.sessions.put(this.connectionId, this);
             RoutePutServer.logIt(
