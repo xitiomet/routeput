@@ -171,7 +171,7 @@ public class RoutePutMain
                 while ((count = aInputStream.read(buffer)) != -1)
                 {
                     rpos.write(buffer, 0, count);
-                    Thread.sleep(20);
+                    Thread.sleep(1);
                 }
                 in.close();
                 System.err.println("Streamed sof.wav");

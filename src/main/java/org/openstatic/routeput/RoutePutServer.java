@@ -92,7 +92,7 @@ public class RoutePutServer implements Runnable
         this.dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
         RoutePutServer.instance = this;
         this.settings = settings;
-        this.channelRoot = new File(settings.optString("channelRoot", "./channel/"));
+        this.channelRoot = new File(settings.optString("channelStorageRoot", "./channel/"));
         RoutePutChannel.setChannelRoot(this.channelRoot);
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
@@ -118,8 +118,8 @@ public class RoutePutServer implements Runnable
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
-        context.addServlet(ApiServlet.class, "/api/*");
-        context.addServlet(EventsWebSocketServlet.class, settings.optString("channelPath", "/channel/*"));
+        context.addServlet(ApiServlet.class,  settings.optString("apiPath", "/api/*"));
+        context.addServlet(EventsWebSocketServlet.class, settings.optString("websocketPath", "/channel/*"));
         context.addServlet(InterfaceServlet.class, "/*");
         httpServer.setHandler(context);
         this.mainThread = new Thread(this);
@@ -197,14 +197,18 @@ public class RoutePutServer implements Runnable
                 }
             });
         }
-        RoutePutRemoteSession.children(this.apiServlet).stream().forEach((c) -> {
-            long idleDestruct = c.getProperties().optLong("idleDestruct", 0);
-            if (c.getIdle() > idleDestruct && idleDestruct > 0)
-            {
-                logIt("Connection " + c.getConnectionId() + " destroyed due to idleDestruct, parent was " + c.getParent().getConnectionId());
-                RoutePutChannel.removeFromAllChannels(c);
-            }
-        });
+        if (this.apiServlet != null)
+        {
+            RoutePutRemoteSession.children(this.apiServlet).stream().forEach((c) -> {
+                long idleDestruct = c.getProperties().optLong("idleDestruct", 0);
+                if (c.getIdle() > idleDestruct && idleDestruct > 0)
+                {
+                    logIt("Connection " + c.getConnectionId() + " destroyed due to idleDestruct, parent was " + c.getParent().getConnectionId());
+                    RoutePutChannel.removeFromAllChannels(c);
+                }
+            });
+            this.apiServlet.everySecond();
+        }
     }
     
     public void setState(boolean b)

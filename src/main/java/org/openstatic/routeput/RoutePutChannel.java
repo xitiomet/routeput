@@ -23,6 +23,7 @@ public class RoutePutChannel implements RoutePutMessageListener
     private PropertyChangeSupport propertyChangeSupport;
     private String name;
     private JSONObject properties;
+    private boolean unsavedProperties;
     protected LinkedHashMap<String, RoutePutSession> members;
     private long lastAccess;
     private RoutePutSession collector;
@@ -50,6 +51,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.messageListeners = new ArrayList<RoutePutMessageListener>();
         this.collector = null;
         this.properties = new JSONObject();
+        this.unsavedProperties = false;
         File propertiesFile = this.getPropertiesFile();
         if (propertiesFile != null)
         {
@@ -74,7 +76,7 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private void saveChannelProperties()
     {
-        RoutePutServer.saveJSONObject(this.getPropertiesFile(), this.properties);
+        this.unsavedProperties = true;
     }
 
     public JSONArray getBlobs()
@@ -191,10 +193,19 @@ public class RoutePutChannel implements RoutePutMessageListener
             boolean removeIt = (c.getIdle() > idleTimeout) && c.memberCount() == 0 && !c.isPermanent();
             if (removeIt)
             {
-                c.saveChannelProperties();
-                RoutePutServer.logIt("Channel \"" + c.getName() + "\" destroyed because of idle");
+                RoutePutServer.saveJSONObject(c.getPropertiesFile(), c.properties);
+                RoutePutServer.logIt("Channel \"" + c.getName() + "\" moved to cold storage, because of idle");
             } 
             return removeIt; 
+        });
+        RoutePutChannel.channels.values().stream().filter(c -> c.unsavedProperties).forEach((c) -> {
+            try
+            {
+                RoutePutServer.saveJSONObject(c.getPropertiesFile(), c.properties);
+                c.unsavedProperties = false;
+            } catch (Exception e) {
+                RoutePutServer.logError(e);
+            }
         });
     }
 

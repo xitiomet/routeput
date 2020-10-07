@@ -11,6 +11,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 import java.beans.PropertyChangeListener;
@@ -22,6 +27,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     private JSONObject properties;
     private long rxPackets;
     private long txPackets;
+    private Map<RoutePutChannel, Date> lastChannelInteraction;
 
     public ApiServlet() {
         this.properties = new JSONObject();
@@ -29,6 +35,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         this.txPackets = 0;
         RoutePutServer.logIt("** API SERVLET INITIALIZED **");
         RoutePutServer.instance.apiServlet = this;
+        this.lastChannelInteraction = new HashMap<RoutePutChannel, Date>();
+        this.lastChannelInteraction = Collections.synchronizedMap(this.lastChannelInteraction);
     }
 
     public RoutePutMessage readRoutePutMessagePOST(HttpServletRequest request) {
@@ -82,8 +90,25 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         }
     }
 
+    public void everySecond()
+    {
+        long cTime = System.currentTimeMillis();
+        ArrayList<RoutePutChannel> idleChannels = new ArrayList<RoutePutChannel>();
+        this.lastChannelInteraction.forEach((k,v) -> {
+            if ((cTime - v.getTime()) > 900000)
+            {
+                idleChannels.add(k);
+            }
+        });
+        idleChannels.forEach((c) -> {
+            c.removeMember(this);
+            this.lastChannelInteraction.remove(c);
+        });
+    }
+
     private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg) {
         RoutePutChannel channel = msg.getRoutePutChannel();
+        this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
         String sourceId = msg.getSourceId();
         if (sourceId != null) {
             if (sourceId.equals(this.getConnectionId())) {
