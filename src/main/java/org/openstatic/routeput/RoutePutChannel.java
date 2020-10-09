@@ -79,23 +79,35 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.unsavedProperties = true;
     }
 
+    public String getBLOBContext()
+    {
+        return "channel." + this.name;
+    }
+
     public JSONArray getBlobs()
     {
         JSONArray ja = new JSONArray();
         File blobFolder = getBlobFolder();
         if (blobFolder != null)
         {
-            ja = new JSONArray(blobFolder.list());
+            ja = new JSONArray();
+
+            String[] names = blobFolder.list();
+            for (int i = 0; i < names.length; i++)
+            {
+                BLOBFile file = new BLOBFile(blobFolder, getBLOBContext(), names[i]);
+                ja.put(file.toJSONObject());
+            }
         }
         return ja;
     }
 
     public File getBlobFolder()
     {
-        File channelFolder = this.getChannelFolder();
-        if (channelFolder != null)
+        File blobRoot = BLOBManager.getBlobRoot();
+        if (blobRoot != null)
         {
-            File blobFolder = new File(channelFolder, "blob");
+            File blobFolder = new File(blobRoot, getBLOBContext());
             if (!blobFolder.exists())
             {
                 blobFolder.mkdir();

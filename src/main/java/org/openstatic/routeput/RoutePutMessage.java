@@ -88,6 +88,18 @@ public class RoutePutMessage extends JSONObject
         }
     }
 
+    public void mergeRouteputMeta(JSONObject obj)
+    {
+        if (obj != null)
+        {
+            for(String key : obj.keySet())
+            {
+                Object newValue = obj.opt(key);
+                this.getRoutePutMeta().put(key, newValue);
+            }
+        }
+    }
+
     public  boolean hasMetaField(String fieldName)
     {
         return this.getRoutePutMeta().has(fieldName);
@@ -166,6 +178,11 @@ public class RoutePutMessage extends JSONObject
     public String getMessageId()
     {
         return this.getRoutePutMeta().optString("msgId", null);
+    }
+
+    public void setRef(RoutePutMessage msg)
+    {
+        this.getRoutePutMeta().put("ref", msg.getMessageId());
     }
 
     public String getSourceId()
@@ -264,10 +281,12 @@ public class RoutePutMessage extends JSONObject
         this.getRoutePutMeta().put("request", requestType);
     }
 
-    public void setResponse(String responseType)
+    public void setResponse(String responseType, RoutePutMessage request)
     {
         this.setType(TYPE_RESPONSE);
         this.getRoutePutMeta().put("response", responseType);
+        this.setChannel(request.getRoutePutChannel());
+        this.setRef(request);
     }
 
     public String getRequest()

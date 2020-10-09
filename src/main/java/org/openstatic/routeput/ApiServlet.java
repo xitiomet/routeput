@@ -291,6 +291,43 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                         }
                     }
                 }
+            } else if (target.startsWith("/blob/")) {
+                StringTokenizer st = new StringTokenizer(target, "/");
+                String context = null;
+                String token = st.nextToken();
+                File blobContext = BLOBManager.getBlobRoot();
+                while (blobContext.isDirectory() && st.hasMoreTokens())
+                {
+                    token = st.nextToken();
+                    blobContext = new File(blobContext, token);
+                }
+                if (blobContext.isDirectory())
+                {
+                    if (!"blob".equals(token))
+                    {
+                        context = token;
+                    }
+                    JSONArray ja = new JSONArray();
+                    ja = new JSONArray();
+                    String[] names = blobContext.list();
+                    for (int i = 0; i < names.length; i++)
+                    {
+                        BLOBFile file = new BLOBFile(blobContext, context, names[i]);
+                        ja.put(file.toJSONObject());
+                    }
+                    response.put(token, ja);
+                } else {
+                    String contentType = BLOBManager.getContentTypeFor(token);
+                    httpServletResponse.setContentType(contentType);
+                    httpServletResponse.setStatus(HttpServletResponse.SC_OK);
+                    httpServletResponse.setCharacterEncoding("iso-8859-1");
+                    InputStream inputStream = new FileInputStream(blobContext);
+                    OutputStream output = httpServletResponse.getOutputStream();
+                    inputStream.transferTo(output);
+                    output.flush();
+                    inputStream.close();
+                    return;
+                }
             } else if ("/channels/".equals(target)) {
                 response.put("channels", RoutePutChannel.channelBreakdown());
             } else if ("/channels/stats/".equals(target)) {

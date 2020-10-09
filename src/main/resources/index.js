@@ -94,27 +94,6 @@ routeput.onmessage = function (jsonObject) {
     }
 };
 
-function uploadFile()
-{
-    var filesSelected = document.getElementById("inputFileToLoad").files;
-    if (filesSelected.length > 0)
-    {
-      var fileToLoad = filesSelected[0];
-      routeput.transmitFile(fileToLoad);
-    }
-}
-
-function fetchFile()
-{
-    var filesSelected = document.getElementById("inputFileToLoad").files;
-    if (filesSelected.length > 0)
-    {
-      var fileToLoad = filesSelected[0];
-      var fileName = fileToLoad.name;
-      routeput.requestBlob(fileName);
-    }
-}
-
 window.onload = function() {
     
     routeput.connect();

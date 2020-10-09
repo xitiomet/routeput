@@ -11,9 +11,28 @@ import org.json.JSONObject;
 public class BLOBManager 
 {
     private static HashMap<String, StringBuffer> blobStorage;
+    private static File blobRoot;
+    public static JSONObject settings = new JSONObject();
 
-    public static void init()
+    public static File getBlobRoot()
     {
+        return BLOBManager.blobRoot;
+    }
+
+    public static void init(JSONObject settings)
+    {
+        if (settings != null)
+        {
+            BLOBManager.settings = settings;
+        }
+        if (BLOBManager.blobRoot == null)
+        {
+            BLOBManager.blobRoot = new File(BLOBManager.settings.optString("blobStorageRoot", "./blob/"));
+            if (!BLOBManager.blobRoot.exists())
+            {
+                BLOBManager.blobRoot.mkdir();
+            }
+        }
         if (BLOBManager.blobStorage == null)
         {
             BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
@@ -22,10 +41,12 @@ public class BLOBManager
 
     public static void handleBlobData(RoutePutMessage jo)
     {
-        BLOBManager.init();
+        BLOBManager.init(null);
         if (jo.hasMetaField("i") && jo.hasMetaField("of") && jo.hasMetaField("data") && jo.hasMetaField("name"))
         {
             JSONObject rpm = jo.getRoutePutMeta();
+            String context = rpm.optString("context", null);
+
             int i = rpm.optInt("i", 0);
             int of = rpm.optInt("of", 0);
             String name = rpm.optString("name", "");
@@ -40,10 +61,20 @@ public class BLOBManager
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
-                File blobFolder = jo.getRoutePutChannel().getBlobFolder();
+                File blobFolder = null;
+                if (context == null && jo.getRoutePutChannel() != null)
+                {
+                    blobFolder = jo.getRoutePutChannel().getBlobFolder();
+                } else {
+                    blobFolder = new File(BLOBManager.blobRoot, context);
+                    if (!blobFolder.exists())
+                    {
+                        blobFolder.mkdir();
+                    }
+                }
                 if (blobFolder != null)
                 {
-                    File blobFile = new File(blobFolder, name);
+                    BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
                     BLOBManager.saveBase64Blob(blobFile, sb);
                     BLOBManager.blobStorage.remove(name);
                 }
@@ -62,28 +93,87 @@ public class BLOBManager
         }
     }
 
-    public static void sendBlob(RoutePutSession session, String name)
+    public static BLOBFile resolveBlob(String context, String name)
     {
-        File blobFolder = session.getDefaultChannel().getBlobFolder();
+        File blobFolder = BLOBManager.blobRoot;
+        if (context != null)
+        {
+            blobFolder = new File(BLOBManager.blobRoot, context);
+            if (!blobFolder.exists())
+            {
+                blobFolder.mkdir();
+            }
+        }
         if (blobFolder != null)
         {
-            File blobFile = new File(blobFolder, name);
-            StringBuffer sb = BLOBManager.loadBase64Blob(blobFile);
-            transmitBlobChunks(session, name, sb);
+            BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
+            return blobFile;
+        }
+        return null;
+    }
+
+    public static boolean blobExists(String context, String name)
+    {
+        File blobFile = resolveBlob(context, name);
+        if (blobFile != null)
+        {
+            return blobFile.exists();
+        }
+        return false;
+    }
+
+    public static void fetchBlob(RoutePutSession session, RoutePutMessage request)
+    {
+        JSONObject rpm = request.getRoutePutMeta();
+        String name = rpm.optString("name", "");
+        String context = rpm.optString("context");
+        RoutePutChannel channel = request.getRoutePutChannel();
+        File blobFile = resolveBlob(context, name);
+        if (blobFile != null)
+        {
+            if (blobFile.exists())
+            {
+                StringBuffer sb = BLOBManager.loadBase64Blob(blobFile);
+                transmitBlobChunks(session, name, context, sb, request);
+            } else {
+                RoutePutMessage resp = new RoutePutMessage();
+                resp.setType(RoutePutMessage.TYPE_BLOB);
+                resp.setRef(request);
+                resp.setMetaField("name", name);
+                resp.setChannel(channel);
+                if (context != null)
+                {
+                    resp.setMetaField("context", context);
+                }
+                resp.setMetaField("exists", false);
+                session.send(resp);
+            }
+        } else {
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setType(RoutePutMessage.TYPE_BLOB);
+            resp.setRef(request);
+            resp.setMetaField("name", name);
+            resp.setChannel(channel);
+            if (context != null)
+            {
+                resp.setMetaField("context", context);
+            }
+            resp.setMetaField("exists", false);
+            session.send(resp);
         }
     }
 
     // Send a chunked blob to client from byte array
-    public static void sendBlob(RoutePutSession session, String name, String contentType, byte[] bytes)
+    public static void sendBlob(RoutePutSession session, String name, final String context, String contentType, byte[] bytes)
     {
         StringBuffer sb = new StringBuffer();
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        transmitBlobChunks(session, name, sb);
+        transmitBlobChunks(session, name, context, sb, null);
     }
     
     // Transmit a blob to this session shouldnt be called except by other sendBlob methods
-    private static void transmitBlobChunks(final RoutePutSession session, final String name, final StringBuffer sb)
+    private static void transmitBlobChunks(final RoutePutSession session, final String name, final String context, final StringBuffer sb, final RoutePutMessage request)
     {
         Thread x = new Thread(() -> {
             int size = sb.length();
@@ -94,8 +184,16 @@ public class BLOBManager
                 RoutePutMessage mm = new RoutePutMessage();
                 mm.setType("blob");
                 mm.setMetaField("name", name);
+                if (context != null)
+                {
+                    mm.setMetaField("context", context);
+                }
                 mm.setMetaField("i", i+1);
                 mm.setMetaField("of", numChunks);
+                if ((i + 1) == numChunks && request != null)
+                {
+                    mm.setRef(request);
+                }
                 int start = i*chunkSize;
                 int end = start + chunkSize;
                 if (end > size)

@@ -5,6 +5,7 @@ import org.eclipse.jetty.websocket.common.WebSocketSession;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -95,28 +96,29 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             RoutePutChannel chan = RoutePutChannel.getChannel(rpm.optString("channel", null));
             this.addChannel(chan.getName());
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("subscribe");
+            resp.setResponse("subscribe", jo);
             resp.setChannel(chan);
             resp.setMetaField("channelProperties", chan.getProperties());
+            resp.setMetaField("channelBlobs", chan.getBlobs());
             this.send(resp);
         } else if (routeputCommand.equals("unsubscribe")) {
             this.removeChannel(rpm.optString("channel", null));
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("unsubscribe");
+            resp.setResponse("unsubscribe", jo);
             this.send(resp);
         } else if (routeputCommand.equals("becomeCollector")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("becomeCollector");
+            resp.setResponse("becomeCollector", jo);
             resp.setMetaField("collector", this.becomeCollector());
             this.send(resp);
         } else if (routeputCommand.equals("dropCollector")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("dropCollector");
+            resp.setResponse("dropCollector", jo);
             resp.setMetaField("collector", this.dropCollector());
             this.send(resp);
         } else if (routeputCommand.equals("setChannelProperty")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("setChannelProperty");
+            resp.setResponse("setChannelProperty", jo);
             String key = rpm.optString("key", null);
             Object value = rpm.opt("value");
             if (key != null) {
@@ -129,7 +131,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             this.send(resp);
         } else if (routeputCommand.equals("getChannelProperty")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("getChannelProperty");
+            resp.setResponse("getChannelProperty", jo);
             String key = rpm.optString("key", null);
             if (key != null) {
                 resp.setMetaField("key", key);
@@ -140,19 +142,19 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             this.send(resp);
         } else if (routeputCommand.equals("getSessionProperties")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("getProperties");
+            resp.setResponse("getProperties", jo);
             resp.setMetaField("properties", this.properties);
             this.send(resp);
         } else if (routeputCommand.equals("getChannelProperties")) {
             RoutePutMessage resp = new RoutePutMessage();
-            resp.setResponse("getChannelProperties");
+            resp.setResponse("getChannelProperties", jo);
             resp.setMetaField("properties", this.defaultChannel.getProperties());
             this.send(resp);
         } else if (routeputCommand.equals("members")) {
             RoutePutChannel channel = jo.getRoutePutChannel();
             if (channel.hasMember(this)) {
                 RoutePutMessage resp = new RoutePutMessage();
-                resp.setResponse("members");
+                resp.setResponse("members", jo);
                 resp.setMetaField("members", channel.membersAsJSONArray());
                 this.send(resp);
             }
@@ -164,7 +166,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                     RoutePutSession upstreamSession = RoutePutServer.instance.connectUpstream(channel, uri);
                     if (upstreamSession != null) {
                         RoutePutMessage resp = new RoutePutMessage();
-                        resp.setResponse("upstream");
+                        resp.setResponse("upstream", jo);
                         resp.setMetaField("upstream", upstreamSession.toJSONObject());
                         this.send(resp);
                     }
@@ -174,13 +176,32 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             if (rpm.has("i") && rpm.has("of") && rpm.has("data") && rpm.has("name")) {
                 BLOBManager.handleBlobData(jo);
             } else if (rpm.has("name")) {
-                String name = rpm.optString("name", "");
-                BLOBManager.sendBlob(this, name);
+                BLOBManager.fetchBlob(this, jo);
             }
+        } else if (routeputCommand.equals("blobInfo")) {
+            String name = rpm.optString("name", "");
+            String context = rpm.optString("context");
+            RoutePutMessage resp = new RoutePutMessage();
+            resp.setResponse("blobInfo", jo);
+            resp.setMetaField("name", name);
+            resp.setChannel(jo.getRoutePutChannel());
+            if (context != null)
+            {
+                resp.setMetaField("context", context);
+            }
+            BLOBFile blobFile = BLOBManager.resolveBlob(context, name);
+            if (blobFile != null)
+            {
+                resp.mergeRouteputMeta(blobFile.toJSONObject());
+            } else {
+                resp.setMetaField("exists", false);
+            }
+            this.send(resp);
         } else {
             RoutePutMessage errorMsg = new RoutePutMessage();
             errorMsg.setChannel(jo.getChannel());
             errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
+            errorMsg.setRef(jo);
             errorMsg.put("text", "Uknown request type \"" + routeputCommand + "\"");
             this.send(errorMsg);
         }
@@ -338,6 +359,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             jo2.setChannel(this.defaultChannel);
             jo2.setMetaField("properties", this.properties);
             jo2.setMetaField("channelProperties", this.defaultChannel.getProperties());
+            jo2.setMetaField("channelBlobs", this.defaultChannel.getBlobs());
             jo2.setMetaField("remoteIP", this.remoteIP);
             this.send(jo2);
 

@@ -93,6 +93,8 @@ public class RoutePutServer implements Runnable
         RoutePutServer.instance = this;
         this.settings = settings;
         this.channelRoot = new File(settings.optString("channelStorageRoot", "./channel/"));
+
+        BLOBManager.init(this.settings);
         RoutePutChannel.setChannelRoot(this.channelRoot);
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
@@ -118,8 +120,8 @@ public class RoutePutServer implements Runnable
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
-        context.addServlet(ApiServlet.class,  settings.optString("apiPath", "/api/*"));
-        context.addServlet(EventsWebSocketServlet.class, settings.optString("websocketPath", "/channel/*"));
+        context.addServlet(ApiServlet.class, settings.optString("apiMountPath", "/api/*"));
+        context.addServlet(EventsWebSocketServlet.class, settings.optString("websocketMountPath", "/channel/*"));
         context.addServlet(InterfaceServlet.class, "/*");
         httpServer.setHandler(context);
         this.mainThread = new Thread(this);
