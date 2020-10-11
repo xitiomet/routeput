@@ -46,39 +46,10 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private RoutePutMessage lastTxPacket;
 
     private void handleMessage(RoutePutMessage jo) {
-        if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
-            handleRequest(jo);
-        } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
-            // Ignore this
-        } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
-            RoutePutMessage resp = new RoutePutMessage();
-            resp.setType("pong");
-            resp.setMetaField("pingTimestamp", jo.getRoutePutMeta().optLong("timestamp", 0));
-            resp.setMetaField("pongTimestamp", System.currentTimeMillis());
-            this.send(resp);
-        } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
-            long cts = System.currentTimeMillis();
-            JSONObject meta = jo.getRoutePutMeta();
-            if (meta.has("pingTimestamp")) {
-                this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
-            }
-        } else {
-            RoutePutChannel channel = jo.getRoutePutChannel();
-            if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
-                BLOBManager.handleBlobData(jo);
-            }
-            if (jo.hasMetaField("setSessionProperty")) {
-                JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
-                for (String k : storeRequest.keySet()) {
-                    String v = storeRequest.getString(k);
-                    Object oldValue = this.properties.opt(k);
-                    Object newValue = jo.getPathValue(v);
-                    this.getProperties().put(k, newValue);
-                    this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
-                }
-            }
-            channel.onMessage(this, jo);
 
+            RoutePutChannel channel = jo.getRoutePutChannel();
+            
+            channel.onMessage(this, jo);
             this.listeners.parallelStream().forEach((r) -> {
                 r.onMessage(this, jo);
             });
@@ -86,7 +57,6 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                 jo.removeMetaField("echo");
                 this.websocketSession.getRemote().sendStringByFuture(jo.toString());
             }
-        }
     }
 
     public void handleRequest(RoutePutMessage jo) {
@@ -174,7 +144,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             }
         } else if (routeputCommand.equals("blob")) {
             if (rpm.has("i") && rpm.has("of") && rpm.has("data") && rpm.has("name")) {
-                BLOBManager.handleBlobData(jo);
+                BLOBManager.handleBlobData(this, jo);
             } else if (rpm.has("name")) {
                 BLOBManager.fetchBlob(this, jo);
             }
@@ -233,18 +203,51 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             this.rxPackets++;
             this.lastRxPacket = jo;
             if (this.handshakeComplete) {
-                // Packets need a channel set if none
-                jo.setChannelIfNull(this.defaultChannel);
                 // this message has no sourceID, must be from the client directly connected
                 jo.setSourceIdIfNull(this.connectionId);
-
+                if (jo.hasMetaField("setSessionProperty")) {
+                    JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
+                    for (String k : storeRequest.keySet()) {
+                        String v = storeRequest.getString(k);
+                        Object oldValue = this.properties.opt(k);
+                        Object newValue = jo.getPathValue(v);
+                        this.getProperties().put(k, newValue);
+                        this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
+                    }
+                }
+                
                 String sourceId = jo.getSourceId();
                 if (this.connectionId.equals(sourceId)) {
                     // this message is definitely from the directly connected client
-                    this.handleMessage(jo);
+                    if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
+                        handleRequest(jo);
+                    } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
+                        // Ignore this
+                    } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
+                        RoutePutMessage resp = new RoutePutMessage();
+                        resp.setType("pong");
+                        resp.setRef(jo);
+                        resp.setMetaField("pingTimestamp", jo.getRoutePutMeta().optLong("timestamp", 0));
+                        resp.setMetaField("pongTimestamp", System.currentTimeMillis());
+                        this.send(resp);
+                    } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
+                        long cts = System.currentTimeMillis();
+                        JSONObject meta = jo.getRoutePutMeta();
+                        if (meta.has("pingTimestamp")) {
+                            this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
+                        }
+                    } else if (jo.hasChannel()) {
+                        this.handleMessage(jo);
+                    } else if (!jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                        RoutePutServer.logWarning("Lost Message " + jo.toString());
+                    }
                 } else if (sourceId != null) {
                     // this message probably belongs to a subconnection
                     RoutePutRemoteSession.handleRoutedMessage(this, jo);
+                }
+                // All Blob type messages should get handled even if they lack routing info
+                if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                    BLOBManager.handleBlobData(this, jo);
                 }
             } else if (jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
                 JSONObject rpm = jo.getRoutePutMeta();
@@ -397,7 +400,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     public void send(RoutePutMessage jo) {
         if (this.websocketSession != null && jo != null) {
             jo.setSourceIdIfNull(this.connectionId);
-            jo.setChannelIfNull(this.getDefaultChannel());
+            //jo.setChannelIfNull(this.getDefaultChannel());
             this.websocketSession.getRemote().sendStringByFuture(jo.toString());
             this.txPackets++;
             this.lastTxPacket = jo;
@@ -463,7 +466,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     public void ping() {
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
-        pingMessage.setChannel(this.getDefaultChannel());
+        //pingMessage.setChannel(this.getDefaultChannel());
         pingMessage.setMetaField("timestamp", System.currentTimeMillis());
         this.send(pingMessage);
     }

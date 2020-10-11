@@ -210,7 +210,7 @@ public class RoutePutMessage extends JSONObject
 
     public boolean hasSourceId()
     {
-        return this.getRoutePutMeta().has("srcId");
+        return this.hasMetaField("srcId");
     }
     
     public String getTargetId()
@@ -225,18 +225,22 @@ public class RoutePutMessage extends JSONObject
 
     public boolean hasTargetId()
     {
-        return this.getRoutePutMeta().has("dstId");
+        return this.hasMetaField("dstId");
     }
 
-    
     public String getChannel()
     {
-        return this.getRoutePutMeta().optString("channel", "*");
+        return this.getRoutePutMeta().optString("channel", null);
     }
 
     public RoutePutChannel getRoutePutChannel()
     {
         return RoutePutChannel.getChannel(this.getChannel());
+    }
+
+    public boolean hasChannel()
+    {
+        return this.hasMetaField("channel");
     }
 
     public void setChannel(String channel)

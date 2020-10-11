@@ -39,7 +39,7 @@ public class BLOBManager
         }
     }
 
-    public static void handleBlobData(RoutePutMessage jo)
+    public static void handleBlobData(RoutePutSession session, RoutePutMessage jo)
     {
         BLOBManager.init(null);
         if (jo.hasMetaField("i") && jo.hasMetaField("of") && jo.hasMetaField("data") && jo.hasMetaField("name"))
@@ -64,7 +64,9 @@ public class BLOBManager
                 File blobFolder = null;
                 if (context == null && jo.getRoutePutChannel() != null)
                 {
-                    blobFolder = jo.getRoutePutChannel().getBlobFolder();
+                    RoutePutChannel chan = jo.getRoutePutChannel();
+                    blobFolder = chan.getBlobFolder();
+                    context = "channel." + chan.getName();
                 } else {
                     blobFolder = new File(BLOBManager.blobRoot, context);
                     if (!blobFolder.exists())
@@ -77,18 +79,19 @@ public class BLOBManager
                     BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
                     BLOBManager.saveBase64Blob(blobFile, sb);
                     BLOBManager.blobStorage.remove(name);
+                    // Acknowledge blob sent
+                    RoutePutMessage resp = new RoutePutMessage();
+                    resp.setType(RoutePutMessage.TYPE_BLOB);
+                    resp.mergeRouteputMeta(blobFile.toJSONObject());
+                    resp.setRef(jo);
+                    if (jo.hasChannel())
+                    {
+                        resp.setChannel(jo.getRoutePutChannel());
+                        jo.getRoutePutChannel().onMessage(null, resp);
+                    } else {
+                        session.send(resp);
+                    }
                 }
-                /*
-                RoutePutServer.logIt("Received Blob: " + name +
-                        " on " + jo.optString("__eventChannel", this.defaultChannel.getName()) +
-                        " from " + this.getConnectionId());*/
-
-                        /*
-                RoutePutMessage resp = new RoutePutMessage();
-                resp.setResponse("blob");
-                resp.put("name", name);
-                this.send(resp);
-                */
             }
         }
     }
@@ -128,12 +131,12 @@ public class BLOBManager
         String name = rpm.optString("name", "");
         String context = rpm.optString("context");
         RoutePutChannel channel = request.getRoutePutChannel();
-        File blobFile = resolveBlob(context, name);
+        BLOBFile blobFile = resolveBlob(context, name);
         if (blobFile != null)
         {
             if (blobFile.exists())
             {
-                StringBuffer sb = BLOBManager.loadBase64Blob(blobFile);
+                StringBuffer sb = blobFile.getBase64StringBuffer();
                 transmitBlobChunks(session, name, context, sb, request);
             } else {
                 RoutePutMessage resp = new RoutePutMessage();

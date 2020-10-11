@@ -18,6 +18,23 @@ function chunkSubstr(str, size)
   return chunks
 }
 
+function blobToHTML(fileName, blob)
+  {
+      var type = blob.type;
+      if (type.startsWith("image/"))
+      {
+          var newImage = document.createElement('img');
+          newImage.src = URL.createObjectURL(blob);
+          return newImage.outerHTML;
+      } else if (type.startsWith("audio/") && !type.startsWith("audio/mid")) {
+          return "<audio controls src=\"" + URL.createObjectURL(blob) + "\" />";
+      } else if (type.startsWith("video/")) {
+          return  "<video controls><source type=\"" + type + "\" src=\"" + URL.createObjectURL(blob) + "\"></video>";
+      } else {
+          return "<a download=\"" + fileName + "\" href=\"" + URL.createObjectURL(blob) + "\"><b>" + fileName + "</b></a>";    
+      }
+  }
+
 function setCookie(cname, cvalue)
 {
     var d = new Date();
@@ -81,13 +98,31 @@ function getPathValue(object, path)
 class RouteputRemoteSession
 {
     srcId;
+    channelName;
     connected;
     properties;
     onpropertychange;
-    constructor(srcId, properties)
+    onmessage;
+    routeputConnection;
+    constructor(srcId, channelName, properties, routeputConnection)
     {
         this.srcId = srcId;
         this.properties = properties;
+        this.routeputConnection = routeputConnection;
+        this.channelName = channelName;
+    }
+
+    transmit(routeputMessage)
+    {
+        if (routeputMessage.hasOwnProperty("__routeput"))
+        {
+            var routePutMeta = routeputMessage.__routeput;
+            routePutMeta['channel'] = this.channelName;
+            routePutMeta['dstId'] = this.srcId;
+        } else {
+            routeputMessage['__routeput'] = { "channel": this.channelName, "dstId": this.srcId }
+        }
+        this.routeputConnection.transmit(routeputMessage);
     }
 }
 
@@ -101,6 +136,7 @@ class RouteputChannel
     onleave;
     onchannelpropertychange;
     onmemberpropertychange;
+    onmessage;
     constructor(name, routeputConnection)
     {
         this.name = name;
@@ -115,6 +151,12 @@ class RouteputChannel
         this.transmit(mm);
     }
 
+    setSessionProperty(k, v)
+    {
+        var mm = {"__routeput": {"channel": this.name,"setSessionProperty": { [k]: ("__routeput." + k) }, [k]: v}};
+        this.transmit(mm);
+    }
+
     getMembers()
     {
         return [ ...this.members.values() ];
@@ -125,19 +167,48 @@ class RouteputChannel
         return this.getMembers().filter(expr);
     }
 
+    transmit(routeputMessage)
+    {
+        if (routeputMessage.hasOwnProperty("__routeput"))
+        {
+            var routePutMeta = routeputMessage.__routeput;
+            routePutMeta['channel'] = this.name;
+            routePutMeta['srcId'] = this.routeputConnection.connectionId;
+        } else {
+            routeputMessage['__routeput'] = { "channel": this.name, "srcId": this.routeputConnection.connectionId }
+        }
+        this.routeputConnection.transmit(routeputMessage);
+    }
+
     transmitBlob(blobName, blob)
     {
-        let reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onload = () => {
-            var chunks = chunkSubstr(reader.result, 4096);
-            var sz = chunks.length;
-            for (let i = 0; i < sz; i++)
-            {
-                var mm = {"__routeput": {"type": "blob", "channel": this.name, "name": blobName ,"i": i+1, "of": sz, "data": chunks[i]}};
-                this.routeputConnection.transmit(mm);
-            }
-        };
+        var self = this;
+        return new Promise((resolve, reject) => {
+            let reader = new FileReader();
+            reader.onload = () => {
+                var chunks = chunkSubstr(reader.result, 4096);
+                var sz = chunks.length;
+                var outboundMessageQueue = [];
+                for (let i = 0; i < sz; i++)
+                {
+                    var ipo = i+1;
+                    var mm = {"__routeput": {"type": "blob", "channel": this.name, "name": blobName ,"i": ipo, "of": sz, "data": chunks[i]}};
+                    if (ipo == sz)
+                    {
+                        var finishMsgId = randomId();
+                        mm.__routeput['msgId'] = finishMsgId;
+                        var promHooks = {"resolve": resolve, "reject": reject, "request": mm};
+                        self.routeputConnection.requests.set(finishMsgId, promHooks);
+                    }
+                    outboundMessageQueue.push(mm);
+                }
+                self.routeputConnection.noLockTransmit(outboundMessageQueue, 0);
+            };
+            reader.onerror = () => {
+                reject();
+            };
+            reader.readAsDataURL(blob);
+        });
     }
 }
 
@@ -151,7 +222,6 @@ class RouteputConnection
     reconnectTimeout;
     connection;
     debug;
-    sessions;
     channels;
     chunkBuffer;
     requests;
@@ -164,10 +234,9 @@ class RouteputConnection
     constructor(channelName)
     {
         this.host = location.host;
-        this.sessions = new Map();
         this.channels = new Map();
         this.requests = new Map();
-        this.defaultChannel = new RouteputChannel(channelName);
+        this.defaultChannel = new RouteputChannel(channelName, this);
         this.channels.set(channelName, this.defaultChannel);
         if (this.host == undefined || this.host == "")
         {
@@ -237,7 +306,6 @@ class RouteputConnection
                 {
                     var routePutMeta = jsonObject.__routeput;
                     var srcId = routePutMeta.srcId;
-                    var channel = this.getChannel(routePutMeta.channel);
                     var messageType = undefined;
                     if (routePutMeta.hasOwnProperty("type"))
                     {
@@ -257,21 +325,39 @@ class RouteputConnection
                                     this.requests.delete(routePutMeta.ref);
                                 }
                             }
+                        } else {
+                            // Server has finished recieving a file!
+                            if (routePutMeta.hasOwnProperty('ref'))
+                            {
+                                if (this.requests.has(routePutMeta.ref))
+                                {
+                                    var promHooks = this.requests.get(routePutMeta.ref);
+                                    promHooks.resolve(routePutMeta);
+                                    this.requests.delete(routePutMeta.ref);
+                                }
+                            }
                         }
                     } else if (messageType == "blob" && routePutMeta.hasOwnProperty("i")) {
+                        var context = '';
+                        if (routePutMeta.hasOwnProperty('context'))
+                        {
+                            context = routePutMeta.context;
+                        }
+                        var chunkBufferKey = context + ":" + routePutMeta.name;
                         if (routePutMeta.i == 1)
                         {
                             // Store chunks as they come in
-                            this.chunkBuffer[routePutMeta.name] = routePutMeta.data;
+                            this.chunkBuffer[chunkBufferKey] = routePutMeta.data;
                         } else if (routePutMeta.i == routePutMeta.of) {
                             // Final chunk of file
-                            this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
-                            var blob = dataURItoBlob(this.chunkBuffer[routePutMeta.name]);
-                            this.chunkBuffer.delete(routePutMeta.name);
+                            this.chunkBuffer[chunkBufferKey] += routePutMeta.data;
+                            var blob = dataURItoBlob(this.chunkBuffer[chunkBufferKey]);
+                            this.chunkBuffer.delete(chunkBufferKey);
                             if (this.onblob != undefined)
                             {
-                                this.onblob(routePutMeta.name, blob);
+                                this.onblob(context, routePutMeta.name, blob);
                             }
+                            // Check if there is a promise awaiting this blob
                             if (routePutMeta.hasOwnProperty('ref'))
                             {
                                 if (this.requests.has(routePutMeta.ref))
@@ -282,9 +368,10 @@ class RouteputConnection
                                 }
                             }
                         } else {
-                            this.chunkBuffer[routePutMeta.name] += routePutMeta.data;
+                            this.chunkBuffer[chunkBufferKey] += routePutMeta.data;
                         }
                     } else if (messageType == "connectionId") {
+                        var channel = this.getChannel(routePutMeta.channel);
                         this.connectionId = routePutMeta.connectionId;
                         this.properties = routePutMeta.properties;
                         channel.properties = routePutMeta.channelProperties;
@@ -296,18 +383,13 @@ class RouteputConnection
                         var mm = {"__routeput": {"type": "pong", "pingTimestamp": routePutMeta.timestamp}};
                         this.transmit(mm);
                     } else if (messageType == "ConnectionStatus") {
+                        var channel = this.getChannel(routePutMeta.channel);
                         var c = routePutMeta.connected;
                         var member;
-                        if (this.sessions.has(srcId))
-                        {
-                            member = this.sessions.get(srcId);
-                        } else {
-                            member = new RouteputRemoteSession(routePutMeta.srcId, routePutMeta.properties);
-                            this.sessions.set(srcId, member);
-                        }
-                        member.connected = c;
                         if (c)
                         {
+                            member = new RouteputRemoteSession(routePutMeta.srcId, routePutMeta.channel, routePutMeta.properties, this);
+                            member.connected = c;
                             channel.members.set(srcId, member);
                             if (channel.onjoin != undefined)
                             {
@@ -329,6 +411,7 @@ class RouteputConnection
                                 }
                             }
                         } else {
+                            member = channel.members.get(srcId);
                             channel.members.delete(srcId);
                             if (channel.onleave != undefined)
                             {
@@ -345,20 +428,23 @@ class RouteputConnection
                                 this.requests.delete(routePutMeta.ref);
                             }
                         }
-                    } else if (messageType == "error") {
-                        if (routePutMeta.hasOwnProperty('ref'))
-                        {
-                            if (this.requests.has(routePutMeta.ref))
+                    } else {
+                        // Ok now we are getting into messages not handled by routeput.js
+                        var channel = this.getChannel(routePutMeta.channel);
+                        var member = channel.members.get(srcId);
+                        if (messageType == "error") {
+                            if (routePutMeta.hasOwnProperty('ref'))
                             {
-                                var promHooks = this.requests.get(routePutMeta.ref)
-                                promHooks.reject(routePutMeta);
-                                this.requests.delete(routePutMeta.ref);
+                                if (this.requests.has(routePutMeta.ref))
+                                {
+                                    var promHooks = this.requests.get(routePutMeta.ref)
+                                    promHooks.reject(routePutMeta);
+                                    this.requests.delete(routePutMeta.ref);
+                                }
                             }
                         }
-                    } else {
                         if (routePutMeta.hasOwnProperty('setSessionProperty'))
                         {
-                            var member = this.sessions.get(srcId);
                             if (member != undefined)
                             {
                                 var storeRequest = routePutMeta.setSessionProperty;
@@ -405,7 +491,15 @@ class RouteputConnection
                         }
                         if (this.onmessage != undefined)
                         {
-                            this.onmessage(jsonObject);
+                            this.onmessage(member, jsonObject);
+                        }
+                        if (channel.onmessage != undefined)
+                        {
+                            channel.onmessage(member, jsonObject);
+                        }
+                        if (member.onmessage != undefined)
+                        {
+                            member.onmessage(member, jsonObject);
                         }
                     }
                 }
@@ -422,26 +516,53 @@ class RouteputConnection
         }
     }
     
-    transmitFile(file, context)
+    transmitFile(context, file)
     {
-        this.transmitBlob(file.name, file, context);
+        return this.transmitBlob(context, file.name, file);
     }
-    
-    
 
-    transmitBlob(name, blob, context)
+    // This is great if you have to transmit a large array of objects at once.
+    noLockTransmit(array, index, finishCallback)
     {
-        let reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onload = () => {
-            var chunks = chunkSubstr(reader.result, 4096);
-            var sz = chunks.length;
-            for (let i = 0; i < sz; i++)
+        setTimeout(() => {
+            this.transmit(array[index]);
+            if (index < (array.length-1))
             {
-                var mm = {"__routeput": {"type": "blob", "context": context, "name": name ,"i": i+1, "of": sz, "data": chunks[i]}};
-                this.transmit(mm);
+                this.noLockTransmit(array, (index + 1), finishCallback);
+            } else if (finishCallback instanceof Function) {
+                finishCallback();
             }
-        };
+        }, 100);
+    }
+
+    transmitBlob(context, name, blob)
+    {
+        return new Promise((resolve, reject) => {
+            let reader = new FileReader();
+            reader.onload = () => {
+                var chunks = chunkSubstr(reader.result, 4096);
+                var sz = chunks.length;
+                var outboundMessageQueue = [];
+                for (let i = 0; i < sz; i++)
+                {
+                    var ipo = i+1;
+                    var mm = {"__routeput": {"type": "blob", "context": context, "name": name ,"i": ipo, "of": sz, "data": chunks[i]}};
+                    if (ipo == sz)
+                    {
+                        var finishMsgId = randomId();
+                        mm.__routeput['msgId'] = finishMsgId;
+                        var promHooks = {"resolve": resolve, "reject": reject, "request": mm};
+                        this.requests.set(finishMsgId, promHooks);
+                    }
+                    outboundMessageQueue.push(mm);
+                }
+                this.noLockTransmit(outboundMessageQueue, 0);
+            };
+            reader.onerror = () => {
+                reject();
+            };
+            reader.readAsDataURL(blob);
+        });
     }
 
     setProperty(k, v)
@@ -456,8 +577,11 @@ class RouteputConnection
             if (routeputMessage.hasOwnProperty("__routeput"))
             {
                 var routePutMeta = routeputMessage.__routeput;
-                var promHooks = {"resolve": resolve, "reject": reject, "request": routeputMessage};
-                this.requests.set(routePutMeta.msgId, promHooks);
+                if (routePutMeta.hasOwnProperty('msgId'))
+                {
+                    var promHooks = {"resolve": resolve, "reject": reject, "request": routeputMessage};
+                    this.requests.set(routePutMeta.msgId, promHooks);
+                }
                 this.transmit(routeputMessage);
             } else {
                 reject("No routeput META");
@@ -466,21 +590,31 @@ class RouteputConnection
         
     }
 
-    requestBlob(name, context)
+    requestBlob(context, name)
     {
         var mm = {"__routeput": {"msgId": randomId(), "type": "request", "request": "blob", "name": name, "context": context}};
         return this.makeRequest(mm);
     }
 
-    requestBlobInfo(name, context)
+    requestBlobInfo(context, name)
     {
         var mm = {"__routeput": {"msgId": randomId(), "type": "request", "request": "blobInfo", "name": name, "context": context}};
         return this.makeRequest(mm);
     }
 
-    transmit(wsEvent)
+    transmit(routeputMessage)
     {
-        var out_event = JSON.stringify(wsEvent);
+        if (routeputMessage.hasOwnProperty("__routeput"))
+        {
+            var routePutMeta = routeputMessage.__routeput;
+            if (!routePutMeta.hasOwnProperty("srcId"))
+            {
+                routePutMeta['srcId'] = this.connectionId;
+            }
+        } else {
+            routeputMessage['__routeput'] = { "srcId": this.connectionId }
+        }
+        var out_event = JSON.stringify(routeputMessage);
         if (this.debug)
         {
             console.log("Routeput Transmit: " + out_event);
@@ -498,12 +632,12 @@ class RouteputConnection
     
     subscribe(channel)
     {
-        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": this.defaultChannel.name}});
+        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": channel}});
     }
     
     unsubscribe(channel)
     {
-        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": this.defaultChannel.name}});
+        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": channel}});
     }
 
     logError(text)

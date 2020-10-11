@@ -624,15 +624,20 @@ public class RoutePutChannel implements RoutePutMessageListener
     public static synchronized RoutePutChannel getChannel(String name)
     {
         initTracker();
-        RoutePutChannel chan = RoutePutChannel.channels.get(name);
-        if (chan == null)
+        if (name == null)
         {
-            chan = new RoutePutChannel(name);
-            RoutePutChannel.channels.put(name, chan);
+            return null;
         } else {
-            chan.touch();
+            RoutePutChannel chan = RoutePutChannel.channels.get(name);
+            if (chan == null)
+            {
+                chan = new RoutePutChannel(name);
+                RoutePutChannel.channels.put(name, chan);
+            } else {
+                chan.touch();
+            }
+            return chan;
         }
-        return chan;
     }
 
     /* Remove a session from all channels that exist in memory */

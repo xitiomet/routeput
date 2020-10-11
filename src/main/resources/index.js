@@ -43,7 +43,7 @@ routeput.onblob = function(name, blob) {
     logIt(blobToHTML(name, blob));
 }
 
-routeput.onmessage = function (jsonObject) {
+routeput.onmessage = function (member, jsonObject) {
     var routePutMeta = jsonObject.__routeput;
     var messageType = undefined;
     if (routePutMeta.hasOwnProperty("type"))
@@ -95,7 +95,6 @@ routeput.onmessage = function (jsonObject) {
 };
 
 window.onload = function() {
-    
     routeput.connect();
 };
 

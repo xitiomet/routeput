@@ -192,7 +192,7 @@ public class RoutePutClient implements RoutePutSession, Runnable {
             this.send(resp);
         } else {
             if (j.isType(RoutePutMessage.TYPE_BLOB)) {
-                BLOBManager.handleBlobData(j);
+                BLOBManager.handleBlobData(this, j);
             }
             String sourceId = j.getSourceId();
             if (sourceId != null && RoutePutClient.this.listeners.size() == 0) {

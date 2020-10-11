@@ -106,6 +106,32 @@ public class BLOBFile extends File
         }
     }
 
+    public String getContentType()
+    {
+        return BLOBManager.getContentTypeFor(this.getName());
+    }
+
+    public StringBuffer getBase64StringBuffer()
+    {
+        StringBuffer sb = new StringBuffer();
+        try
+        {
+            String contentType = this.getContentType();
+            if (this.exists())
+            {
+                sb.append("data:" + contentType + ";base64,");
+                FileInputStream fis = new FileInputStream(this);
+                byte[] bFile = new byte[(int) this.length()];
+                fis.read(bFile);
+                fis.close();
+                sb.append(java.util.Base64.getEncoder().encodeToString(bFile));
+            }
+        } catch (Exception e) {
+            //logIt(e);
+        }
+        return sb;
+    }
+
     public String getMD5()
     {
         return generateMD5(this);
@@ -127,7 +153,7 @@ public class BLOBFile extends File
             jo.put("url", this.getURL());
             if (!this.isDirectory())
             {
-                jo.put("contentType", BLOBManager.getContentTypeFor(this.getName()));
+                jo.put("contentType", this.getContentType());
             } else {
                 jo.put("directory", true);
             }

@@ -151,7 +151,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
         httpServletResponse.addHeader("Server", "Routeput 1.0");
-        String target = request.getPathInfo();
+        String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
         // System.err.println("Path: " + target);
         JSONObject response = new JSONObject();
@@ -216,7 +216,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
         httpServletResponse.addHeader("Server", "Routeput 1.0");
-        String target = request.getPathInfo();
+        String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
         // System.err.println("Path: " + target);
         // RoutePutServer.logIt("API Request: " + target);

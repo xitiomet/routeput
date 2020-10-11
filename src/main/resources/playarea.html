@@ -16,7 +16,7 @@
       if (filesSelected.length > 0)
       {
         var fileToLoad = filesSelected[0];
-        routeput.transmitFile(fileToLoad, "test");
+        routeput.transmitFile("test", fileToLoad);
       }
   }
 
@@ -27,7 +27,7 @@
       {
         var fileToLoad = filesSelected[0];
         var fileName = fileToLoad.name;
-        routeput.requestBlob(fileName, "test").then((blob) => {
+        routeput.requestBlob("test", fileName).then((blob) => {
             logIt(blobToHTML(fileName, blob));
         }).catch((error) => {
             logIt(error + " - " + JSON.stringify(error));
@@ -42,7 +42,7 @@
       {
         var fileToLoad = filesSelected[0];
         var fileName = fileToLoad.name;
-        routeput.requestBlobInfo(fileName, "test")
+        routeput.requestBlobInfo("test", fileName)
         .then((result) => {
             console.log("Promise Result: " + JSON.stringify(result)); 
         });
@@ -60,23 +60,6 @@
           console.innerHTML += "&lt;" + dString + "&gt; " + msgSplit[i] + "<br />";
       }
       window.scrollTo(0,document.body.scrollHeight);
-  }
-
-  function blobToHTML(fileName, blob)
-  {
-      var type = blob.type;
-      if (type.startsWith("image/"))
-      {
-          var newImage = document.createElement('img');
-          newImage.src = URL.createObjectURL(blob);
-          return newImage.outerHTML;
-      } else if (type.startsWith("audio/") && !type.startsWith("audio/mid")) {
-          return "<audio controls src=\"" + URL.createObjectURL(blob) + "\" />";
-      } else if (type.startsWith("video/")) {
-          return  "<video controls><source type=\"" + type + "\" src=\"" + URL.createObjectURL(blob) + "\"></video>";
-      } else {
-          return "<a download=\"" + fileName + "\" href=\"" + URL.createObjectURL(blob) + "\"><b>" + fileName + "</b></a>";    
-      }
   }
 
   </script>
