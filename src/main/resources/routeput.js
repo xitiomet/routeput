@@ -412,6 +412,7 @@ class RouteputConnection
                             }
                         } else {
                             member = channel.members.get(srcId);
+                            member.connected = c;
                             channel.members.delete(srcId);
                             if (channel.onleave != undefined)
                             {
