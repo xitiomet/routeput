@@ -710,7 +710,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         jo.put("lastAccess", this.lastAccess);
         jo.put("idle", this.getIdle());
         jo.put("members", this.membersAsJSONObject());
-        jo.put("blobs", this.getBlobs());
+        //jo.put("blobs", this.getBlobs());
         jo.put("memberCount", this.memberCount());
         jo.put("properties", this.getProperties());
         jo.put("msgTxPerSecond", this.msgTxPerSecond);

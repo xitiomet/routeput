@@ -6,6 +6,30 @@ function randomId()
     return result;
 }
 
+
+function setCookie(cname, cvalue, exdays) {
+    var d = new Date();
+    d.setTime(d.getTime() + (exdays*24*60*60*1000));
+    var expires = "expires="+ d.toUTCString();
+    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+
+function getCookie(cname, defaultValue) {
+    var name = cname + "=";
+    var decodedCookie = decodeURIComponent(document.cookie);
+    var ca = decodedCookie.split(';');
+    for(var i = 0; i <ca.length; i++) {
+      var c = ca[i];
+      while (c.charAt(0) == ' ') {
+        c = c.substring(1);
+      }
+      if (c.indexOf(name) == 0) {
+        return c.substring(name.length, c.length);
+      }
+    }
+    return defaultValue;
+}
+
 function chunkSubstr(str, size)
 {
   const numChunks = Math.ceil(str.length / size)
@@ -35,10 +59,10 @@ function blobToHTML(fileName, blob)
       }
   }
 
-function setCookie(cname, cvalue)
+function setCookie(cname, cvalue, exdays)
 {
     var d = new Date();
-    d.setTime(d.getTime() + (365*24*60*60*1000));
+    d.setTime(d.getTime() + (exdays*24*60*60*1000));
     var expires = "expires="+ d.toUTCString();
     document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
@@ -154,6 +178,7 @@ class RouteputChannel
     setSessionProperty(k, v)
     {
         var mm = {"__routeput": {"channel": this.name,"setSessionProperty": { [k]: ("__routeput." + k) }, [k]: v}};
+        this.routeputConnection.properties[k] = v;
         this.transmit(mm);
     }
 
@@ -444,6 +469,27 @@ class RouteputConnection
                                 }
                             }
                         }
+                        if (routePutMeta.hasOwnProperty('setCookie'))
+                        {
+                            if (member != undefined)
+                            {
+                                var storeRequest = routePutMeta.setCookie;
+                                for(const [key, value] of Object.entries(storeRequest))
+                                {
+                                    var realValue = getPathValue(jsonObject, value);
+                                    setCookie(key, value, 365);
+                                    if (this.debug)
+                                    {
+                                        console.log("setCookie(" + srcId + "): " + key + " = " + realValue);
+                                    }
+                                }
+                            } else {
+                                if (this.debug)
+                                {
+                                    console.log("setCookie(" + srcId + "): UNKNOWN Session " + routePutMeta.setCookie);
+                                }
+                            }
+                        }
                         if (routePutMeta.hasOwnProperty('setSessionProperty'))
                         {
                             if (member != undefined)
@@ -498,9 +544,12 @@ class RouteputConnection
                         {
                             channel.onmessage(member, jsonObject);
                         }
-                        if (member.onmessage != undefined)
+                        if (member != undefined)
                         {
-                            member.onmessage(member, jsonObject);
+                            if (member.onmessage != undefined)
+                            {
+                                member.onmessage(member, jsonObject);
+                            }
                         }
                     }
                 }
@@ -569,6 +618,7 @@ class RouteputConnection
     setProperty(k, v)
     {
         var mm = {"__routeput": {"setSessionProperty": { [k]: ("__routeput." + k) }, [k]: v}};
+        this.properties[k] = v;
         this.transmit(mm);
     }
     

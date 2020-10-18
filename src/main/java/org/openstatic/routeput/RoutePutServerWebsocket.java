@@ -36,6 +36,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private String remoteIP;
     private JSONObject httpHeaders = new JSONObject();
     private JSONObject properties = new JSONObject();
+    private JSONObject cookies = new JSONObject();
     private boolean collector = false;
     private boolean connected;
     private boolean handshakeComplete = false;
@@ -205,20 +206,22 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             if (this.handshakeComplete) {
                 // this message has no sourceID, must be from the client directly connected
                 jo.setSourceIdIfNull(this.connectionId);
-                if (jo.hasMetaField("setSessionProperty")) {
-                    JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
-                    for (String k : storeRequest.keySet()) {
-                        String v = storeRequest.getString(k);
-                        Object oldValue = this.properties.opt(k);
-                        Object newValue = jo.getPathValue(v);
-                        this.getProperties().put(k, newValue);
-                        this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
-                    }
-                }
-                
                 String sourceId = jo.getSourceId();
+                
                 if (this.connectionId.equals(sourceId)) {
                     // this message is definitely from the directly connected client
+                    // Lets update any session properties this packet may change ASAP
+                    if (jo.hasMetaField("setSessionProperty")) {
+                        JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
+                        for (String k : storeRequest.keySet()) {
+                            String v = storeRequest.getString(k);
+                            Object oldValue = this.properties.opt(k);
+                            Object newValue = jo.getPathValue(v);
+                            this.getProperties().put(k, newValue);
+                            this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
+                        }
+                    }
+
                     if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
                         handleRequest(jo);
                     } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
@@ -254,7 +257,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                 this.connectionId = rpm.optString("connectionId", null);
                 this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
                 if (rpm.has("properties")) {
-                    this.properties = rpm.optJSONObject("properties");
+                    this.mergeProperties(rpm.optJSONObject("properties"));
                 }
                 this.collector = rpm.optBoolean("collector", false);
                 this.finishHandshake();
@@ -286,11 +289,25 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                          */
                         String cookieKey = matcher.group(1);
                         String cookieValue = matcher.group(2);
-                        this.properties.put(cookieKey, cookieValue);
+                        this.cookies.put(cookieKey, cookieValue);
                     }
                 }
             } else {
                 this.httpHeaders.put(headerName, new JSONArray(values));
+            }
+        }
+    }
+
+    public void mergeProperties(JSONObject props)
+    {
+        if (props != null)
+        {
+            for(String key : props.keySet())
+            {
+                Object oldValue = this.properties.opt(key);
+                Object newValue = props.opt(key);
+                this.properties.put(key, newValue);
+                this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
             }
         }
     }
@@ -457,6 +474,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             jo.put("lastRx", this.lastRxPacket);
         }
         jo.put("properties", this.properties);
+        jo.put("cookies", this.cookies);
         jo.put("remoteIP", this.remoteIP);
         jo.put("_class", "RoutePutServerWebsocket");
         jo.put("_listeners", this.listeners.size());
