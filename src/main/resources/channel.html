@@ -1,0 +1,386 @@
+<!doctype html>
+<html>
+<head>
+  <link rel="stylesheet" href="switch.css">
+  <link rel="stylesheet" href="pretty-json.css">
+  <script type="text/javascript" src="jquery-1.11.1.min.js" ></script>
+  <script type="text/javascript" src="underscore-min.js" ></script>
+  <script type="text/javascript" src="backbone-min.js" ></script>
+  <script type="text/javascript" src="pretty-json-min.js" ></script>
+  <script src="moment.min.js"></script>
+  <script src="Chart.min.js"></script>
+  <script src="routeput.js"></script>
+  <script type="text/javascript">
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+    var channel = urlParams.get('channel');
+    var fields = [];
+    var datasets = [];
+    var myCSV = undefined;
+    var splitByField = undefined;
+    var routeput = new RouteputConnection(channel);
+    routeput.debug = true;
+    window.chartColors = [
+        'rgb(255, 99, 132)',
+        'rgb(255, 159, 64)',
+        'rgb(255, 205, 86)',
+        'rgb(75, 192, 192)',
+        'rgb(54, 162, 235)',
+        'rgb(153, 102, 255)',
+        'rgb(201, 203, 207)',
+        'rgb(0,0,0)'
+    ];
+    var timeFormat = 'MM/DD/YYYY HH:mm';
+    var chart_config = undefined;
+    
+    function configureChart()
+    {
+        datasets = [];
+        for(var i = 0; i < fields.length; i++)
+        {
+            col = window.chartColors[i % window.chartColors.length];
+            var dataset = {  "label": fields[i],
+                             "backgroundColor": col,
+                             "borderColor": col,
+                             "data": [],
+                             "fill": false
+                          };
+            console.log(dataset);
+            datasets.push(dataset);
+        }
+        // Main Code on load
+        chart_config = {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                title: {
+                    display: true,
+                    text: "Plottable Channel Data"
+                },
+                tooltips: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                hover: {
+                    mode: 'nearest',
+                    intersect: true
+                },
+                scales: {
+                    xAxes: [{
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: 0,
+                            minRotation: 0
+                        },
+                        type: 'time',
+                        time: {
+                            parser: timeFormat,
+                            // round: 'day'
+                            tooltipFormat: 'll HH:mm'
+                        },
+                        display: true,
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'Sample Time'
+                        }
+                    }],
+                    yAxes: [{
+                        display: true,
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'Raw Value',
+                        },
+                        ticks: {
+                            min: 0
+                        }
+                    }]
+                }
+            }
+        };
+        var ctx = document.getElementById('graph').getContext('2d');
+        window.myGraph = new Chart(ctx, chart_config);
+        resetCSV();
+    }
+    
+    function addDataToChart(timestamp, values)
+    {
+        if (chart_config != undefined)
+        {
+            if (chart_config.data.labels.length >= 100)
+            {
+                chart_config.data.labels.shift();
+                chart_config.data.datasets.forEach(function(dataset) {
+                    dataset.data.shift();
+                });
+            }
+            chart_config.data.labels.push(timestamp);
+            var i = 0;
+            chart_config.data.datasets.forEach(function(dataset) {
+                var val = values[i];
+                console.log(i + ": " + val);
+                dataset.data.push(val);
+                i++;
+            });
+            window.myGraph.update();
+        }
+    }
+    
+    function processChartData(dataObj)
+    {
+        if (dataObj.hasOwnProperty('__routeput'))
+        {
+            var routeput = dataObj.__routeput;
+            var arr = new Array();
+            for(var i = 0; i < fields.length; i++)
+            {
+                var fn = fields[i];
+                if (dataObj.hasOwnProperty(fn))
+                {
+                    arr.push(dataObj[fn]);
+                } else {
+                    arr.push(null);
+                }
+            }
+            var dt = new Date();
+            addDataToChart(dt, arr);
+            if (document.getElementById('recordSwitch').checked)
+            {
+                myCSV += dt.toISOString() + "," + arr.join(',') + "\n";
+            }
+            document.getElementById('exportCsvButton').innerHTML = "Export CSV (" + bytesToSize(myCSV.length) + ")";
+        }
+    }
+    
+    function resetCSV()
+    {
+        myCSV = "timestamp," + fields.join(',') + "\n";
+        document.getElementById('exportCsvButton').innerHTML = "Export CSV (" + bytesToSize(myCSV.length) + ")";
+    }
+
+    function processLastMessage(jsonObject)
+    {
+        // Pretty JSON Logging
+        var splitByDropdown = document.getElementById('splitByDropdown');
+        for(const [key, value] of Object.entries(jsonObject))
+        {
+            if (key != "__routeput")
+            {
+                var keyOption = document.getElementById('sbk_' + key)
+                if (keyOption == undefined)
+                {
+                    keyOption = document.createElement('option');
+                    keyOption.id = 'sbk_' + key;
+                    keyOption.value = key;
+                    keyOption.innerHTML = key;
+                    splitByDropdown.appendChild(keyOption);
+                }
+            }
+        }
+        if (splitByField == undefined || splitByField == "")
+        {
+            var span = document.createElement('span');
+            span.id = "lastMessageSpan";
+            var node = new PrettyJSON.view.Node({
+                el: span,
+                data: jsonObject
+            });
+            var lastMessage = document.getElementById('lastMessage');
+            lastMessage.innerHTML = '';
+            lastMessage.appendChild(span);
+            node.expandAll();
+        } else if (jsonObject.hasOwnProperty(splitByField)) {
+            var lastMessageSpan = document.getElementById('lastMessageSpan');
+            if (lastMessageSpan != undefined)
+                lastMessageSpan.remove();
+            var sbValue = jsonObject[splitByField];
+            var block = document.getElementById('sbValue_' + sbValue);
+            var sbValueSpan = document.getElementById('sbValueSpan_' + sbValue);
+            if (block == undefined)
+            {
+                block = document.createElement('div');
+                block.id = 'sbValue_' + sbValue
+                var lastMessage = document.getElementById('lastMessage');
+                var valueTitle = document.createElement('div');
+                valueTitle.innerHTML = sbValue;
+                valueTitle.style.fontWeight = "bold";
+                valueTitle.style.backgroundColor = "#BBBBBB";
+                valueTitle.style.width = "100%;"
+                block.appendChild(valueTitle);
+                sbValueSpan = document.createElement('span');
+                sbValueSpan.id = 'sbValueSpan_' + sbValue;
+                block.appendChild(sbValueSpan);
+                lastMessage.appendChild(block);
+            }
+            var node = new PrettyJSON.view.Node({
+                el: sbValueSpan,
+                data: jsonObject
+            });
+            node.expandAll();
+        }
+    }
+    
+    routeput.onmessage = function (member, jsonObject) {
+        if (document.getElementById('plot-container').style.display == 'block')
+        {
+            processChartData(jsonObject);
+        }
+        processLastMessage(jsonObject)
+    };
+
+    routeput.defaultChannel.onjoin = function (member) {
+        /*
+        var membersDiv = document.getElementById('members');
+        var newDiv = document.createElement('div');
+        newDiv.id = 'member_' + member.srcId;
+        newDiv.innerHTML = member.srcId;
+        membersDiv.appendChild(newDiv);
+        */
+        rebuildMembers();
+    }
+
+    routeput.defaultChannel.onleave = function (member) {
+        //var memberDiv = document.getElementById('member_' + member.srcId);
+        //memberDiv.remove();
+        rebuildMembers();
+    }
+
+    function rebuildMembers()
+    {
+        var members = routeput.defaultChannel.members;
+        var memberMap = {};
+        for(const [key, value] of members)
+        {
+            memberMap[key] = value.properties;
+        }
+        var span = document.createElement('span');
+        var nodeMembers = new PrettyJSON.view.Node({
+            el: span,
+            data: memberMap
+        });
+        var membersDiv = document.getElementById('members');
+        membersDiv.innerHTML = '';
+        membersDiv.appendChild(span);
+        nodeMembers.expandAll();
+    }
+
+    routeput.defaultChannel.onchannelpropertychange = function(key, value) {
+        // Pretty JSON Logging
+        var span = document.createElement('span');
+        var nodeProp = new PrettyJSON.view.Node({
+            el: span,
+            data: routeput.defaultChannel.properties
+        });
+        var channelProperties = document.getElementById('channelProperties');
+        channelProperties.innerHTML = '';
+        channelProperties.appendChild(span);
+        nodeProp.expandAll();
+    }
+
+    routeput.onconnect = function()
+    {
+        document.getElementById('pageTitle').innerHTML = routeput.serverHostname + " - #" + channel;
+        if (routeput.defaultChannel.properties.hasOwnProperty('plotFields'))
+        {
+            fields = routeput.defaultChannel.properties.plotFields;
+            if (fields.length > 0)
+            {
+                console.log("Channel Property plotFields: " + fields);
+                if (fields instanceof Array)
+                {
+                    // do nada
+                } else {
+                    fields = fields.split(',');
+                }
+                //alert("channel properties had fields");
+                document.getElementById('plot-container').style.display = 'block';
+                resetCSV();
+                configureChart();
+            }
+        }
+    };
+
+    function bytesToSize(bytes) 
+    {
+        var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        if (bytes == 0) return 'n/a';
+        var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+        if (i == 0) return bytes + ' ' + sizes[i];
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+    };
+
+    window.onload = function ()
+    {
+        routeput.connect();
+    };
+    
+    function exportCSV()
+    {
+        var link = document.createElement('a');
+        var uri = 'data:text/csv;charset=utf-8,' + escape(myCSV);
+        link.href = uri;
+        link.download = channel + '.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+  </script>
+</head>
+<body style="background: white; background-size: 100% 100%; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;">
+<div style="padding: 2px 2px 2px 2px; margin: 0px 0px 0px 0px; background: black; border: solid 1px black; color: white; position: fixed; top: 0; width: 100%; height: 42px;">
+    <table width="100%"><tbody>
+        <tr><td width="32px"><img src="icon-256.png" height="32" width="32"></td>
+        <td id="pageTitle" style="color: white; font-size: 20px;" align="left">Routeput Server</td>
+        <td align="right"></td>
+        </tr>
+    </tbody></table>
+</div>
+<div id="console-area" style="width:99%; padding: 50px 5px 5px 5px; font-family: monospace; font-size: 10px; overflow-wrap: anywhere;">
+
+<div id="plot-container" style="display: none;">
+    <div class="chart-container" style="position: relative; height: 100%; width: 100%;">
+    <canvas id="graph" style="display: block;" width="800" height="400" class="chartjs-render-monitor"></canvas>
+    </div><br />
+    <table>
+        <tr>
+            <td>
+                <label class="switch switch-light">
+                    <input id="recordSwitch" class="switch-input" type="checkbox" checked />
+                    <span class="switch-label" data-on="Rec" data-off="Off"></span> 
+                    <span class="switch-handle"></span> 
+                </label>
+            </td>
+            <td><button id="exportCsvButton" onclick="exportCSV()">Export CSV</button></td>
+            <td><button id="resetCsvButton" onclick="resetCSV()">Clear CSV</button></td>
+        </tr>
+    </table>
+</div>
+<table style="width: 100%; table-layout: fixed;">
+    <tr>
+        <td valign="top">
+            <h3>Last Message</h3>
+            <table><tr><td>Group By</td><td>
+            <select id="splitByDropdown" onchange="splitByField = this.value;">
+                <option value="">----NONE----</option>
+            </select></td></tr></table>
+            <div id="lastMessage"><i>Waiting for message...</i></div>
+        </td>
+        <td valign="top">
+            <h3>Members</h3>
+            <div id="members"></div>
+        </td>
+        <td valign="top">
+            <h3>Channel Properties</h3>
+            <div id="channelProperties"></div>
+        </td>
+    </tr>
+</table>
+
+</div>
+</body>
+</html>
+

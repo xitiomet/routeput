@@ -379,8 +379,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             jo2.setChannel(this.defaultChannel);
             jo2.setMetaField("properties", this.properties);
             jo2.setMetaField("channelProperties", this.defaultChannel.getProperties());
-            jo2.setMetaField("channelBlobs", this.defaultChannel.getBlobs());
             jo2.setMetaField("remoteIP", this.remoteIP);
+            jo2.setMetaField("serverHostname", RoutePutChannel.getHostname());
             this.send(jo2);
 
             this.defaultChannel.addMember(this);

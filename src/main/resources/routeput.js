@@ -6,6 +6,19 @@ function randomId()
     return result;
 }
 
+function removeRouteputMeta(obj) {
+    var newObj = {};
+    for(const [key, value] of Object.entries(obj)) {
+      if (key != '__routeput')
+      {
+        if (typeof value === 'object')
+            newObj[key] = removeRouteputMeta(value);
+        else
+            newObj[key] = value;
+      }
+    }
+    return newObj;
+  }
 
 function setCookie(cname, cvalue, exdays) {
     var d = new Date();
@@ -100,7 +113,7 @@ function dataURItoBlob(dataURI)
 function getPathValue(object, path)
 {
     var ro = undefined;
-    var pointer = object;
+    var pointer = removeRouteputMeta(object);
     if (path != undefined && path != "")
     {
         var st = path.split(".");
@@ -114,7 +127,7 @@ function getPathValue(object, path)
             }
         })
     } else {
-        return object;
+        return removeRouteputMeta(object);
     }
     return ro;
 }
@@ -251,6 +264,7 @@ class RouteputConnection
     chunkBuffer;
     requests;
     connectionId;
+    serverHostname;
 
     onmessage;
     onblob;
@@ -400,9 +414,21 @@ class RouteputConnection
                         this.connectionId = routePutMeta.connectionId;
                         this.properties = routePutMeta.properties;
                         channel.properties = routePutMeta.channelProperties;
+                        this.serverHostname = routePutMeta.serverHostname;
                         if (this.onconnect != undefined)
                         {
                             this.onconnect();
+                        }
+                        for(const [key, value] of Object.entries(channel.properties))
+                        {
+                            if (this.debug)
+                            {
+                                console.log("setChannelProperty at connect(" + channel.name + "): " + key + " = " + value);
+                            }
+                            if(channel.onchannelpropertychange != undefined)
+                            {
+                                channel.onchannelpropertychange(key, value);
+                            }
                         }
                     } else if (messageType == "ping") {
                         var mm = {"__routeput": {"type": "pong", "pingTimestamp": routePutMeta.timestamp}};

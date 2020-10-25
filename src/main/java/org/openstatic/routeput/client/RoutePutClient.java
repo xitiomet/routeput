@@ -88,6 +88,11 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         return this.stayConnected;
     }
 
+    public void setConnectionId(String connectionId)
+    {
+        this.connectionId = connectionId;
+    }
+
     @Override
     public String getConnectionId() {
         return this.connectionId;

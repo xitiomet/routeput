@@ -89,10 +89,14 @@ routeput.onmessage = function (member, jsonObject) {
             {
                 icons += "<img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.signal + "\" max=\"100\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress>";
             }
-            channelTR.innerHTML = "<td>" + key + "</td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
+            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
         }
     }
 };
+
+routeput.onconnect = function() {
+    document.getElementById('serverTitle').innerHTML = "Routeput Server " + routeput.serverHostname;
+}
 
 window.onload = function() {
     routeput.connect();

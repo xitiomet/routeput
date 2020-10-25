@@ -95,7 +95,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         long cTime = System.currentTimeMillis();
         ArrayList<RoutePutChannel> idleChannels = new ArrayList<RoutePutChannel>();
         this.lastChannelInteraction.forEach((k,v) -> {
-            if ((cTime - v.getTime()) > 900000)
+            if ((cTime - v.getTime()) > 300000)
             {
                 idleChannels.add(k);
             }

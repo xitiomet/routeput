@@ -97,6 +97,11 @@ public class RoutePutServer implements Runnable
         BLOBManager.init(this.settings);
         RoutePutChannel.setChannelRoot(this.channelRoot);
 
+        if (settings.has("hostname"))
+        {
+            RoutePutChannel.setHostname(settings.getString("hostname"));
+        }
+
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
         this.routeputDebug.setPermanent(true);
         this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
