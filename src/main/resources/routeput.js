@@ -113,7 +113,7 @@ function dataURItoBlob(dataURI)
 function getPathValue(object, path)
 {
     var ro = undefined;
-    var pointer = removeRouteputMeta(object);
+    var pointer = object;
     if (path != undefined && path != "")
     {
         var st = path.split(".");
@@ -127,8 +127,10 @@ function getPathValue(object, path)
             }
         })
     } else {
-        return removeRouteputMeta(object);
+        ro = object;
     }
+    if (ro instanceof Object)
+        ro = removeRouteputMeta(ro);
     return ro;
 }
 

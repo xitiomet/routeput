@@ -14,6 +14,7 @@
     const queryString = window.location.search;
     const urlParams = new URLSearchParams(queryString);
     var channel = urlParams.get('channel');
+    var membersNeedRefresh = false;
     var fields = [];
     var datasets = [];
     var myCSV = undefined;
@@ -240,32 +241,40 @@
         newDiv.innerHTML = member.srcId;
         membersDiv.appendChild(newDiv);
         */
-        rebuildMembers();
+        membersNeedRefresh = true;
     }
 
     routeput.defaultChannel.onleave = function (member) {
         //var memberDiv = document.getElementById('member_' + member.srcId);
         //memberDiv.remove();
-        rebuildMembers();
+        membersNeedRefresh = true;
+    }
+
+    routeput.defaultChannel.onmemberpropertychange = function (member, key, value) {
+        membersNeedRefresh = true;
     }
 
     function rebuildMembers()
     {
-        var members = routeput.defaultChannel.members;
-        var memberMap = {};
-        for(const [key, value] of members)
+        if (membersNeedRefresh)
         {
-            memberMap[key] = value.properties;
+            var members = routeput.defaultChannel.members;
+            var memberMap = {};
+            for(const [key, value] of members)
+            {
+                memberMap[key] = value.properties;
+            }
+            var span = document.createElement('span');
+            var nodeMembers = new PrettyJSON.view.Node({
+                el: span,
+                data: memberMap
+            });
+            var membersDiv = document.getElementById('members');
+            membersDiv.innerHTML = '';
+            membersDiv.appendChild(span);
+            nodeMembers.expandAll();
+            membersNeedRefresh = false;
         }
-        var span = document.createElement('span');
-        var nodeMembers = new PrettyJSON.view.Node({
-            el: span,
-            data: memberMap
-        });
-        var membersDiv = document.getElementById('members');
-        membersDiv.innerHTML = '';
-        membersDiv.appendChild(span);
-        nodeMembers.expandAll();
     }
 
     routeput.defaultChannel.onchannelpropertychange = function(key, value) {
@@ -316,6 +325,7 @@
     window.onload = function ()
     {
         routeput.connect();
+        setInterval(rebuildMembers, 1000);
     };
     
     function exportCSV()
