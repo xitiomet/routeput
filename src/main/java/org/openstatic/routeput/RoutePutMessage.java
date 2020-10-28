@@ -34,18 +34,21 @@ public class RoutePutMessage extends JSONObject
     // For Binary streams inside a channel
     public static final String TYPE_BINARY_STREAM = "binary";
 
+    /* Create a routeput message from a JSONObject */
     public RoutePutMessage(JSONObject jsonObject)
     {
         super(jsonObject.toString());
         getRoutePutMeta();
     }
 
+    /* Create a routeput message from a json string */
     public RoutePutMessage(String json)
     {
         super(json);
         getRoutePutMeta();
     }
 
+    /* Create an empty routeput message */
     public RoutePutMessage()
     {
         super();
@@ -70,6 +73,7 @@ public class RoutePutMessage extends JSONObject
         return randKey;
     }
 
+    /* return the contents of the "__routeput" field as a JSONObject */
     public JSONObject getRoutePutMeta()
     {
         if (!this.has("__routeput"))

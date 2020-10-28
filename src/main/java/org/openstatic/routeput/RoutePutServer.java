@@ -97,9 +97,9 @@ public class RoutePutServer implements Runnable
         BLOBManager.init(this.settings);
         RoutePutChannel.setChannelRoot(this.channelRoot);
 
-        if (settings.has("hostname"))
+        if (this.settings.has("hostname"))
         {
-            RoutePutChannel.setHostname(settings.getString("hostname"));
+            RoutePutChannel.setHostname(this.settings.getString("hostname"));
         }
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
@@ -159,6 +159,7 @@ public class RoutePutServer implements Runnable
     
     public void run()
     {
+        logIt("Startup complete, Configuration " + this.settings.toString());
         this.keep_running = true;
         int tick = 0;
         while(this.keep_running)

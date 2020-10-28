@@ -7,4 +7,5 @@ fi
 if [ "$1" = purge ]; then
     echo Removing routeput directory
     rm -R /usr/share/routeput/
+    rm -R /etc/routeput/
 fi

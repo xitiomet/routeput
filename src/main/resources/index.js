@@ -6,6 +6,15 @@ function changeView(radio)
     }
 }
 
+function capitalize(s)
+{
+    if (typeof s !== 'string')
+        return '';
+    if (s.length == 0)
+        return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function logIt(message)
 {
     var console = document.getElementById('console');
@@ -95,7 +104,7 @@ routeput.onmessage = function (member, jsonObject) {
 };
 
 routeput.onconnect = function() {
-    document.getElementById('serverTitle').innerHTML = "Routeput Server " + routeput.serverHostname;
+    document.getElementById('serverTitle').innerHTML = "Routeput Server " + capitalize(routeput.serverHostname);
 }
 
 window.onload = function() {

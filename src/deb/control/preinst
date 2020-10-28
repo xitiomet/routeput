@@ -7,8 +7,5 @@ if [ "$1" = install ]; then
     mkdir -p /usr/share/routeput
     chown -R routeput:routeput /usr/share/routeput
     chmod -R 750 /usr/share/routeput
-    echo Creating /etc/routeput
-    mkdir -p /etc/routeput
-    chown -R routeput:routeput /etc/routeput
 fi
 

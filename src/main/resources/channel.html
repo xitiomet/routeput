@@ -3,6 +3,35 @@
 <head>
   <link rel="stylesheet" href="switch.css">
   <link rel="stylesheet" href="pretty-json.css">
+  <style type="text/css">
+    div.col1 {
+        position: absolute;
+        left: 0px;
+        width: 33%;
+        min-height: 200px;
+        max-height: 80%;
+        overflow-y: scroll;
+        padding: 4px 4px 4px 4px;
+    }
+    div.col2 {
+        position: absolute;
+        left: 34%;
+        width: 31%;
+        min-height: 200px;
+        max-height: 80%;
+        overflow-y: scroll;
+        padding: 4px 4px 4px 4px;
+    }
+    div.col3 {
+        position: absolute;
+        left: 66%;
+        width: 33%;
+        min-height: 200px;
+        max-height: 80%;
+        overflow-y: scroll;
+        padding: 4px 4px 4px 4px;
+    }
+  </style>
   <script type="text/javascript" src="jquery-1.11.1.min.js" ></script>
   <script type="text/javascript" src="underscore-min.js" ></script>
   <script type="text/javascript" src="backbone-min.js" ></script>
@@ -20,7 +49,7 @@
     var myCSV = undefined;
     var splitByField = undefined;
     var routeput = new RouteputConnection(channel);
-    routeput.debug = true;
+    //routeput.debug = true;
     window.chartColors = [
         'rgb(255, 99, 132)',
         'rgb(255, 159, 64)',
@@ -163,6 +192,13 @@
         document.getElementById('exportCsvButton').innerHTML = "Export CSV (" + bytesToSize(myCSV.length) + ")";
     }
 
+    function changeSplitByField(newField)
+    {
+        splitByField = newField;
+        var lastMessage = document.getElementById('lastMessage');
+        lastMessage.innerHTML = '';
+    }
+
     function processLastMessage(jsonObject)
     {
         // Pretty JSON Logging
@@ -177,7 +213,7 @@
                     keyOption = document.createElement('option');
                     keyOption.id = 'sbk_' + key;
                     keyOption.value = key;
-                    keyOption.innerHTML = key;
+                    keyOption.innerHTML = "Field: " + key;
                     splitByDropdown.appendChild(keyOption);
                 }
             }
@@ -194,11 +230,12 @@
             lastMessage.innerHTML = '';
             lastMessage.appendChild(span);
             node.expandAll();
-        } else if (jsonObject.hasOwnProperty(splitByField)) {
+        } else {
             var lastMessageSpan = document.getElementById('lastMessageSpan');
             if (lastMessageSpan != undefined)
                 lastMessageSpan.remove();
-            var sbValue = jsonObject[splitByField];
+            var sbValue = getPathValue(jsonObject, splitByField);
+            //console.log (splitByField + " = " + JSON.stringify(sbValue));
             var block = document.getElementById('sbValue_' + sbValue);
             var sbValueSpan = document.getElementById('sbValueSpan_' + sbValue);
             if (block == undefined)
@@ -242,12 +279,14 @@
         membersDiv.appendChild(newDiv);
         */
         membersNeedRefresh = true;
+        document.getElementById('memberCountSpan').innerHTML = routeput.defaultChannel.getMembers().length;
     }
 
     routeput.defaultChannel.onleave = function (member) {
         //var memberDiv = document.getElementById('member_' + member.srcId);
         //memberDiv.remove();
         membersNeedRefresh = true;
+        document.getElementById('memberCountSpan').innerHTML = routeput.defaultChannel.getMembers().length;
     }
 
     routeput.defaultChannel.onmemberpropertychange = function (member, key, value) {
@@ -369,26 +408,31 @@
         </tr>
     </table>
 </div>
-<table style="width: 100%; table-layout: fixed;">
-    <tr>
-        <td valign="top">
-            <h3>Last Message</h3>
-            <table><tr><td>Group By</td><td>
-            <select id="splitByDropdown" onchange="splitByField = this.value;">
-                <option value="">----NONE----</option>
-            </select></td></tr></table>
-            <div id="lastMessage"><i>Waiting for message...</i></div>
-        </td>
-        <td valign="top">
-            <h3>Members</h3>
-            <div id="members"></div>
-        </td>
-        <td valign="top">
-            <h3>Channel Properties</h3>
-            <div id="channelProperties"></div>
-        </td>
-    </tr>
-</table>
+
+<div class="col1">
+    <h2>Last Message</h2>
+    <table><tr><td>Group By</td><td>
+    <select id="splitByDropdown" onchange="changeSplitByField(this.value);">
+        <option value="">----NONE----</option>
+        <option value="__routeput.srcId">Packet Source ID</option>
+        <option value="__routeput.dstId">Packet Target ID</option>
+        <option value="__routeput.type">Packet Type</option>
+    </select></td></tr></table>
+    <div class="scrollable">
+        <div id="lastMessage"><i>Waiting for message...</i></div>
+    </div>
+</div>
+<div class="col2">
+    <h2>Members (<span id="memberCountSpan">0</span>)</h2>
+    <div class="scrollable">
+        <div id="members"></div>
+    </div>
+</div>
+
+<div class="col3">
+    <h2>Channel Properties</h2>
+    <div id="channelProperties"></div>
+</div>
 
 </div>
 </body>

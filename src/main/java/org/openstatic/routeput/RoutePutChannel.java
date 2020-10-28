@@ -69,6 +69,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         saveChannelProperties();
     }
 
+    /* will this channel be automatically deleted when idle */
     public boolean isPermanent()
     {
         return this.properties.optBoolean("permanent", false);
@@ -79,6 +80,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.unsavedProperties = true;
     }
 
+    /* returns the context string for storing blobs in this channel */
     public String getBLOBContext()
     {
         return "channel." + this.name;
@@ -102,6 +104,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         return ja;
     }
 
+    /* Returns a java.io.File object representing the channel's blob storage folder */
     public File getBlobFolder()
     {
         File blobRoot = BLOBManager.getBlobRoot();
@@ -117,6 +120,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         return null;
     }
 
+    /* Returns a java.io.File object representing the channel's property storage file */
     private File getPropertiesFile()
     {
         File channelFolder = this.getChannelFolder();
@@ -129,6 +133,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    /* Returns a java.io.File object representing the channel's data storage folder */
     private File getChannelFolder()
     {
         if (RoutePutChannel.channelRoot != null)
@@ -141,8 +146,6 @@ public class RoutePutChannel implements RoutePutMessageListener
             if (!channelFolder.exists())
             {
                 channelFolder.mkdir();
-                File blobFolder = new File(channelFolder, "blob");
-                blobFolder.mkdir();
             }
             return channelFolder;
         } else {
@@ -155,14 +158,18 @@ public class RoutePutChannel implements RoutePutMessageListener
         RoutePutChannel.channelRoot = channelRoot;
     }
 
+    /* Start the channel tracker's internal thread if it hasn't been started already */
     public static Thread initTracker()
     {
-        try 
+        if (RoutePutChannel.hostname == null)
         {
-            InetAddress ip;
-            ip = InetAddress.getLocalHost();
-            RoutePutChannel.hostname = ip.getHostName();
-        } catch (Exception e) {}
+            try 
+            {
+                InetAddress ip;
+                ip = InetAddress.getLocalHost();
+                RoutePutChannel.hostname = ip.getHostName();
+            } catch (Exception e) {}
+        }
 
         if (RoutePutChannel.channelTracker == null)
         {
@@ -221,6 +228,8 @@ public class RoutePutChannel implements RoutePutMessageListener
         });
     }
 
+    /* Get the hostname of the routeput server, hostname is stored statically with RouteputChannel since it is the minimum
+       requirement for a routeput implementation */
     public static String getHostname()
     {
         return RoutePutChannel.hostname;
@@ -231,16 +240,19 @@ public class RoutePutChannel implements RoutePutMessageListener
         RoutePutChannel.hostname = hostname;
     }
 
+    /* How many messages left this channel per second */
     public int getMessagesTxPerSecond()
     {
         return this.msgTxPerSecond;
     }
 
+    /* How many messages entered this channel per second */
     public int getMessagesRxPerSecond()
     {
         return this.msgRxPerSecond;
     }
 
+    /* returns the channels name */
     public String getName()
     {
         return this.name;
@@ -383,6 +395,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         return null;
     }
 
+    /* Transmit a connection status message to the session provided for every member of the channel */
     public void transmitMembers(RoutePutSession session)
     {
         this.members.values().parallelStream().forEach((m) -> {
@@ -534,6 +547,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         });
     }
 
+    /* Returns a collection of the channels members */
     public Collection<RoutePutSession> getMembers()
     {
         return this.members.values();

@@ -7,18 +7,20 @@ function randomId()
 }
 
 function removeRouteputMeta(obj) {
-    var newObj = {};
-    for(const [key, value] of Object.entries(obj)) {
-      if (key != '__routeput')
-      {
-        if (typeof value === 'object')
-            newObj[key] = removeRouteputMeta(value);
-        else
-            newObj[key] = value;
-      }
+    if (obj != null && obj != undefined && typeof obj === 'object')
+    {
+        var newObj = {};
+        for(const [key, value] of Object.entries(obj)) {
+            if (key != '__routeput')
+            {
+                newObj[key] = removeRouteputMeta(value);
+            }
+        }
+        return newObj;
+    } else {
+        return obj;
     }
-    return newObj;
-  }
+}
 
 function setCookie(cname, cvalue, exdays) {
     var d = new Date();
@@ -119,11 +121,17 @@ function getPathValue(object, path)
         var st = path.split(".");
         st.forEach(function(currentValue)
         {
-            if (pointer.hasOwnProperty(currentValue))
+            if (pointer != undefined)
             {
-                ro = pointer[currentValue];
-                if (ro instanceof Object)
-                    pointer = ro;
+                if (pointer.hasOwnProperty(currentValue))
+                {
+                    ro = pointer[currentValue];
+                    if (ro instanceof Object)
+                        pointer = ro;
+                } else {
+                    ro = undefined;
+                    pointer = undefined;
+                }
             }
         })
     } else {
@@ -281,7 +289,7 @@ class RouteputConnection
         this.channels.set(channelName, this.defaultChannel);
         if (this.host == undefined || this.host == "")
         {
-            this.host = "127.0.0.1:6144";
+            this.host = "openstatic.org:6144";
         }
         this.wsProtocol = 'ws';
         var protocol = location.protocol;
@@ -465,11 +473,14 @@ class RouteputConnection
                             }
                         } else {
                             member = channel.members.get(srcId);
-                            member.connected = c;
-                            channel.members.delete(srcId);
-                            if (channel.onleave != undefined)
+                            if (member != undefined)
                             {
-                                channel.onleave(member);
+                                member.connected = c;
+                                channel.members.delete(srcId);
+                                if (channel.onleave != undefined)
+                                {
+                                    channel.onleave(member);
+                                }
                             }
                         }
                     } else if (messageType == "response") {

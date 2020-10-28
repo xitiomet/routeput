@@ -31,6 +31,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
 
     public ApiServlet() {
         this.properties = new JSONObject();
+        this.properties.put("description", "Virtual Session for API GET/POST messages");
         this.rxPackets = 0;
         this.txPackets = 0;
         RoutePutServer.logIt("** API SERVLET INITIALIZED **");
