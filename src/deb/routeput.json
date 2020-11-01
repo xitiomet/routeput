@@ -1,0 +1,9 @@
+{
+    "port": 6144,
+    "apiMountPath": "/api/*",
+    "websocketMountPath": "/channel/*",
+    "fullApiMountPath": "https://openstatic.org/api/",
+    "fullWebsocketMountPath": "https://openstatic.org/channel/",
+    "upstreams": [],
+    "pingPongSecs": 20
+}

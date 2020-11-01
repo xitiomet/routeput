@@ -4,7 +4,6 @@ build/
 target/
 dependency-reduced-pom.xml
 .gradle
-*.json
 .DS_Store
 upload.sh
 .classpath
@@ -13,3 +12,5 @@ upload.sh
 .vscode/
 blob/
 sof.wav
+*.pyc
+__pycache__
