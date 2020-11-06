@@ -4,6 +4,7 @@
 1. [Introduction](#introduction)
 2. [Basic Usage](#usage)
 3. [Javascript Library](#javascript)
+4. [Packet Structure](#packet)
 
 ## Introduction
 
@@ -166,3 +167,39 @@ routeput.onconnect = function () {
 ```
 In the example above, we form a connection to the channel "myChannel" and listen for any messages. After connecting we transmit the object {"hello": "world"}
 
+## Packet
+
+The "__routeput" field is the only part of routeput that actually matters! This determines everything about how a message will be handled by a server or client.
+
+
+Here is an example of a more complicated message
+```json
+{
+  "age": 37,
+  "username": "brian",
+  "profile": {
+    "hair": "brown and grey",
+    "eyes": "brown"
+  },
+  "__routeput": {
+    "srcId": "VWbFlzwFVagMUldXGhZFABlH",
+    "dstId": "aSDFAafAFreVAVsfargEtyhe",
+    "channel": "ANYTHING",
+    "echo": true,
+    "setChannelProperty": { "last_user": "username" },
+    "setSessionProperty": { "user_age": "age" }
+  }
+}
+```
+
+In the above example you will notice some fields beyond just "srcId", "dstId", and "channel", there are many optional fields that cause slightly different handling of a message. For instance, normally a message is only received by the other members of a channel in the example above "echo": true tells the server to send this packet back to the client that sent it as well as the other members of the channel. This is useful if you would like to compensate for network lag to ensure the sender and recipients all get the event at the same time.
+
+**What about setChannelProperty and setSessionProperty**
+
+In order to simplify things, i decided to keep the property system simple and embeded with messages, often times i found myself passing a message with fields that i wanted to assign to persistant properties. In the example above I set the channel property "last_user" based on the message's "username" field.
+
+Both setProperty methods take a dictionary of the property names you wish to assign, along with a string representing the location in the message of the value. If i wanted to assign something inside the "profile" object it might look like this:
+
+```json
+"setSessionProperty": { "user_hair": "profile.hair" }
+```

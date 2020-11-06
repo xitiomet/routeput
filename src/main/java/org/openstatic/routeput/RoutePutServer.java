@@ -191,6 +191,7 @@ public class RoutePutServer implements Runnable
             RoutePutMessage jo = new RoutePutMessage();
             jo.put("channelStats", this.channelStats());
             jo.setChannel(this.routeputDebug);
+            jo.setLogged(false);
             this.routeputDebug.onMessage(null, jo);
         } else {
             System.err.println("routeputDebug is null");

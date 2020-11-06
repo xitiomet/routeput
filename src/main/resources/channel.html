@@ -166,23 +166,28 @@
         {
             var routeput = dataObj.__routeput;
             var arr = new Array();
+            var foundData = false;
             for(var i = 0; i < fields.length; i++)
             {
                 var fn = fields[i];
                 if (dataObj.hasOwnProperty(fn))
                 {
                     arr.push(dataObj[fn]);
+                    foundData = true;
                 } else {
                     arr.push(null);
                 }
             }
-            var dt = new Date();
-            addDataToChart(dt, arr);
-            if (document.getElementById('recordSwitch').checked)
+            if (foundData)
             {
-                myCSV += dt.toISOString() + "," + arr.join(',') + "\n";
+                var dt = new Date();
+                addDataToChart(dt, arr);
+                if (document.getElementById('recordSwitch').checked)
+                {
+                    myCSV += dt.toISOString() + "," + arr.join(',') + "\n";
+                }
+                document.getElementById('exportCsvButton').innerHTML = "Export CSV (" + bytesToSize(myCSV.length) + ")";
             }
-            document.getElementById('exportCsvButton').innerHTML = "Export CSV (" + bytesToSize(myCSV.length) + ")";
         }
     }
     

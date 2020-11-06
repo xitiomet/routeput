@@ -283,6 +283,16 @@ public class RoutePutMessage extends JSONObject
         this.getRoutePutMeta().put("type", type);
     }
 
+    public void setLogged(boolean logged)
+    {
+        this.getRoutePutMeta().put("log", logged);
+    }
+
+    public boolean canBeLogged()
+    {
+        return this.getRoutePutMeta().optBoolean("log", true);
+    }
+
     public void setRequest(String requestType)
     {
         this.setType(TYPE_REQUEST);

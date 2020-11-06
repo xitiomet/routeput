@@ -2,7 +2,9 @@ package org.openstatic.routeput;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -22,6 +24,7 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private PropertyChangeSupport propertyChangeSupport;
     private String name;
+    private BufferedWriter logWriter;
     private JSONObject properties;
     private boolean unsavedProperties;
     protected LinkedHashMap<String, RoutePutSession> members;
@@ -58,6 +61,19 @@ public class RoutePutChannel implements RoutePutMessageListener
             if (propertiesFile.exists())
             {
                 this.properties = RoutePutServer.loadJSONObject(propertiesFile);
+            }
+        }
+        if (this.properties.optBoolean("log", true))
+        {
+            try
+            {
+                File logFile = this.getLogFile();
+                if (logFile != null)
+                {
+                    this.logWriter = new BufferedWriter(new FileWriter(logFile, true));
+                }
+            } catch (Exception e) {
+                RoutePutServer.logError(e);
             }
         }
     }
@@ -133,6 +149,19 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    /* Returns a java.io.File object representing the channel's property storage file */
+    private File getLogFile()
+    {
+        File channelFolder = this.getChannelFolder();
+        if (channelFolder != null)
+        {
+            File channelPropertiesFile = new File(channelFolder, "channel.log");
+            return channelPropertiesFile;
+        } else {
+            return null;
+        }
+    }
+
     /* Returns a java.io.File object representing the channel's data storage folder */
     private File getChannelFolder()
     {
@@ -190,6 +219,10 @@ public class RoutePutChannel implements RoutePutMessageListener
             { 
                 public void run() 
                 {
+                    // sleep all channels
+                    RoutePutChannel.channels.values().forEach((c) -> {
+                        c.hibernate();
+                    });
                     // Destroy the tracker on shutdown
                     RoutePutChannel.channelTracker = null;
                 } 
@@ -206,14 +239,22 @@ public class RoutePutChannel implements RoutePutMessageListener
             c.messagesTx = 0;
             c.msgRxPerSecond = c.messagesRx;
             c.messagesRx = 0;
+            try
+            {
+                if (c.logWriter != null)
+                {
+                    c.logWriter.flush();
+                }
+            } catch (Exception e) {
+                RoutePutServer.logError(e);
+            }
         });
         long idleTimeout = 600l * 1000l;
         RoutePutChannel.channels.values().removeIf((c) -> {
             boolean removeIt = (c.getIdle() > idleTimeout) && c.memberCount() == 0 && !c.isPermanent();
             if (removeIt)
             {
-                RoutePutServer.saveJSONObject(c.getPropertiesFile(), c.properties);
-                RoutePutServer.logIt("Channel \"" + c.getName() + "\" moved to cold storage, because of idle");
+                c.hibernate();
             } 
             return removeIt; 
         });
@@ -419,6 +460,18 @@ public class RoutePutChannel implements RoutePutMessageListener
         RoutePutChannel mChan = j.getRoutePutChannel();
         if (this.equals(mChan))
         {
+            if (j.canBeLogged())
+            {
+                try
+                {
+                    if (this.logWriter != null && this.properties.optBoolean("log", true))
+                    {
+                        this.logWriter.write(j.toString() + "\n");
+                    }
+                } catch (Exception e) {
+                    RoutePutServer.logError(e);
+                }
+            }
             bumpRx();
             if (RoutePutChannel.hostname != null)
             {
@@ -715,6 +768,21 @@ public class RoutePutChannel implements RoutePutMessageListener
     public void removePropertyChangeListener(PropertyChangeListener listener)
     {
         this.propertyChangeSupport.removePropertyChangeListener(listener);
+    }
+
+    private void hibernate()
+    {
+        RoutePutServer.saveJSONObject(this.getPropertiesFile(), this.properties);
+        RoutePutServer.logIt("Channel \"" + this.getName() + "\" moved to cold storage, because of idle");
+        if (this.logWriter != null)
+        {
+            try
+            {
+                this.logWriter.close();
+            } catch (Exception e) {
+                RoutePutServer.logError(e);
+            }
+        }
     }
 
     public JSONObject toJSONObject()

@@ -210,6 +210,11 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         }
     }
 
+    public void transmit(RoutePutMessage jo)
+    {
+        this.send(jo);
+    }
+
     @Override
     public void send(RoutePutMessage jo) {
         if (jo != null && this.session != null) {
