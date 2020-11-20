@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.openstatic.routeput.util.JSONTools;
 
 public class RoutePutChannel implements RoutePutMessageListener
 {
@@ -589,9 +590,16 @@ public class RoutePutChannel implements RoutePutMessageListener
                 {
                     // Never Send the event to the creator or its relay
                     if (!s.containsConnectionId(jo.getSourceId()))
-                    {
-                        bumpTx();
-                        s.send(jo);
+                    {   
+                        boolean filterMatch = true;
+                        if (jo.hasMetaField("where"))
+                        {
+                            filterMatch = JSONTools.matchesFilter(s.getProperties(), jo.getRoutePutMeta().optJSONObject("where"));
+                        } 
+                        if (filterMatch) {
+                            bumpTx();
+                            s.send(jo);
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace(System.err);

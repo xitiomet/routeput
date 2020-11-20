@@ -1,5 +1,6 @@
 package org.openstatic.routeput;
 
+import org.openstatic.routeput.util.JSONTools;
 import java.util.Random;
 import java.util.StringTokenizer;
 
@@ -17,6 +18,10 @@ public class RoutePutMessage extends JSONObject
 
     // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
     public static final String TYPE_BLOB = "blob";
+
+    // For sending midi messages over routeput
+    public static final String TYPE_MIDI = "midi";
+    public static final String TYPE_PULSE = "pulse";
 
     // These messages should NEVER travel, they are simply for making requests between two endpoints
     public static final String TYPE_REQUEST = "request";
@@ -161,22 +166,12 @@ public class RoutePutMessage extends JSONObject
 
     public Object getPathValue(String path)
     {
-        Object ro = null;
-        JSONObject pointer = this;
         if (!"".equals(path) && path != null)
         {
-            StringTokenizer st = new StringTokenizer(path, ".");
-            while(st.hasMoreTokens())
-            {
-                String pathNext = st.nextToken();
-                ro = pointer.get(pathNext);
-                if (ro instanceof JSONObject)
-                    pointer = (JSONObject) ro;
-            }
+            return JSONTools.getPathValue(this, path);
         } else {
             return this.toCleanJSONObject();
         }
-        return ro;
     }
 
     public String getMessageId()

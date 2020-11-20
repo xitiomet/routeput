@@ -577,17 +577,17 @@ class RouteputConnection
                         }
                         if (this.onmessage != undefined)
                         {
-                            this.onmessage(member, jsonObject);
+                            this.onmessage(member, messageType, jsonObject);
                         }
                         if (channel.onmessage != undefined)
                         {
-                            channel.onmessage(member, jsonObject);
+                            channel.onmessage(member, messageType, jsonObject);
                         }
                         if (member != undefined)
                         {
                             if (member.onmessage != undefined)
                             {
-                                member.onmessage(member, jsonObject);
+                                member.onmessage(member, messageType, jsonObject);
                             }
                         }
                     }

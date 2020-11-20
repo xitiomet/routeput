@@ -52,13 +52,8 @@ routeput.onblob = function(name, blob) {
     logIt(blobToHTML(name, blob));
 }
 
-routeput.onmessage = function (member, jsonObject) {
+routeput.onmessage = function (member, messageType, jsonObject) {
     var routePutMeta = jsonObject.__routeput;
-    var messageType = undefined;
-    if (routePutMeta.hasOwnProperty("type"))
-    {
-        messageType = routePutMeta.type;
-    }
     if (messageType == "info")
     {
         logIt(jsonObject.text);

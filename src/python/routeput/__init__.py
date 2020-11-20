@@ -68,12 +68,12 @@ class RouteputChannel():
     def trigger(self, event_name, *args, **kwargs):
         if self.callbacks is not None and event_name in self.callbacks:
             if self.connection.debug:
-                print("Routeput Firing Channel Callbacks for '%s' %s %s" % (event_name,args, kwargs))
+                print("Routeput Firing Channel Callbacks for '%s' %s %s" % (event_name, args, kwargs))
             for callback in self.callbacks[event_name]:
                 callback(self, *args, **kwargs)
         else:
             if self.connection.debug:
-                print("Routeput NO Channel Callbacks for '%s' %s %s" % (event_name,args, kwargs))
+                print("Routeput NO Channel Callbacks for '%s' %s %s" % (event_name, args, kwargs))
 
     def on(self, event_name, callback):
         if self.callbacks is None:

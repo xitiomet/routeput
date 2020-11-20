@@ -267,7 +267,7 @@
         }
     }
     
-    routeput.onmessage = function (member, jsonObject) {
+    routeput.onmessage = function (member, messageType, jsonObject) {
         if (document.getElementById('plot-container').style.display == 'block')
         {
             processChartData(jsonObject);

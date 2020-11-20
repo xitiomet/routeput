@@ -3,12 +3,13 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.openstatic</groupId>
   <artifactId>routeput</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.${maven.build.timestamp}</version>
   <packaging>jar</packaging>
   <name>Route.put</name>
   <url>http://openstatic.org/</url>
   <properties>
     <mainClass>org.openstatic.routeput.RoutePutMain</mainClass>
+    <maven.build.timestamp.format>yyyy.MMdd</maven.build.timestamp.format>
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
     <graalvm.version>20.1.0</graalvm.version>
@@ -81,6 +82,11 @@
         <artifactId>graal-sdk</artifactId>
         <version>${graalvm.version}</version>
         <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.fusionauth</groupId>
+      <artifactId>fusionauth-jwt</artifactId>
+      <version>4.0.0</version>
     </dependency>
   </dependencies>
   <reporting>
@@ -272,7 +278,7 @@
                         <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
                         <snapshotEnv>USER</snapshotEnv>
                         <controlDir>${basedir}/src/deb/control</controlDir>
-                        <deb>${project.build.directory}/${project.artifactId}-${project.version}.deb</deb>
+                        <deb>${project.build.directory}/${project.artifactId}-${project.version}-jre.deb</deb>
                         <dataSet>
                             <data>
                               <src>${project.build.directory}/${project.build.finalName}.jar</src>
@@ -341,8 +347,10 @@
                     </configuration>
                 </execution>
             </executions>
+            <configuration>
+              <skip>false</skip>
+            </configuration>
        </plugin>
-       
        <plugin>
             <groupId>com.akathist.maven.plugins.launch4j</groupId>
             <artifactId>launch4j-maven-plugin</artifactId>
