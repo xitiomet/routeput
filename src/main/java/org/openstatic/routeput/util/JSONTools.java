@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.json.*;
+import org.openstatic.routeput.PendingURLFetch;
 
 
 public class JSONTools {
@@ -165,6 +166,10 @@ public class JSONTools {
                         rv = source.replaceAll(Pattern.quote(params[0]), params[1]);
                     } else if (methodName.equals("value") && params.length > 0) {
                         rv = params[0];
+                    } else if (methodName.equals("url") && params.length > 0) {
+                        PendingURLFetch purl = new PendingURLFetch(params[0]);
+                        purl.run();
+                        rv = new JSONObject(purl.getResponse());
                     } else if (methodName.equals("append") && params.length > 0) {
                         rv = source + params[0];
                     } else if (methodName.equals("prefix") && params.length > 0) {
@@ -179,6 +184,8 @@ public class JSONTools {
     /* return a list of the objects (unchanged) from a JSONArray */
     public static List<Object> listJSONArray(JSONArray array)
     {
+        if (array == null)
+            return new ArrayList<Object>();
         ArrayList<Object> al = new ArrayList<Object>(array.length());
         for(int i = 0; i < array.length(); i++)
         {

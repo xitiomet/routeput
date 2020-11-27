@@ -242,15 +242,18 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                             } else if ("members".equals(token)) {
                                 response = channel.membersAsJSONObject();
                             } else if ("setProperty".equals(token)) {
+                                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                                JSONObject channelProperties = channel.getProperties();
                                 request.getParameterMap().forEach((key, value) -> {
                                     if ("true".equals(value[0])) {
-                                        channel.setProperty(this, key, true);
+                                        rppcm.addUpdate(channel, key, channelProperties.opt(key), true);
                                     } else if ("false".equals(value[0])) {
-                                        channel.setProperty(this, key, false);
+                                        rppcm.addUpdate(channel, key, channelProperties.opt(key), false);
                                     } else {
-                                        channel.setProperty(this, key, value[0]);
+                                        rppcm.addUpdate(channel, key, channelProperties.opt(key), value[0]);
                                     }
                                 });
+                                rppcm.processUpdates(this);
                             } else if ("transmit".equals(token)) {
                                 this.rxPackets++;
                                 RoutePutMessage msg = new RoutePutMessage();
@@ -372,7 +375,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
 
     @Override
     public JSONObject getProperties() {
-        // TODO Auto-generated method stub
+        this.properties.put("_class", "ApiServlet");
         return this.properties;
     }
 
@@ -393,7 +396,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             jo.put("tx", this.txPackets);
         }
         jo.put("properties", this.properties);
-        jo.put("_class", "ApiServlet");
         return jo;
     }
 
@@ -432,6 +434,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
 
     @Override
     public void removePropertyChangeListener(PropertyChangeListener listener) {
+        // TODO Auto-generated method stub
+
+    }
+
+    @Override
+    public void firePropertyChange(String key, Object oldValue, Object newValue) {
         // TODO Auto-generated method stub
 
     }

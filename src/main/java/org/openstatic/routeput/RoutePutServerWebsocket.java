@@ -93,7 +93,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             String key = rpm.optString("key", null);
             Object value = rpm.opt("value");
             if (key != null) {
-                this.defaultChannel.setProperty(this, key, value);
+                this.defaultChannel.setProperty(key, value);
                 resp.setMetaField("key", key);
                 resp.setMetaField("value", value);
             } else {
@@ -203,7 +203,11 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             }
             this.rxPackets++;
             this.lastRxPacket = jo;
-            if (this.handshakeComplete) {
+            if (jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE))
+            {
+                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(jo);
+                rppcm.processUpdates(this);
+            } else if (this.handshakeComplete) {
                 // this message has no sourceID, must be from the client directly connected
                 jo.setSourceIdIfNull(this.connectionId);
                 String sourceId = jo.getSourceId();
@@ -212,14 +216,17 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                     // this message is definitely from the directly connected client
                     // Lets update any session properties this packet may change ASAP
                     if (jo.hasMetaField("setSessionProperty")) {
+                        RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                        rppcm.setSource(this);
                         JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
                         for (String k : storeRequest.keySet()) {
                             String v = storeRequest.getString(k);
                             Object oldValue = this.properties.opt(k);
                             Object newValue = jo.getPathValue(v);
-                            this.getProperties().put(k, newValue);
-                            this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
+                            rppcm.addUpdate(this, k, oldValue, newValue);
                         }
+                        rppcm.processUpdates(this);
+                        jo.removeMetaField("setSessionProperty");
                     }
 
                     if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
@@ -237,7 +244,12 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                         long cts = System.currentTimeMillis();
                         JSONObject meta = jo.getRoutePutMeta();
                         if (meta.has("pingTimestamp")) {
+                            long oldPing = this.pingTime;
                             this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
+                            if (this.pingTime != -1) {
+                                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                                rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                            }
                         }
                     } else if (jo.hasChannel()) {
                         this.handleMessage(jo);
@@ -307,7 +319,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                 Object oldValue = this.properties.opt(key);
                 Object newValue = props.opt(key);
                 this.properties.put(key, newValue);
-                this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
+                this.firePropertyChange(key, oldValue, newValue);
             }
         }
     }
@@ -460,24 +472,19 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             return c.getName();
         }).collect(Collectors.toList());
         jo.put("channels", new JSONArray(channels));
-        if (this.pingTime != -1) {
-            jo.put("ping", this.pingTime);
-        }
+        
         if (this.rxPackets > 0) {
             jo.put("rx", this.rxPackets);
         }
         if (this.txPackets > 0) {
             jo.put("tx", this.txPackets);
         }
-        if (RoutePutServer.instance.settings.optBoolean("showLastTxRx", false)) {
+        if (RoutePutServer.instance.routeputDebug.getProperties().optBoolean("showLastTxRx", false)) {
             jo.put("lastTx", this.lastTxPacket);
             jo.put("lastRx", this.lastRxPacket);
         }
         jo.put("properties", this.properties);
         jo.put("cookies", this.cookies);
-        jo.put("remoteIP", this.remoteIP);
-        jo.put("_class", "RoutePutServerWebsocket");
-        jo.put("_listeners", this.listeners.size());
         return jo;
     }
 
@@ -506,6 +513,9 @@ public class RoutePutServerWebsocket implements RoutePutSession {
 
     @Override
     public JSONObject getProperties() {
+        this.properties.put("_remoteIP", this.remoteIP);
+        this.properties.put("_class", "RoutePutServerWebsocket");
+        this.properties.put("_listeners", this.listeners.size());
         return this.properties;
     }
 
@@ -529,5 +539,11 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     @Override
     public void removePropertyChangeListener(PropertyChangeListener listener) {
         this.propertyChangeSupport.removePropertyChangeListener(listener);
+    }
+
+    @Override
+    public void firePropertyChange(String key, Object oldValue, Object newValue) {
+        this.properties.put(key, newValue);
+        this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
     }
 }

@@ -103,6 +103,7 @@ public class RoutePutServer implements Runnable
         }
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
+        this.routeputDebug.mergeProperties(this.settings);
         this.routeputDebug.setPermanent(true);
         this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
 

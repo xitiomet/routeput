@@ -40,4 +40,7 @@ public interface RoutePutSession
     /* Property change listeners for the session's properties */
     public void addPropertyChangeListener(PropertyChangeListener listener);
     public void removePropertyChangeListener(PropertyChangeListener listener);
+
+    /* ONLY TRIGGERED BY Processing a RoutePutPropertyChangeMessage */
+    public void firePropertyChange(String key, Object oldValue, Object newValue);
 }

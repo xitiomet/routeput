@@ -18,6 +18,7 @@ public class RoutePutMessage extends JSONObject
 
     // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
     public static final String TYPE_BLOB = "blob";
+    public static final String TYPE_PROPERTY_CHANGE = "propertyChange";
 
     // For sending midi messages over routeput
     public static final String TYPE_MIDI = "midi";
@@ -220,6 +221,13 @@ public class RoutePutMessage extends JSONObject
     public void setTargetId(String connectionId)
     {
         this.getRoutePutMeta().put("dstId", connectionId);
+    }
+
+    public RoutePutMessage forTarget(RoutePutSession session)
+    {
+        RoutePutMessage newMsg = new RoutePutMessage(this);
+        newMsg.setTargetId(session.getConnectionId());
+        return newMsg;
     }
 
     public boolean hasTargetId()

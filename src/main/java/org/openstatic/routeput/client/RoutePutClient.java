@@ -3,7 +3,6 @@ package org.openstatic.routeput.client;
 import org.json.*;
 import java.util.Vector;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 
 import org.openstatic.routeput.BLOBManager;
 import org.openstatic.routeput.RoutePutChannel;
@@ -11,6 +10,7 @@ import org.openstatic.routeput.RoutePutMessage;
 import org.openstatic.routeput.RoutePutSession;
 import org.openstatic.routeput.RoutePutRemoteSession;
 import org.openstatic.routeput.RoutePutMessageListener;
+import org.openstatic.routeput.RoutePutPropertyChangeMessage;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -88,11 +88,6 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         return this.stayConnected;
     }
 
-    public void setConnectionId(String connectionId)
-    {
-        this.connectionId = connectionId;
-    }
-
     @Override
     public String getConnectionId() {
         return this.connectionId;
@@ -113,10 +108,7 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
         jo.put("defaultChannel", this.getDefaultChannel());
-        jo.put("remoteIP", this.remoteIP);
         jo.put("properties", this.properties);
-        jo.put("_class", "RoutePutClient");
-        jo.put("_listeners", this.listeners.size());
         // jo.put("_sessionListeners", this.remoteSessionListeners.size());
         return jo;
     }
@@ -167,12 +159,13 @@ public class RoutePutClient implements RoutePutSession, Runnable {
     public void handleWebSocketEvent(RoutePutMessage j) {
         if (j.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
             this.connectionId = j.getRoutePutMeta().optString("connectionId", null);
+            //System.err.println("Server Handed connectionId: " + this.connectionId);
             this.remoteIP = j.getRoutePutMeta().optString("remoteIP", null);
             if (j.hasMetaField("properties")) {
                 this.properties = j.getRoutePutMeta().optJSONObject("properties");
             }
             if (j.hasMetaField("channelProperties")) {
-                this.getDefaultChannel().mergeProperties(this, j.getRoutePutMeta().optJSONObject("channelProperties"));
+                this.getDefaultChannel().mergeProperties(j.getRoutePutMeta().optJSONObject("channelProperties"));
             }
             if (this.collector) {
                 RoutePutMessage rpm = new RoutePutMessage();
@@ -183,8 +176,11 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         } else if (j.isType(RoutePutMessage.TYPE_RESPONSE)) {
             if ("subscribe".equals(j.getResponse()))
             {
-                j.getRoutePutChannel().mergeProperties(this, j.getRoutePutMeta().optJSONObject("channelProperties"));
+                j.getRoutePutChannel().mergeProperties(j.getRoutePutMeta().optJSONObject("channelProperties"));
             }
+        } else if (j.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE)) {
+            RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(j);
+            rppcm.processUpdates(this);
         } else if (j.isType(RoutePutMessage.TYPE_REQUEST)) {
 
         } else if (j.isType(RoutePutMessage.TYPE_PONG)) {
@@ -353,20 +349,22 @@ public class RoutePutClient implements RoutePutSession, Runnable {
 
     public void setProperty(String key, Object value)
     {
+        
         if (this.properties != null)
             this.properties.put(key, value);
         if (this.isConnected()) {
-            RoutePutMessage setPropertyMessage = new RoutePutMessage();
-            setPropertyMessage.setRequest("setProperty");
-            setPropertyMessage.setMetaField("key", key);
-            setPropertyMessage.setMetaField("value", value);
-            this.send(setPropertyMessage);
+            RoutePutPropertyChangeMessage setPropertyMessage = new RoutePutPropertyChangeMessage();
+            setPropertyMessage.addUpdate(this, key, this.properties.opt(key), value);
+            setPropertyMessage.processUpdates(this);
         }
     }
 
     @Override
     public JSONObject getProperties()
     {
+        this.properties.put("_class", "RoutePutClient");
+        this.properties.put("_listeners", this.listeners.size());
+        this.properties.put("_remoteIP", this.remoteIP);
         return this.properties;
     }
 
@@ -380,5 +378,11 @@ public class RoutePutClient implements RoutePutSession, Runnable {
     public void removePropertyChangeListener(PropertyChangeListener listener)
     {
         this.propertyChangeSupport.removePropertyChangeListener(listener);
+    }
+
+    @Override
+    public void firePropertyChange(String key, Object oldValue, Object newValue) {
+        this.properties.put(key, newValue);
+        this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
     }
 }

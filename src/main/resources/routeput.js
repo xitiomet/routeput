@@ -194,15 +194,28 @@ class RouteputChannel
 
     setProperty(k, v)
     {
-        var mm = {"__routeput": {"channel": this.name,"setChannelProperty": { [k]: ("__routeput." + k) }, [k]: v}};
-        this.transmit(mm);
+        var old = undefined;
+        if (this.properties.hasOwnProperty(k))
+        {
+            old = this.properties[k];
+        }
+        if (old === v)
+        {
+            //console.log("Ignoring value, already set " + v);
+        } else {
+            this.properties[k] = v;
+            var mm = {"__routeput": 
+                            {"type": "propertyChange", 
+                            "updates" : [ { "type":"channel", "id": this.name, "key": k, "old": old , "new": v } ]
+                            }
+                    };
+            this.transmit(mm);
+        }
     }
 
     setSessionProperty(k, v)
     {
-        var mm = {"__routeput": {"channel": this.name,"setSessionProperty": { [k]: ("__routeput." + k) }, [k]: v}};
-        this.routeputConnection.properties[k] = v;
-        this.transmit(mm);
+        this.routeputConnection.setProperty(k, v);
     }
 
     getMembers()
@@ -303,6 +316,21 @@ class RouteputConnection
         this.chunkBuffer = new Map();
         this.properties = {};
         this.wsUrl = this.wsProtocol + '://' + this.host + '/channel/';
+    }
+
+    getMembersMatching(connectionId)
+    {
+        //console.log("Searching for: " + connectionId);
+        var rv = new Map();
+        this.channels.forEach((value, key, map) => {
+            //console.log("checking: " + key);
+            if (value.members.has(connectionId))
+            {
+                //console.log("found: " + connectionId + " in " + value.name);
+                rv.set(value, value.members.get(connectionId));
+            }
+        });
+        return rv;
     }
 
     getChannel(channelName)
@@ -493,6 +521,45 @@ class RouteputConnection
                                 this.requests.delete(routePutMeta.ref);
                             }
                         }
+                    } else if (messageType == "propertyChange") {
+                        var updates = routePutMeta.updates;
+                        updates.forEach(update => {
+                            if (update.type == "channel")
+                            {
+                                var updateChannel = this.getChannel(update.id);
+                                var key = update.key;
+                                var newValue = update.new;
+                                updateChannel.properties[key] = newValue;
+                                if (this.debug)
+                                {
+                                    console.log("setChannelProperty(" + updateChannel.name + "): " + key + " = " + newValue);
+                                }
+                                if(updateChannel.onchannelpropertychange != undefined)
+                                {
+                                    updateChannel.onchannelpropertychange(key, newValue);
+                                }
+                            } else if (update.type = "session") {
+                                var members = this.getMembersMatching(update.id);
+                                var key = update.key;
+                                var newValue = update.new;
+                                if (this.debug)
+                                {
+                                    console.log("setSessionProperty(" + update.id + "): " + key + " = " + newValue);
+                                }
+                                members.forEach((member, channel, map) => {
+                                    member.properties[key] = newValue;
+                                    if(member.onpropertychange != undefined)
+                                    {
+                                        member.onpropertychange(key, newValue);
+                                    }
+                                    if(channel.onmemberpropertychange != undefined)
+                                    {
+                                        channel.onmemberpropertychange(member, key, newValue);
+                                    }
+                                });
+                            }
+                        });
+
                     } else {
                         // Ok now we are getting into messages not handled by routeput.js
                         var channel = this.getChannel(routePutMeta.channel);
@@ -526,52 +593,6 @@ class RouteputConnection
                                 if (this.debug)
                                 {
                                     console.log("setCookie(" + srcId + "): UNKNOWN Session " + routePutMeta.setCookie);
-                                }
-                            }
-                        }
-                        if (routePutMeta.hasOwnProperty('setSessionProperty'))
-                        {
-                            if (member != undefined)
-                            {
-                                var storeRequest = routePutMeta.setSessionProperty;
-                                for(const [key, value] of Object.entries(storeRequest))
-                                {
-                                    var realValue = getPathValue(jsonObject, value);
-                                    member.properties[key] = realValue;
-                                    if (this.debug)
-                                    {
-                                        console.log("setSessionProperty(" + srcId + "): " + key + " = " + realValue);
-                                    }
-                                    if(member.onpropertychange != undefined)
-                                    {
-                                        member.onpropertychange(key, realValue);
-                                    }
-                                    if(channel.onmemberpropertychange != undefined)
-                                    {
-                                        channel.onmemberpropertychange(member, key, realValue);
-                                    }
-                                }
-                            } else {
-                                if (this.debug)
-                                {
-                                    console.log("setSessionProperty(" + srcId + "): UNKNOWN Session " + routePutMeta.setSessionProperty);
-                                }
-                            }
-                        }
-                        if (routePutMeta.hasOwnProperty('setChannelProperty'))
-                        {
-                            var storeRequest = routePutMeta.setChannelProperty;
-                            for(const [key, value] of Object.entries(storeRequest))
-                            {
-                                var realValue = getPathValue(jsonObject, value);
-                                channel.properties[key] = realValue;
-                                if (this.debug)
-                                {
-                                    console.log("setChannelProperty(" + channel.name + "): " + key + " = " + realValue);
-                                }
-                                if(channel.onchannelpropertychange != undefined)
-                                {
-                                    channel.onchannelpropertychange(key, realValue);
                                 }
                             }
                         }
@@ -656,9 +677,23 @@ class RouteputConnection
 
     setProperty(k, v)
     {
-        var mm = {"__routeput": {"setSessionProperty": { [k]: ("__routeput." + k) }, [k]: v}};
-        this.properties[k] = v;
-        this.transmit(mm);
+        var old = undefined;
+        if (this.properties.hasOwnProperty(k))
+        {
+            old = this.properties[k];
+        }
+        if (old === v)
+        {
+            //console.log("Ignoring value, already set " + v);
+        } else if (this.connectionId != undefined) {
+            this.properties[k] = v;
+            var mm = {"__routeput": 
+                            {"type": "propertyChange", 
+                            "updates" : [ { "type":"session", "id": this.connectionId, "key": k, "old": old , "new": v } ]
+                            }
+                    };
+            this.transmit(mm);
+        }
     }
     
     makeRequest(routeputMessage)

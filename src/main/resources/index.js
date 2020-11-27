@@ -46,7 +46,7 @@ function blobToHTML(fileName, blob)
 }
 
 var routeput = new RouteputConnection("routeputDebug");
-routeput.debug = true;
+//routeput.debug = true;
 
 routeput.onblob = function(name, blob) {
     logIt(blobToHTML(name, blob));

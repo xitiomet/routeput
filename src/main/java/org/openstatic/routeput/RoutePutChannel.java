@@ -322,6 +322,11 @@ public class RoutePutChannel implements RoutePutMessageListener
         return this.members.containsValue(session);
     }
 
+    public boolean hasMember(String sessionId)
+    {
+        return this.members.containsKey(sessionId);
+    }
+
     /* should always be called when a member joins, even if a remote member joins  */
     public synchronized void addMember(RoutePutSession session)
     {
@@ -481,25 +486,30 @@ public class RoutePutChannel implements RoutePutMessageListener
             if (j.hasMetaField("rssi"))
             {
                 int rssi = j.getRoutePutMeta().optInt("rssi",-120);
-                this.properties.put("rssi", rssi);
+                this.setProperty("rssi", rssi);
                 if (session !=null)
                 {
                     session.getProperties().put("rssi", rssi);
                 }
             }
+
+            // Trap setChannelProperty directives in the meta field and convert them into seperate messages
             if (j.hasMetaField("setChannelProperty"))
             {
                 JSONObject storeRequest = j.getRoutePutMeta().optJSONObject("setChannelProperty");
+                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                rppcm.setSource(session);
                 for(String k : storeRequest.keySet())
                 {
                     String v = storeRequest.getString(k);
                     Object oldValue = this.properties.opt(k);
                     Object newValue = j.getPathValue(v);
-                    this.properties.put(k, newValue);
-                    this.propertyChangeSupport.firePropertyChange(k, oldValue, newValue);
+                    rppcm.addUpdate(this, k, oldValue, newValue);
                 }
-                saveChannelProperties();
+                j.removeMetaField("setChannelProperty");
+                rppcm.processUpdates(null);
             }
+
             if (j.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
             {
                 if (session != null)
@@ -516,7 +526,9 @@ public class RoutePutChannel implements RoutePutMessageListener
                     // We dont know what session this belongs to, so just broadcast it
                     this.broadcast(j);
                 }
-            } else if (this.hasCollector()) {
+            } else if (j.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE)) {
+                RoutePutServer.logWarning("PROPERTY_CHANGE message hit channel " + this.name);
+            } else if (this.hasCollector() && !j.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE)) {
                 // This Channel has a connected collector
                 RoutePutSession collector = this.getCollector();
                 if (session == collector && session != null)
@@ -580,32 +592,40 @@ public class RoutePutChannel implements RoutePutMessageListener
     }
 
     /* transmit a message to all members of this channel, should be used internally only */
-    private void broadcast(RoutePutMessage jo)
+    protected void broadcast(RoutePutMessage jo)
     {
-        this.members.values().parallelStream().forEach((s) ->
+        if (jo.hasMetaField("where"))
         {
-            if (s.isRootConnection())
+            JSONObject where = jo.getRoutePutMeta().optJSONObject("where");
+            jo.removeMetaField("where");
+            this.members.values().parallelStream()
+                        .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
+                        .filter((s) -> !s.containsConnectionId(jo.getSourceId()))
+                        .forEach((s) ->
             {
                 try
                 {
-                    // Never Send the event to the creator or its relay
-                    if (!s.containsConnectionId(jo.getSourceId()))
-                    {   
-                        boolean filterMatch = true;
-                        if (jo.hasMetaField("where"))
-                        {
-                            filterMatch = JSONTools.matchesFilter(s.getProperties(), jo.getRoutePutMeta().optJSONObject("where"));
-                        } 
-                        if (filterMatch) {
-                            bumpTx();
-                            s.send(jo);
-                        }
-                    }
+                    bumpTx();
+                    s.send(jo.forTarget(s));
                 } catch (Exception e) {
                     e.printStackTrace(System.err);
                 }
-            }
-        });
+            });
+        } else {
+            this.members.values().parallelStream()
+                        .filter((s) -> s.isRootConnection())
+                        .filter((s) -> !s.containsConnectionId(jo.getSourceId())) // Never Send the event to the creator or its relay
+                        .forEach((s) ->
+            {
+                try
+                {                    
+                    bumpTx();
+                    s.send(jo);
+                } catch (Exception e) {
+                    e.printStackTrace(System.err);
+                }
+            });
+        }
     }
 
     /* Returns a collection of the channels members */
@@ -634,55 +654,49 @@ public class RoutePutChannel implements RoutePutMessageListener
         return ja;
     }
 
-    public void mergeProperties(RoutePutSession session, JSONObject props)
+    public void mergeProperties(JSONObject props)
     {
         if (props != null)
         {
-            RoutePutMessage setChannelPropertyMessage = new RoutePutMessage();
-            setChannelPropertyMessage.setSource(session);
+            RoutePutPropertyChangeMessage setChannelPropertyMessage = new RoutePutPropertyChangeMessage();
             setChannelPropertyMessage.setChannel(this);
-            JSONObject setDirective = new JSONObject();
             for(String key : props.keySet())
             {
                 Object oldValue = this.properties.opt(key);
                 Object newValue = props.opt(key);
-                this.properties.put(key, newValue);
-                setChannelPropertyMessage.put(key, newValue);
-                setDirective.put(key, key);
-                this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
+                setChannelPropertyMessage.addUpdate(this, key, oldValue, newValue);
+                this.firePropertyChange(key, oldValue, newValue);
             }
-            setChannelPropertyMessage.getRoutePutMeta().put("setChannelProperty", setDirective);
-            this.broadcast(setChannelPropertyMessage);
-            this.saveChannelProperties();
+            setChannelPropertyMessage.processUpdates(null);
         }
     }
 
-    public void setProperty(RoutePutSession session, String key, Object value)
+    public void setProperty(String key, Object value)
     {
-        Object oldValue = this.properties.opt(key);
-        this.properties.put(key, value);
-        
-        RoutePutMessage setChannelPropertyMessage = new RoutePutMessage();
-        setChannelPropertyMessage.setSource(session);
-        setChannelPropertyMessage.setChannel(this);
-        setChannelPropertyMessage.put(key,value);
+        Object oldValue = this.properties.opt(key);        
+        RoutePutPropertyChangeMessage setChannelPropertyMessage = new RoutePutPropertyChangeMessage();
+        setChannelPropertyMessage.addUpdate(this, key, oldValue, value);
+        setChannelPropertyMessage.processUpdates(null);
+    }
 
-        JSONObject setDirective = new JSONObject();
-        setDirective.put(key, key);
-        
-        setChannelPropertyMessage.getRoutePutMeta().put("setChannelProperty", setDirective);
-        this.broadcast(setChannelPropertyMessage);
-
+    protected void firePropertyChange(String key, Object oldValue, Object newValue)
+    {
+        if (newValue == null)
+        {
+            this.properties.remove(key);
+        } else {
+            this.properties.put(key, newValue);
+        }
+        this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
         this.saveChannelProperties();
-        this.propertyChangeSupport.firePropertyChange(key, oldValue, value);
     }
 
     public void removeProperty(RoutePutSession session, String key)
     {
-        Object oldValue = this.properties.opt(key);
-        this.properties.remove(key);
-        this.saveChannelProperties();
-        this.propertyChangeSupport.firePropertyChange(key, oldValue, null);
+        Object oldValue = this.properties.opt(key);        
+        RoutePutPropertyChangeMessage setChannelPropertyMessage = new RoutePutPropertyChangeMessage();
+        setChannelPropertyMessage.addUpdate(this, key, oldValue, null);
+        setChannelPropertyMessage.processUpdates(null);
     }
 
     public JSONObject getProperties()
