@@ -182,7 +182,10 @@ public class RoutePutMessage extends JSONObject
 
     public void setRef(RoutePutMessage msg)
     {
-        this.getRoutePutMeta().put("ref", msg.getMessageId());
+        if (msg != null)
+        {
+            this.getRoutePutMeta().put("ref", msg.getMessageId());
+        }
     }
 
     public String getSourceId()
@@ -205,7 +208,10 @@ public class RoutePutMessage extends JSONObject
 
     public void setSource(RoutePutSession session)
     {
-        this.getRoutePutMeta().put("srcId", session.getConnectionId());
+        if (session != null)
+        {
+            this.getRoutePutMeta().put("srcId", session.getConnectionId());
+        }
     }
 
     public boolean hasSourceId()
@@ -216,6 +222,14 @@ public class RoutePutMessage extends JSONObject
     public String getTargetId()
     {
         return this.getRoutePutMeta().optString("dstId", null);
+    }
+
+    public void setTarget(RoutePutSession session)
+    {
+        if (session != null)
+        {
+            this.setTargetId(session.getConnectionId());
+        }
     }
 
     public void setTargetId(String connectionId)

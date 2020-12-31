@@ -600,7 +600,6 @@ public class RoutePutChannel implements RoutePutMessageListener
             jo.removeMetaField("where");
             this.members.values().parallelStream()
                         .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
-                        .filter((s) -> !s.containsConnectionId(jo.getSourceId()))
                         .forEach((s) ->
             {
                 try

@@ -82,15 +82,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         }
     }
 
-    public boolean isNumber(String v) {
-        try {
-            Integer.parseInt(v);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
     public void everySecond()
     {
         long cTime = System.currentTimeMillis();
@@ -210,6 +201,18 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.getWriter().println(response.toString());
     }
 
+    public static boolean isNumber(String strNum) {
+        if (strNum == null) {
+            return false;
+        }
+        try {
+            double d = Double.parseDouble(strNum);
+        } catch (NumberFormatException nfe) {
+            return false;
+        }
+        return true;
+    }
+
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse httpServletResponse)
             throws ServletException, IOException {
@@ -249,6 +252,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                         rppcm.addUpdate(channel, key, channelProperties.opt(key), true);
                                     } else if ("false".equals(value[0])) {
                                         rppcm.addUpdate(channel, key, channelProperties.opt(key), false);
+                                    } else if (isNumber(value[0])) {
+                                        rppcm.addUpdate(channel, key, channelProperties.opt(key), Double.valueOf(value[0]));
                                     } else {
                                         rppcm.addUpdate(channel, key, channelProperties.opt(key), value[0]);
                                     }
@@ -259,6 +264,16 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 RoutePutMessage msg = new RoutePutMessage();
                                 msg.setChannel(channel);
                                 request.getParameterMap().forEach((key, value) -> {
+                                    // Fix the type of the parameter value
+                                    Object realValue = value[0];
+                                    if ("true".equals(value[0])) {
+                                        realValue = true;
+                                    } else if ("false".equals(value[0])) {
+                                        realValue = false;
+                                    } else if (isNumber(value[0])) {
+                                        realValue = Double.valueOf(value[0]);
+                                    }
+                                    // Check for special keys
                                     if ("srcId".equals(key)) {
                                         msg.setSourceId(value[0]);
                                     } else if ("dstId".equals(key)) {
@@ -267,14 +282,13 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                         msg.setType(value[0]);
                                     } else if ("idleDestruct".equals(key)) {
                                         msg.getRoutePutMeta().put("idleDestruct", Long.valueOf(value[0]).longValue());
+                                    } else if (key.startsWith("where_")) {
+                                        JSONObject where = msg.getRoutePutMeta().optJSONObject("where");
+                                        if (where == null) where = new JSONObject();
+                                        where.put(key.substring(6), realValue);
+                                        msg.getRoutePutMeta().put("where", where);
                                     } else {
-                                        if ("true".equals(value[0])) {
-                                            msg.put(key, true);
-                                        } else if ("false".equals(value[0])) {
-                                            msg.put(key, false);
-                                        } else {
-                                            msg.put(key, value[0]);
-                                        }
+                                        msg.put(key, realValue);
                                     }
                                 });
                                 msg.setSourceIdIfNull(this.getConnectionId());

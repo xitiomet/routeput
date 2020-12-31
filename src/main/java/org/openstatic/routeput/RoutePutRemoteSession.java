@@ -166,8 +166,13 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     public static boolean isChild(RoutePutSession parent, String childConnectionId) {
-        if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) {
-            return RoutePutRemoteSession.sessions.get(childConnectionId).hasParent(parent);
+        if (RoutePutRemoteSession.sessions != null)
+        {
+            if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) {
+                return RoutePutRemoteSession.sessions.get(childConnectionId).hasParent(parent);
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
