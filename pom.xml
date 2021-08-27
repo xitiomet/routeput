@@ -12,7 +12,7 @@
     <maven.build.timestamp.format>yyyy.MMdd</maven.build.timestamp.format>
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
-    <graalvm.version>20.1.0</graalvm.version>
+    <graalvm.version>21.2.0</graalvm.version>
     <imageName>routeput</imageName>
     <jettyVersion>9.4.30.v20200611</jettyVersion>
   </properties>
@@ -170,11 +170,10 @@
                     --initialize-at-build-time=org.eclipse.jetty.util.TypeUtil
                     --initialize-at-build-time=org.eclipse.jetty.util.ModuleLocation
                     -H:+ReportExceptionStackTraces
-                    -H:+TraceClassInitialization
                     -H:+ReportUnsupportedElementsAtRuntime
                     -H:Log=registerResource:
                     -H:+UseServiceLoaderFeature
-                    -H:EnableURLProtocols=http,https
+                    -H:EnableURLProtocols=https
                     -H:IncludeResourceBundles=javax.servlet.LocalStrings
                     -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
                     -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
@@ -351,50 +350,6 @@
               <skip>false</skip>
             </configuration>
        </plugin>
-       <plugin>
-            <groupId>com.akathist.maven.plugins.launch4j</groupId>
-            <artifactId>launch4j-maven-plugin</artifactId>
-            <version>1.7.25</version>
-            <executions>
-                <execution>
-                    <id>l4j-gui</id>
-                    <phase>package</phase>
-                    <goals>
-                        <goal>launch4j</goal>
-                    </goals>
-                    <configuration>
-                        <headerType>gui</headerType>
-                        <outfile>target/routeput.exe</outfile>
-                        <jar>target/${project.artifactId}-${project.version}.jar</jar>
-                        <!-- if <dontWrapJar>true</dontWrapJar> change to this conf <jar>${project.artifactId}-${project.version}.jar</jar> -->
-                        <dontWrapJar>false</dontWrapJar>
-                        <errTitle>Error in launch4j plugin</errTitle>
-                        <classPath>
-                            <mainClass>${mainClass}</mainClass>
-                        </classPath>
-                        <icon>src/main/resources/favicon.ico</icon>
-                        <jre>
-                            <path>jre</path>
-                            <minVersion>1.8.0</minVersion>
-                            <initialHeapSize>512</initialHeapSize>
-                            <maxHeapSize>1024</maxHeapSize>
-                        </jre>
-                        <versionInfo>
-                            <fileVersion>1.0.0.0</fileVersion>
-                            <txtFileVersion>1.0.0.0</txtFileVersion>
-                            <fileDescription>RoutePut</fileDescription>
-                            <copyright>Copyright (c) 2020</copyright>
-                            <companyName>openstatic.org</companyName>
-                            <productVersion>1.0.0.0</productVersion>
-                            <txtProductVersion>${project.version}</txtProductVersion>
-                            <productName>RoutePut</productName>
-                            <internalName>RoutePut</internalName>
-                            <originalFilename>RoutePut.exe</originalFilename>
-                        </versionInfo>
-                    </configuration>
-                </execution>
-            </executions>
-        </plugin>
     </plugins>
   </build>
 </project>

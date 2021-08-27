@@ -60,10 +60,16 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         this.setType(RoutePutMessage.TYPE_PROPERTY_CHANGE);
     }
 
+    /*
+        So the goal here is to go through every property update in the packet and distribute them to the appropriate
+        channels. The channel that the packet was received on should be assumed to have already processed it.
+
+    */
     public void processUpdates(RoutePutSession receivingSession)
     {
         List<Object> updates = JSONTools.listJSONArray(this.getRoutePutMeta().optJSONArray("updates"));
         final ArrayList<RoutePutChannel> channelsInvolved = new ArrayList<RoutePutChannel>();
+        // Lets look at each property update in the payload.
         updates.forEach((update) -> {
             try
             {
@@ -72,42 +78,51 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                     JSONObject joUpdate = (JSONObject) update;
                     String objectType = joUpdate.optString("type");
                     String objectId = joUpdate.optString("id");
+                    long ts = joUpdate.optLong("ts", System.currentTimeMillis());
+                    long age = System.currentTimeMillis() - ts;
                     String key = joUpdate.optString("key");
                     Object oldValue = joUpdate.opt("old");
                     Object newValue = joUpdate.opt("new");
-                    if (TYPE_CHANNEL.equals(objectType))
+                    if (age < 1000)
                     {
-                        RoutePutChannel channel = RoutePutChannel.getChannel(objectId);
-                        channel.firePropertyChange(key, oldValue, newValue);
-                        if (!channelsInvolved.contains(channel))
-                            channelsInvolved.add(channel);
-                    } else if (TYPE_SESSION.equals(objectType)) {
-                        boolean handled = false;
-                        if (receivingSession != null)
+                        if (TYPE_CHANNEL.equals(objectType))
                         {
-                            if (receivingSession.getConnectionId().equals(objectId))
+                            RoutePutChannel channel = RoutePutChannel.getChannel(objectId);
+                            channel.firePropertyChange(key, oldValue, newValue);
+                            if (!channelsInvolved.contains(channel))
+                                channelsInvolved.add(channel);
+                        } else if (TYPE_SESSION.equals(objectType)) {
+
+                            boolean handled = false;
+                            if (receivingSession != null)
                             {
-                                receivingSession.firePropertyChange(key, oldValue, newValue);
-                                Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(receivingSession);
-                                rpcc.forEach((channel) -> {
-                                    if (!channelsInvolved.contains(channel))
-                                        channelsInvolved.add(channel);
-                                });
-                                handled = true;
+                                if (receivingSession.getConnectionId().equals(objectId))
+                                {
+                                    receivingSession.firePropertyChange(key, oldValue, newValue);
+                                    // Find every channel this session is a member of and broadcast its update
+                                    Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(receivingSession);
+                                    rpcc.forEach((channel) -> {
+                                        if (!channelsInvolved.contains(channel))
+                                            channelsInvolved.add(channel);
+                                    });
+                                    handled = true;
+                                }
                             }
-                        }
-                        if (!handled)
-                        {
-                            RoutePutRemoteSession rprs = RoutePutRemoteSession.findRemoteSession(objectId);
-                            if (rprs != null)
+
+                            if (!handled)
                             {
-                                rprs.firePropertyChange(key, oldValue, newValue);
-                                Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(rprs);
-                                rpcc.forEach((channel) -> {
-                                    if (!channelsInvolved.contains(channel))
-                                        channelsInvolved.add(channel);
-                                });
+                                RoutePutRemoteSession rprs = RoutePutRemoteSession.findRemoteSession(objectId);
+                                if (rprs != null)
+                                {
+                                    rprs.firePropertyChange(key, oldValue, newValue);
+                                    Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(rprs);
+                                    rpcc.forEach((channel) -> {
+                                        if (!channelsInvolved.contains(channel))
+                                            channelsInvolved.add(channel);
+                                    });
+                                }
                             }
+
                         }
                     }
                 }
@@ -116,6 +131,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
             }
         });
         channelsInvolved.forEach((channel) -> {
+            // Don't send this to the channel that it was received on
             channel.broadcast(this.forChannel(channel));
         });
     }
@@ -124,6 +140,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         JSONObject update = new JSONObject();
         update.put("type", TYPE_CHANNEL);
+        update.put("ts", System.currentTimeMillis());
         update.put("id", channel.getName());
         update.put("key", key);
         update.put("old", oldValue);
@@ -135,6 +152,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         JSONObject update = new JSONObject();
         update.put("type", TYPE_SESSION);
+        update.put("ts", System.currentTimeMillis());
         update.put("id", session.getConnectionId());
         update.put("key", key);
         update.put("old", oldValue);

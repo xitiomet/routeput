@@ -292,6 +292,7 @@ class RouteputConnection
     onmessage;
     onblob;
     onconnect;
+    onpropertychange;
     
     constructor(channelName)
     {
@@ -539,9 +540,24 @@ class RouteputConnection
                                     updateChannel.onchannelpropertychange(key, newValue);
                                 }
                             } else if (update.type = "session") {
-                                var members = this.getMembersMatching(update.id);
                                 var key = update.key;
                                 var newValue = update.new;
+                                if (update.id == this.connectionId)
+                                {
+                                    if (key.startsWith('_')) // make sure its a server key
+                                    {
+                                        if (this.debug)
+                                        {
+                                            console.log("setLocalSessionProperty(" + update.id + "): " + key + " = " + newValue);
+                                        }
+                                        this.properties[key] = newValue;
+                                        if (this.onpropertychange != undefined)
+                                        {
+                                            this.onpropertychange(key, newValue);
+                                        }
+                                    }
+                                }
+                                var members = this.getMembersMatching(update.id);
                                 if (this.debug)
                                 {
                                     console.log("setSessionProperty(" + update.id + "): " + key + " = " + newValue);

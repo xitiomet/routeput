@@ -196,86 +196,91 @@ public class RoutePutServerWebsocket implements RoutePutSession {
 
     @OnWebSocketMessage
     public void onText(Session session, String message) throws IOException {
-        try {
-            RoutePutMessage jo = new RoutePutMessage(message);
-            if (jo.optMetaField("squeak", false)) {
-                System.err.println("SQUEAK! " + jo.toString());
-            }
-            this.rxPackets++;
-            this.lastRxPacket = jo;
-            if (jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE))
-            {
-                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(jo);
-                rppcm.processUpdates(this);
-            } else if (this.handshakeComplete) {
-                // this message has no sourceID, must be from the client directly connected
-                jo.setSourceIdIfNull(this.connectionId);
-                String sourceId = jo.getSourceId();
-                
-                if (this.connectionId.equals(sourceId)) {
-                    // this message is definitely from the directly connected client
-                    // Lets update any session properties this packet may change ASAP
-                    if (jo.hasMetaField("setSessionProperty")) {
-                        RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
-                        rppcm.setSource(this);
-                        JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
-                        for (String k : storeRequest.keySet()) {
-                            String v = storeRequest.getString(k);
-                            Object oldValue = this.properties.opt(k);
-                            Object newValue = jo.getPathValue(v);
-                            rppcm.addUpdate(this, k, oldValue, newValue);
-                        }
-                        rppcm.processUpdates(this);
-                        jo.removeMetaField("setSessionProperty");
-                    }
-
-                    if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
-                        handleRequest(jo);
-                    } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
-                        // Ignore this
-                    } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
-                        RoutePutMessage resp = new RoutePutMessage();
-                        resp.setType("pong");
-                        resp.setRef(jo);
-                        resp.setMetaField("pingTimestamp", jo.getRoutePutMeta().optLong("timestamp", 0));
-                        resp.setMetaField("pongTimestamp", System.currentTimeMillis());
-                        this.send(resp);
-                    } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
-                        long cts = System.currentTimeMillis();
-                        JSONObject meta = jo.getRoutePutMeta();
-                        if (meta.has("pingTimestamp")) {
-                            long oldPing = this.pingTime;
-                            this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
-                            if (this.pingTime != -1) {
-                                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
-                                rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+        if (message.startsWith("{") && message.endsWith("}"))
+        {
+            try {
+                RoutePutMessage jo = new RoutePutMessage(message);
+                if (jo.optMetaField("squeak", false)) {
+                    System.err.println("SQUEAK! " + jo.toString());
+                }
+                this.rxPackets++;
+                this.lastRxPacket = jo;
+                if (jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE))
+                {
+                    RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(jo);
+                    rppcm.processUpdates(this);
+                } else if (this.handshakeComplete) {
+                    // this message has no sourceID, must be from the client directly connected
+                    jo.setSourceIdIfNull(this.connectionId);
+                    String sourceId = jo.getSourceId();
+                    
+                    if (this.connectionId.equals(sourceId)) {
+                        // this message is definitely from the directly connected client
+                        // Lets update any session properties this packet may change ASAP
+                        if (jo.hasMetaField("setSessionProperty")) {
+                            RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                            rppcm.setSource(this);
+                            JSONObject storeRequest = jo.getRoutePutMeta().optJSONObject("setSessionProperty");
+                            for (String k : storeRequest.keySet()) {
+                                String v = storeRequest.getString(k);
+                                Object oldValue = this.properties.opt(k);
+                                Object newValue = jo.getPathValue(v);
+                                rppcm.addUpdate(this, k, oldValue, newValue);
                             }
+                            rppcm.processUpdates(this);
+                            jo.removeMetaField("setSessionProperty");
                         }
-                    } else if (jo.hasChannel()) {
-                        this.handleMessage(jo);
-                    } else if (!jo.isType(RoutePutMessage.TYPE_BLOB)) {
-                        RoutePutServer.logWarning("Lost Message " + jo.toString());
+
+                        if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
+                            handleRequest(jo);
+                        } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
+                            // Ignore this
+                        } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
+                            RoutePutMessage resp = new RoutePutMessage();
+                            resp.setType("pong");
+                            resp.setRef(jo);
+                            resp.setMetaField("pingTimestamp", jo.getRoutePutMeta().optLong("timestamp", 0));
+                            resp.setMetaField("pongTimestamp", System.currentTimeMillis());
+                            this.send(resp);
+                        } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
+                            long cts = System.currentTimeMillis();
+                            JSONObject meta = jo.getRoutePutMeta();
+                            if (meta.has("pingTimestamp")) {
+                                long oldPing = this.pingTime;
+                                this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
+                                if (this.pingTime != -1) {
+                                    RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                                    rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                                }
+                            }
+                        } else if (jo.hasChannel()) {
+                            this.handleMessage(jo);
+                        } else if (!jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                            RoutePutServer.logWarning("Lost Message " + jo.toString());
+                        }
+                    } else if (sourceId != null) {
+                        // this message probably belongs to a subconnection
+                        RoutePutRemoteSession.handleRoutedMessage(this, jo);
                     }
-                } else if (sourceId != null) {
-                    // this message probably belongs to a subconnection
-                    RoutePutRemoteSession.handleRoutedMessage(this, jo);
+                    // All Blob type messages should get handled even if they lack routing info
+                    if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                        BLOBManager.handleBlobData(this, jo);
+                    }
+                } else if (jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
+                    JSONObject rpm = jo.getRoutePutMeta();
+                    this.connectionId = rpm.optString("connectionId", null);
+                    this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
+                    if (rpm.has("properties")) {
+                        this.mergeProperties(rpm.optJSONObject("properties"));
+                    }
+                    this.collector = rpm.optBoolean("collector", false);
+                    this.finishHandshake();
                 }
-                // All Blob type messages should get handled even if they lack routing info
-                if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
-                    BLOBManager.handleBlobData(this, jo);
-                }
-            } else if (jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
-                JSONObject rpm = jo.getRoutePutMeta();
-                this.connectionId = rpm.optString("connectionId", null);
-                this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
-                if (rpm.has("properties")) {
-                    this.mergeProperties(rpm.optJSONObject("properties"));
-                }
-                this.collector = rpm.optBoolean("collector", false);
-                this.finishHandshake();
+            } catch (Exception e) {
+                RoutePutServer.logError(this.connectionId + " - " + message, e);
             }
-        } catch (Exception e) {
-            RoutePutServer.logError(this.connectionId + " - " + message, e);
+        } else {
+            RoutePutServer.logWarning("(" + this.connectionId + ") Unknown Incoming Data:" + message);
         }
     }
 
