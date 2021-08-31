@@ -273,7 +273,10 @@
         {
             processChartData(jsonObject);
         }
-        processLastMessage(jsonObject)
+        if (document.getElementById('lastMessageSwitch').checked)
+        {
+            processLastMessage(jsonObject);
+        }
     };
 
     routeput.defaultChannel.onjoin = function (member) {
@@ -371,6 +374,7 @@
     {
         routeput.connect();
         setInterval(rebuildMembers, 1000);
+        changeSplitByField(document.getElementById('splitByDropdown').value);
     };
     
     function exportCSV()
@@ -417,13 +421,24 @@
 
 <div class="col1">
     <h2>Last Message</h2>
-    <table><tr><td>Group By</td><td>
-    <select id="splitByDropdown" onchange="changeSplitByField(this.value);">
-        <option value="">----NONE----</option>
-        <option value="__routeput.srcId">Packet Source ID</option>
-        <option value="__routeput.dstId">Packet Target ID</option>
-        <option value="__routeput.type">Packet Type</option>
-    </select></td></tr></table>
+    <table><tr>
+        <td>
+            <label class="switch switch-light">
+                <input type="checkbox" class="switch-input" id="lastMessageSwitch" checked />
+                <span class="switch-label" data-on="Live" data-off="Pause"></span> 
+                <span class="switch-handle"></span> 
+            </label>
+        </td>
+        <td>Group By</td>
+        <td>
+            <select id="splitByDropdown" onchange="changeSplitByField(this.value);">
+                <option value="">----NONE----</option>
+                <option value="__routeput.srcId">Packet Source ID</option>
+                <option value="__routeput.dstId">Packet Target ID</option>
+                <option value="__routeput.type" selected>Packet Type</option>
+            </select>
+        </td>
+    </tr></table>
     <div class="scrollable">
         <div id="lastMessage"><i>Waiting for message...</i></div>
     </div>

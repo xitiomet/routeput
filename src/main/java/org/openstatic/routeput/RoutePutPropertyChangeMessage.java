@@ -7,6 +7,14 @@ import java.util.List;
 import org.json.JSONObject;
 import org.openstatic.routeput.util.JSONTools;
 
+/*
+    This class basically handles all property synchronization.
+
+    There are two types of properties in routeput:
+        TYPE_SESSION - linked to a session property
+        TYPE_CHANNEL - linked to a channel property
+*/
+
 public class RoutePutPropertyChangeMessage extends RoutePutMessage
 {
     public static final String TYPE_CHANNEL = "channel";
@@ -54,6 +62,24 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         return rppcm;
     }
 
+    private boolean nullSafeCompare(Object obj1, Object obj2)
+    {
+        if (obj1 != null && obj2 != null)
+        {
+            // neither is null!
+            return obj1.equals(obj2);
+        } else {
+            if (obj1 == null && obj2 != null)
+            {
+                return false; // first object is null
+            } else if (obj1 != null && obj2 == null) {
+                return false; // second object is null
+            } else {
+                return true; // Both objects have to be null
+            }
+        }
+    }
+
     public RoutePutPropertyChangeMessage()
     {
         super();
@@ -75,29 +101,33 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
             {
                 if (update instanceof JSONObject)
                 {
+                    // LETS HANDLE EACH UPDATE IN THE PACKET!
                     JSONObject joUpdate = (JSONObject) update;
                     String objectType = joUpdate.optString("type");
                     String objectId = joUpdate.optString("id");
-                    long ts = joUpdate.optLong("ts", System.currentTimeMillis());
-                    long age = System.currentTimeMillis() - ts;
                     String key = joUpdate.optString("key");
                     Object oldValue = joUpdate.opt("old");
                     Object newValue = joUpdate.opt("new");
-                    if (age < 1000)
+                    if (TYPE_CHANNEL.equals(objectType))
                     {
-                        if (TYPE_CHANNEL.equals(objectType))
-                        {
-                            RoutePutChannel channel = RoutePutChannel.getChannel(objectId);
-                            channel.firePropertyChange(key, oldValue, newValue);
-                            if (!channelsInvolved.contains(channel))
-                                channelsInvolved.add(channel);
-                        } else if (TYPE_SESSION.equals(objectType)) {
+                        RoutePutChannel channel = RoutePutChannel.getChannel(objectId);
+                        channel.firePropertyChange(key, oldValue, newValue);
+                        if (!channelsInvolved.contains(channel))
+                            channelsInvolved.add(channel);
+                    } else if (TYPE_SESSION.equals(objectType)) {
+                        boolean handled = false;
 
-                            boolean handled = false;
-                            if (receivingSession != null)
+                        // If a receiving session was passed, we should check if there are any updates specific to it
+                        if (receivingSession != null)
+                        {
+                            if (receivingSession.getConnectionId().equals(objectId))
                             {
-                                if (receivingSession.getConnectionId().equals(objectId))
+                                // OK this update belongs to the session that sent the packet
+                                JSONObject rsProp = receivingSession.getProperties();
+
+                                if (!nullSafeCompare(newValue, rsProp.opt(key)))
                                 {
+                                    // OK the new value is different then the current, lets fire that change...
                                     receivingSession.firePropertyChange(key, oldValue, newValue);
                                     // Find every channel this session is a member of and broadcast its update
                                     Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(receivingSession);
@@ -108,12 +138,18 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                                     handled = true;
                                 }
                             }
-
-                            if (!handled)
+                        }
+                        
+                        // Ok no receiving session was passed or there were updates to remote sessions included.
+                        if (!handled)
+                        {
+                            RoutePutRemoteSession rprs = RoutePutRemoteSession.findRemoteSession(objectId);
+                            if (rprs != null)
                             {
-                                RoutePutRemoteSession rprs = RoutePutRemoteSession.findRemoteSession(objectId);
-                                if (rprs != null)
+                                JSONObject rsProp = rprs.getProperties();
+                                if (!nullSafeCompare(newValue, rsProp.opt(key)))
                                 {
+                                    // OK the new value is different then the current, lets fire that change...
                                     rprs.firePropertyChange(key, oldValue, newValue);
                                     Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(rprs);
                                     rpcc.forEach((channel) -> {
@@ -122,8 +158,8 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                                     });
                                 }
                             }
-
                         }
+
                     }
                 }
             } catch (Exception e) {
@@ -131,7 +167,6 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
             }
         });
         channelsInvolved.forEach((channel) -> {
-            // Don't send this to the channel that it was received on
             channel.broadcast(this.forChannel(channel));
         });
     }

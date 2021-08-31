@@ -322,6 +322,11 @@ public class RoutePutChannel implements RoutePutMessageListener
         return this.members.containsValue(session);
     }
 
+    protected void replaceMember(String connectionId, RoutePutSession oldSession, RoutePutSession newSession)
+    {
+        this.members.replace(connectionId, oldSession, newSession);
+    }
+
     public boolean hasMember(String sessionId)
     {
         return this.members.containsKey(sessionId);

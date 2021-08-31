@@ -273,7 +273,7 @@ public class BLOBManager
             return "application/pdf";
         } else if (lc_file.endsWith(".xml")) {
             return "text/xml";
-        } else if (lc_file.endsWith(".mid")) {
+        } else if (lc_file.endsWith(".mid") || lc_file.endsWith(".midi")) {
             return "audio/midi";
         } else if (lc_file.endsWith(".tar")) {
             return "application/x-tar";

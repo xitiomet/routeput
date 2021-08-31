@@ -41,6 +41,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private boolean connected;
     private boolean handshakeComplete = false;
     private long pingTime;
+    private long lastPingTx;
+    private long lastPongRx;
     private long rxPackets;
     private long txPackets;
     private RoutePutMessage lastRxPacket;
@@ -244,6 +246,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                             this.send(resp);
                         } else if (jo.isType(RoutePutMessage.TYPE_PONG)) {
                             long cts = System.currentTimeMillis();
+                            this.lastPongRx = cts;
                             JSONObject meta = jo.getRoutePutMeta();
                             if (meta.has("pingTimestamp")) {
                                 long oldPing = this.pingTime;
@@ -345,6 +348,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         this.rxPackets = 0;
         this.txPackets = 0;
         this.pingTime = -1;
+        this.lastPingTx = 0;
+        this.lastPongRx = System.currentTimeMillis();
         this.handshakeComplete = false;
         this.connected = true;
         this.collector = false;
@@ -386,9 +391,18 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             if (this.connectionId == null) {
                 this.connectionId = RoutePutServer.generateBigAlphaKey(10);
             }
-            RoutePutServer.instance.sessions.put(this.connectionId, this);
-            RoutePutServer.logIt(
-                    "New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
+            if (!RoutePutServer.instance.sessions.containsKey(this.connectionId))
+            {
+                RoutePutServer.instance.sessions.put(this.connectionId, this);
+                RoutePutServer.logIt("New connection to " + this.defaultChannel + " from " + this.remoteIP + " as " + this.connectionId);
+            } else {
+                RoutePutSession oldRoutePutSession = RoutePutServer.instance.sessions.replace(this.connectionId, this);
+                RoutePutServer.logIt("Replacing connection to " + this.defaultChannel + " from " + oldRoutePutSession.getRemoteIP() + " with " +  this.remoteIP + " as " + this.connectionId);
+                RoutePutChannel.channelsWithMember(oldRoutePutSession).forEach((c) -> {
+                    c.replaceMember(this.connectionId, oldRoutePutSession, this);
+                });
+            }
+            
 
             RoutePutMessage jo2 = new RoutePutMessage();
             jo2.setType(RoutePutMessage.TYPE_CONNECTION_ID);
@@ -494,10 +508,37 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     public void ping() {
+        long ts = System.currentTimeMillis();
+        if (this.lastPingTx > 0)
+        {
+            long delay = (this.lastPingTx - this.lastPongRx);
+            if (RoutePutServer.instance.settings.optBoolean("logPings", false))
+            {
+                RoutePutServer.logIt("PING (" + this.connectionId + ") lastPingTx=" + String.valueOf(this.lastPingTx) + " lastPongRx=" + String.valueOf(this.lastPongRx) + " delay=" + String.valueOf(delay) + "ms");
+            }
+            // Lets kill connections that dont respond to pings in a timely fashion
+            long ppDelay = RoutePutServer.instance.settings.optLong("pingPongSecs", 20l) * 1000l;
+            if (delay > this.pingTime)
+            {
+                long oldPing = this.pingTime;
+                this.pingTime = delay;
+                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+            }
+            if (delay > (ppDelay * 2))
+            {
+                RoutePutServer.logWarning("(" + this.connectionId + ") Dropping connection due to ping/pong timeout " + delay + "ms");
+                this.websocketSession.close();
+                this.connected = false;
+                this.cleanUp();
+                return;
+            }
+        }
+        this.lastPingTx = ts;
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
         //pingMessage.setChannel(this.getDefaultChannel());
-        pingMessage.setMetaField("timestamp", System.currentTimeMillis());
+        pingMessage.setMetaField("timestamp", ts);
         this.send(pingMessage);
     }
 

@@ -349,13 +349,12 @@ public class RoutePutClient implements RoutePutSession, Runnable {
 
     public void setProperty(String key, Object value)
     {
-        
-        if (this.properties != null)
-            this.properties.put(key, value);
         if (this.isConnected()) {
             RoutePutPropertyChangeMessage setPropertyMessage = new RoutePutPropertyChangeMessage();
             setPropertyMessage.addUpdate(this, key, this.properties.opt(key), value);
             setPropertyMessage.processUpdates(this);
+        } else {
+            this.properties.put(key, value);
         }
     }
 

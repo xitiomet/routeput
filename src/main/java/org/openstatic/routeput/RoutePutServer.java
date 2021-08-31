@@ -199,6 +199,10 @@ public class RoutePutServer implements Runnable
         }
         if (tick % settings.optInt("pingPongSecs", 20) == 0)
         {
+            if (settings.optBoolean("logPings", false))
+            {
+                logIt("ping/pong sweep triggered");
+            }
             RoutePutServer.this.sessions.values().parallelStream().forEach((s) -> {
                 if (s instanceof RoutePutServerWebsocket)
                 {
@@ -347,7 +351,7 @@ public class RoutePutServer implements Runnable
         {
             FileOutputStream fos = new FileOutputStream(file);
             PrintStream ps = new PrintStream(fos);
-            ps.print(obj.toString());
+            ps.print(obj.toString(2));
             ps.close();
             fos.close();
         } catch (Exception e) {
