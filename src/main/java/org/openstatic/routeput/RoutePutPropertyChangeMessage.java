@@ -175,7 +175,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         JSONObject update = new JSONObject();
         update.put("type", TYPE_CHANNEL);
-        update.put("ts", System.currentTimeMillis());
+        //update.put("ts", System.currentTimeMillis());
         update.put("id", channel.getName());
         update.put("key", key);
         update.put("old", oldValue);
@@ -187,7 +187,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         JSONObject update = new JSONObject();
         update.put("type", TYPE_SESSION);
-        update.put("ts", System.currentTimeMillis());
+        //update.put("ts", System.currentTimeMillis());
         update.put("id", session.getConnectionId());
         update.put("key", key);
         update.put("old", oldValue);

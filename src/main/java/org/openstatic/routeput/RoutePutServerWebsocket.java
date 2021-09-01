@@ -511,13 +511,14 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         long ts = System.currentTimeMillis();
         if (this.lastPingTx > 0)
         {
+            // Log the ping if needed
             long delay = (this.lastPingTx - this.lastPongRx);
             if (RoutePutServer.instance.settings.optBoolean("logPings", false))
             {
                 RoutePutServer.logIt("PING (" + this.connectionId + ") lastPingTx=" + String.valueOf(this.lastPingTx) + " lastPongRx=" + String.valueOf(this.lastPongRx) + " delay=" + String.valueOf(delay) + "ms");
             }
-            // Lets kill connections that dont respond to pings in a timely fashion
             long ppDelay = RoutePutServer.instance.settings.optLong("pingPongSecs", 20l) * 1000l;
+            // Check to see if the time since the last ping went unresponded exceeds the known ping
             if (delay > this.pingTime)
             {
                 long oldPing = this.pingTime;
@@ -525,6 +526,7 @@ public class RoutePutServerWebsocket implements RoutePutSession {
                 RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
                 rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
             }
+            // If this is the second unresponded ping, lets kill the conneciton
             if (delay > (ppDelay * 2))
             {
                 RoutePutServer.logWarning("(" + this.connectionId + ") Dropping connection due to ping/pong timeout " + delay + "ms");

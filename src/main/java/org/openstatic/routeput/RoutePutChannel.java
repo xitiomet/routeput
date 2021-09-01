@@ -512,7 +512,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                     rppcm.addUpdate(this, k, oldValue, newValue);
                 }
                 j.removeMetaField("setChannelProperty");
-                rppcm.processUpdates(null);
+                rppcm.processUpdates(session);
             }
 
             if (j.isType(RoutePutMessage.TYPE_CONNECTION_STATUS))
@@ -700,7 +700,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         Object oldValue = this.properties.opt(key);        
         RoutePutPropertyChangeMessage setChannelPropertyMessage = new RoutePutPropertyChangeMessage();
         setChannelPropertyMessage.addUpdate(this, key, oldValue, null);
-        setChannelPropertyMessage.processUpdates(null);
+        setChannelPropertyMessage.processUpdates(session);
     }
 
     public JSONObject getProperties()

@@ -63,6 +63,7 @@
     ];
     var timeFormat = 'MM/DD/YYYY HH:mm';
     var chart_config = undefined;
+    var lastPulse = 0;
     
     function configureChart()
     {
@@ -273,9 +274,35 @@
         {
             processChartData(jsonObject);
         }
-        if (document.getElementById('lastMessageSwitch').checked)
+        if (messageType == "pulse")
         {
-            processLastMessage(jsonObject);
+            var pulseTime = Date.now();
+            var pps = 0;
+            if (lastPulse > 0)
+            {
+                var delay = pulseTime - lastPulse;
+                pps = (1000.0 / delay);
+            }
+            lastPulse = pulseTime;
+            if (jsonObject.__routeput.pulse == 1)
+            {
+                document.getElementById('pulseText').innerText = pps.toFixed(0) + " PPS";
+                if (document.getElementById('metleft').style.display == 'none')
+                {
+                    document.getElementById('metleft').style.display = 'block';
+                    document.getElementById('metleft').style.opacity = 1;
+                    document.getElementById('metright').style.display = 'none';
+                } else {
+                    document.getElementById('metleft').style.display = 'none';
+                    document.getElementById('metright').style.display = 'block';
+                    document.getElementById('metright').style.opacity = 1;
+                }
+            }
+        } else {
+            if (document.getElementById('lastMessageSwitch').checked)
+            {
+                processLastMessage(jsonObject);
+            }
         }
     };
 
@@ -428,6 +455,11 @@
                 <span class="switch-label" data-on="Live" data-off="Pause"></span> 
                 <span class="switch-handle"></span> 
             </label>
+        </td>
+        <td>
+            <span id="pulseText"></span><br />
+            <img src="metleft.png" style="opacity: 0.2; display: none; max-width: 32px; height: 32px; padding-right: 5px;" id="metleft" />
+            <img src="metright.png" style="opacity: 0.2; display: nonels; max-width: 32px; height: 32px; padding-right: 5px;" id="metright" />
         </td>
         <td>Group By</td>
         <td>
