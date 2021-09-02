@@ -471,7 +471,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         RoutePutChannel mChan = j.getRoutePutChannel();
         if (this.equals(mChan))
         {
-            if (j.canBeLogged())
+            if (j.canBeLogged() && !RoutePutMessage.TYPE_PULSE.equals(j.getType()))
             {
                 try
                 {

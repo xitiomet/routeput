@@ -22,8 +22,14 @@ public class InterfaceServlet extends HttpServlet
     protected void doGet(HttpServletRequest request, HttpServletResponse httpServletResponse) throws ServletException, IOException
     {
         String target = request.getPathInfo();
+        if (target == null)
+            target = "/";
+        if (target.endsWith("routeput.js"))
+            target = "/routeput.js";
         if ("/".equals(target))
             target = "/index.html";
+        if (target.startsWith("/watch"))
+            target = "/watch.html";
         //System.err.println("Interface Path: " + target);
         URL data = getClass().getResource(target);
         if (data != null)
