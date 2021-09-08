@@ -15,7 +15,7 @@ public class RouteputMIDIReceiver implements Receiver
     public RouteputMIDIReceiver(RoutePutSession session, RoutePutChannel channel)
     {
         this.channel = channel;
-        this.beatPulse = 0;
+        this.beatPulse = 1;
         this.session = session;
     }
     
@@ -57,7 +57,8 @@ public class RouteputMIDIReceiver implements Receiver
                 dArray.put(sm.getData1());
                 dArray.put(sm.getData2());
                 mm.setMetaField("data", dArray);
-                mm.setMetaField("ts", timeStamp);
+                if (timeStamp >= 0)
+                    mm.setMetaField("ts", timeStamp);
                 mm.setChannel(this.channel);
                 this.session.send(mm);
             }

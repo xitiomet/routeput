@@ -34,6 +34,7 @@ public class RoutePutServer implements Runnable
 {
     private Server httpServer;
     protected LinkedHashMap<String, RoutePutServerWebsocket> sessions;
+    protected LinkedHashMap<String, RoutePutClient> upstreams;
     protected JSONObject settings;
     protected static RoutePutServer instance;
     private Thread mainThread;
@@ -122,6 +123,7 @@ public class RoutePutServer implements Runnable
             
         });
         this.sessions = new LinkedHashMap<String, RoutePutServerWebsocket>();
+        this.upstreams = new LinkedHashMap<String, RoutePutClient>();
         httpServer = new Server(settings.optInt("port", 6144));
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
@@ -138,6 +140,10 @@ public class RoutePutServer implements Runnable
             public void run() 
             { 
                 RoutePutServer.instance.keep_running = false;
+                RoutePutServer.instance.upstreams.forEach((connectionId, rpc) -> {
+                    rpc.setAutoReconnect(false);
+                    rpc.close();
+                });
             } 
         });
         connectUpstreams();
@@ -182,6 +188,7 @@ public class RoutePutServer implements Runnable
         final RoutePutClient client = new RoutePutClient(channel, uri);
         client.setProperty("upstream", uri);
         client.connect();
+        this.upstreams.put(client.getConnectionId(), client);
         return client;
     }
     

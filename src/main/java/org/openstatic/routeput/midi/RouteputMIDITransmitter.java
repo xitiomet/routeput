@@ -12,6 +12,10 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
     private Receiver receiver;
     private RoutePutChannel channel;
 
+    /**
+     * Creates a RouteputMIDITransmitter connected to the provided channel
+     * @param channel
+     */
     public RouteputMIDITransmitter(RoutePutChannel channel)
     {
         this.channel = channel;
@@ -33,7 +37,7 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
     @Override
     public void close()
     {
-
+        this.channel.removeMessageListener(this);
     }
 
     @Override
@@ -50,14 +54,20 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
                 int command = data0 & 0xF0;
                 int channel = data0 & 0x0F;
                 final ShortMessage sm = new ShortMessage(command, channel, data1, data2);
-                this.receiver.send(sm, timeStamp);
+                if (this.receiver != null)
+                {
+                    this.receiver.send(sm, timeStamp);
+                }
             } else if (message.isType(RoutePutMessage.TYPE_PULSE)) {
                 final long timeStamp = message.getRoutePutMeta().optLong("ts", 0);
                 final ShortMessage sm = new ShortMessage(ShortMessage.TIMING_CLOCK);
-                this.receiver.send(sm, timeStamp);
+                if (this.receiver != null)
+                {
+                    this.receiver.send(sm, timeStamp);
+                }
             }
         } catch (Exception e) {
-            e.printStackTrace(System.err);
+            RoutePutServer.logError(e);
         }
     }
 }
