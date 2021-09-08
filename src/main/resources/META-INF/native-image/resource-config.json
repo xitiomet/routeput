@@ -1,0 +1,37 @@
+{
+  "resources":{
+  "includes":[
+    {"pattern":".*\\.css$"}, 
+    {"pattern":".*\\.html$"}, 
+    {"pattern":".*\\.ico$"}, 
+    {"pattern":".*\\.js$"}, 
+    {"pattern":".*\\.png$"}, 
+    {"pattern":".*\\.properties$"}, 
+    {"pattern":"\\QChart.min.js\\E"}, 
+    {"pattern":"\\QMETA-INF/services/org.eclipse.jetty.http.HttpFieldPreEncoder\\E"}, 
+    {"pattern":"\\QMETA-INF/services/org.eclipse.jetty.websocket.api.extensions.Extension\\E"}, 
+    {"pattern":"\\Qbackbone-min.js\\E"}, 
+    {"pattern":"\\Qchannel.html\\E"}, 
+    {"pattern":"\\Qfavicon.ico\\E"}, 
+    {"pattern":"\\Qicon-256.png\\E"}, 
+    {"pattern":"\\Qindex.html\\E"}, 
+    {"pattern":"\\Qindex.js\\E"}, 
+    {"pattern":"\\Qjetty-logging.properties\\E"}, 
+    {"pattern":"\\Qjquery-1.11.1.min.js\\E"}, 
+    {"pattern":"\\Qmetleft.png\\E"}, 
+    {"pattern":"\\Qmetright.png\\E"}, 
+    {"pattern":"\\Qmoment.min.js\\E"}, 
+    {"pattern":"\\Qorg/eclipse/jetty/http/encoding.properties\\E"}, 
+    {"pattern":"\\Qorg/eclipse/jetty/http/mime.properties\\E"}, 
+    {"pattern":"\\Qorg/eclipse/jetty/version/build.properties\\E"}, 
+    {"pattern":"\\Qpretty-json-min.js\\E"}, 
+    {"pattern":"\\Qpretty-json.css\\E"}, 
+    {"pattern":"\\Qrouteput.js\\E"}, 
+    {"pattern":"\\Qswitch.css\\E"}, 
+    {"pattern":"\\Qunderscore-min.js\\E"}
+  ]},
+  "bundles":[
+    {"name":"javax.servlet.LocalStrings"}, 
+    {"name":"javax.servlet.http.LocalStrings"}
+  ]
+}

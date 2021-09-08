@@ -5,7 +5,7 @@
   <artifactId>routeput</artifactId>
   <version>1.${maven.build.timestamp}</version>
   <packaging>jar</packaging>
-  <name>Route.put</name>
+  <name>Routeput</name>
   <url>http://openstatic.org/</url>
   <properties>
     <mainClass>org.openstatic.routeput.RoutePutMain</mainClass>
@@ -103,23 +103,6 @@
     </plugins>
   </reporting>
   <build>
-    <resources>
-        <resource>
-          <directory>src/main/resources/</directory>
-          <includes>
-            <include>*.png</include>
-            <include>*.html</include>
-            <include>*.css</include>
-            <include>*.jpg</include>
-            <include>*.js</include>
-            <include>*.gif</include>
-            <include>*.jks</include>
-            <include>*.json</include>
-            <include>*.ico</include>
-            <include>*.properties</include>
-          </includes>
-        </resource>
-    </resources>
     <plugins>
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
@@ -176,8 +159,6 @@
                     -H:EnableURLProtocols=https
                     -H:IncludeResourceBundles=javax.servlet.LocalStrings
                     -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
-                    -H:ReflectionConfigurationFiles=../src/graalvm/reflect-config.json
-                    -H:ResourceConfigurationFiles=../src/graalvm/resource-config.json
                     -Dgraal.LogFile=graal.log
                 </buildArgs>
             </configuration>
