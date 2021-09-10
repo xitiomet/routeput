@@ -11,7 +11,7 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
 {
     private Receiver receiver;
     private RoutePutChannel channel;
-
+    private long clockPosition;
     /**
      * Creates a RouteputMIDITransmitter connected to the provided channel
      * @param channel
@@ -20,6 +20,7 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
     {
         this.channel = channel;
         this.channel.addMessageListener(this);
+        this.clockPosition = -1;
     }
 
     @Override
@@ -47,7 +48,7 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
             if (message.isType(RoutePutMessage.TYPE_MIDI))
             {
                 JSONArray data = message.getRoutePutMeta().getJSONArray("data");
-                final long timeStamp = message.getRoutePutMeta().optLong("ts", -1);
+                final long timeStamp = message.getRoutePutMeta().optLong("ts", this.clockPosition);
                 int data0 = data.optInt(0, 0);
                 int data1 = data.optInt(1, 0);
                 int data2 = data.optInt(2, 0);
@@ -59,7 +60,8 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
                     this.receiver.send(sm, timeStamp);
                 }
             } else if (message.isType(RoutePutMessage.TYPE_PULSE)) {
-                final long timeStamp = message.getRoutePutMeta().optLong("ts", 0);
+                final long timeStamp = message.getRoutePutMeta().optLong("ts", -1);
+                this.clockPosition = timeStamp;
                 final ShortMessage sm = new ShortMessage(ShortMessage.TIMING_CLOCK);
                 if (this.receiver != null)
                 {

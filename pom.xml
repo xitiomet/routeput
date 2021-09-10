@@ -152,11 +152,10 @@
                     --initialize-at-build-time=org.eclipse.jetty.util.Uptime
                     --initialize-at-build-time=org.eclipse.jetty.util.TypeUtil
                     --initialize-at-build-time=org.eclipse.jetty.util.ModuleLocation
-                    -H:+ReportExceptionStackTraces
-                    -H:+ReportUnsupportedElementsAtRuntime
-                    -H:Log=registerResource:
-                    -H:+UseServiceLoaderFeature
-                    -H:EnableURLProtocols=https
+                     -H:+UseServiceLoaderFeature
+                    --enable-https
+                    --enable-http
+                    -H:+AllowIncompleteClasspath
                     -H:IncludeResourceBundles=javax.servlet.LocalStrings
                     -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
                     -Dgraal.LogFile=graal.log

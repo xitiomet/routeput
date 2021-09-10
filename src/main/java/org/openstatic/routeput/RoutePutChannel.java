@@ -12,6 +12,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 
+import javax.sound.midi.ShortMessage;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.openstatic.routeput.util.JSONTools;
@@ -495,6 +497,37 @@ public class RoutePutChannel implements RoutePutMessageListener
                 if (session !=null)
                 {
                     session.getProperties().put("rssi", rssi);
+                }
+            }
+            if (j.isType(RoutePutMessage.TYPE_MIDI))
+            {
+                JSONArray data = j.getRoutePutMeta().getJSONArray("data");
+                final long timeStamp = j.getRoutePutMeta().optLong("ts", -1);
+                int data0 = data.optInt(0, 0);
+                int data1 = data.optInt(1, 0);
+                int data2 = data.optInt(2, 0);
+                int command = data0 & 0xF0;
+                int midiChannel = data0 & 0x0F;
+                if (command == javax.sound.midi.ShortMessage.PROGRAM_CHANGE)
+                {
+                    JSONObject midiObject = this.getProperties().optJSONObject("midi");
+                    if (midiObject == null)
+                        midiObject = new JSONObject();
+                    
+                    JSONObject channelObject = midiObject.optJSONObject("channel");
+                    if (channelObject == null)
+                        channelObject = new JSONObject();
+                    
+                    String midiChannelName = String.valueOf(midiChannel+1);
+                    JSONObject midiChannelObject = channelObject.optJSONObject(midiChannelName);
+                    if (midiChannelObject == null)
+                        midiChannelObject = new JSONObject();
+                    midiChannelObject.put("program", data1);
+
+                    channelObject.put(midiChannelName, midiChannelObject);
+
+                    midiObject.put("channel", channelObject);
+                    this.setProperty("midi", midiObject);
                 }
             }
 

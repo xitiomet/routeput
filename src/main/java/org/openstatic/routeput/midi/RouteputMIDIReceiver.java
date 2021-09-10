@@ -2,6 +2,7 @@ package org.openstatic.routeput.midi;
 
 import org.openstatic.routeput.*;
 
+import javax.lang.model.util.ElementScanner6;
 import javax.sound.midi.*;
 import org.json.*;
 
@@ -41,7 +42,6 @@ public class RouteputMIDIReceiver implements Receiver
     
     public void send(MidiMessage message, long timeStamp)
     {
-        this.lastTimeStamp = timeStamp;
         if(message instanceof ShortMessage && this.session.isConnected())
         {
             final ShortMessage sm = (ShortMessage) message;
@@ -50,6 +50,7 @@ public class RouteputMIDIReceiver implements Receiver
             {
                 sendPulse(timeStamp);
             } else {
+                this.lastTimeStamp = timeStamp;
                 RoutePutMessage mm = new RoutePutMessage();
                 mm.setType(RoutePutMessage.TYPE_MIDI);
                 JSONArray dArray = new JSONArray();
@@ -68,6 +69,7 @@ public class RouteputMIDIReceiver implements Receiver
     private void sendPulse(long timeStamp)
     {
         //System.err.println("timing");
+        this.lastTimeStamp = timeStamp;
         RoutePutMessage mm = new RoutePutMessage();
         mm.setType(RoutePutMessage.TYPE_PULSE);
         mm.setMetaField("ts", timeStamp);
