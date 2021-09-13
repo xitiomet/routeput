@@ -12,12 +12,21 @@ public class RouteputMIDIReceiver implements Receiver
     private RoutePutSession session;
     private int beatPulse;
     private long lastTimeStamp;
+    private boolean enableTimestamps;
+    private boolean opened;
 
     public RouteputMIDIReceiver(RoutePutSession session, RoutePutChannel channel)
     {
         this.channel = channel;
         this.beatPulse = 1;
         this.session = session;
+        this.enableTimestamps = true;
+        this.opened = true;
+    }
+
+    public void setEnableTimestamps(boolean v)
+    {
+        this.enableTimestamps = v;
     }
     
     public long getMicrosecondPosition()
@@ -37,12 +46,12 @@ public class RouteputMIDIReceiver implements Receiver
 
     public void close()
     {
-
+        this.opened = false;
     }
     
     public void send(MidiMessage message, long timeStamp)
     {
-        if(message instanceof ShortMessage && this.session.isConnected())
+        if(message instanceof ShortMessage && this.session.isConnected() && this.opened)
         {
             final ShortMessage sm = (ShortMessage) message;
             int smStatus = sm.getStatus();
@@ -58,7 +67,7 @@ public class RouteputMIDIReceiver implements Receiver
                 dArray.put(sm.getData1());
                 dArray.put(sm.getData2());
                 mm.setMetaField("data", dArray);
-                if (timeStamp >= 0)
+                if (timeStamp >= 0 && this.enableTimestamps)
                     mm.setMetaField("ts", timeStamp);
                 mm.setChannel(this.channel);
                 this.session.send(mm);
@@ -66,21 +75,24 @@ public class RouteputMIDIReceiver implements Receiver
         }
     }
 
-    private void sendPulse(long timeStamp)
+    public void sendPulse(long timeStamp)
     {
-        //System.err.println("timing");
-        this.lastTimeStamp = timeStamp;
-        RoutePutMessage mm = new RoutePutMessage();
-        mm.setType(RoutePutMessage.TYPE_PULSE);
-        mm.setMetaField("ts", timeStamp);
-        mm.setMetaField("pulse", this.beatPulse);
-        if (this.beatPulse >= 24)
+        if (this.opened)
         {
-            this.beatPulse = 0;
+            //System.err.println("timing");
+            this.lastTimeStamp = timeStamp;
+            RoutePutMessage mm = new RoutePutMessage();
+            mm.setType(RoutePutMessage.TYPE_PULSE);
+            mm.setMetaField("ts", timeStamp);
+            mm.setMetaField("pulse", this.beatPulse);
+            if (this.beatPulse >= 24)
+            {
+                this.beatPulse = 0;
+            }
+            this.beatPulse++;
+            mm.setChannel(this.channel);
+            this.session.send(mm);
         }
-        this.beatPulse++;
-        mm.setChannel(this.channel);
-        this.session.send(mm);
     }
     
     public String toString()

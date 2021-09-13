@@ -722,7 +722,15 @@ public class RoutePutChannel implements RoutePutMessageListener
         {
             this.properties.remove(key);
         } else {
-            this.properties.put(key, newValue);
+            Object oldValueHeld = this.properties.opt(key);
+            if (oldValueHeld instanceof JSONObject && newValue instanceof JSONObject)
+            {
+                JSONObject existingJSON = (JSONObject) oldValueHeld;
+                JSONObject newJSON = (JSONObject) newValue;
+                this.properties.put(key, JSONTools.mergeJSONObjects(existingJSON, newJSON));
+            } else {
+                this.properties.put(key,newValue);
+            }
         }
         this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
         this.saveChannelProperties();

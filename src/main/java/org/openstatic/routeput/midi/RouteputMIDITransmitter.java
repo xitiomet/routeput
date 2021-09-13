@@ -12,6 +12,7 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
     private Receiver receiver;
     private RoutePutChannel channel;
     private long clockPosition;
+    private boolean enableTimestamps;
     /**
      * Creates a RouteputMIDITransmitter connected to the provided channel
      * @param channel
@@ -21,6 +22,12 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
         this.channel = channel;
         this.channel.addMessageListener(this);
         this.clockPosition = -1;
+        this.enableTimestamps = true;
+    }
+
+    public void setEnableTimestamps(boolean v)
+    {
+        this.enableTimestamps = v;
     }
 
     @Override
@@ -57,7 +64,12 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
                 final ShortMessage sm = new ShortMessage(command, channel, data1, data2);
                 if (this.receiver != null)
                 {
-                    this.receiver.send(sm, timeStamp);
+                    if (this.enableTimestamps)
+                    {
+                        this.receiver.send(sm, timeStamp);
+                    } else {
+                        this.receiver.send(sm, -1);
+                    }
                 }
             } else if (message.isType(RoutePutMessage.TYPE_PULSE)) {
                 final long timeStamp = message.getRoutePutMeta().optLong("ts", -1);
@@ -65,7 +77,12 @@ public class RouteputMIDITransmitter implements Transmitter, RoutePutMessageList
                 final ShortMessage sm = new ShortMessage(ShortMessage.TIMING_CLOCK);
                 if (this.receiver != null)
                 {
-                    this.receiver.send(sm, timeStamp);
+                    if (this.enableTimestamps)
+                    {
+                        this.receiver.send(sm, timeStamp);
+                    } else {
+                        this.receiver.send(sm, -1);
+                    }
                 }
             }
         } catch (Exception e) {

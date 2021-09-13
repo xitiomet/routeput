@@ -194,6 +194,77 @@ public class JSONTools {
         return al;
     }
 
+    // Merge two JSONObjects together, object b may overwrite object a's keys
+    public static JSONObject mergeJSONObjects(JSONObject a, JSONObject b)
+    {
+        JSONObject ro = new JSONObject();
+        if (a != null)
+        {
+            // Add all of A's fields
+            for(Iterator<String> fieldIterator = a.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                Object value = a.get(field);
+                ro.put(field,value);
+            }
+        }
+        if (b != null)
+        {
+            // Go through B and merge add its fields.
+            for(Iterator<String> fieldIterator = b.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                Object value = b.get(field);
+                if (ro.opt(field) instanceof JSONObject && value instanceof JSONObject)
+                {
+                    ro.put(field, mergeJSONObjects((JSONObject) ro.opt(field), (JSONObject) value));
+                } else {
+                    ro.put(field,value);
+                }
+            }
+        }
+        return ro;
+    }
+
+    // Compare two JSONObjects, create a third object showing b's differences from a
+    // this will only include new keys that A doesn't contain or changes to existing keys
+    public static JSONObject diffJSONObjects(JSONObject a, JSONObject b)
+    {
+        JSONObject ro = new JSONObject();
+        // Add all of A's fields
+        if (b != null)
+        {
+            // Scan all subobjects on b for updates to a
+            for(Iterator<String> fieldIterator = a.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                Object a_value = a.get(field);
+                Object b_value = b.opt(field);
+                if (a_value instanceof JSONObject && b_value instanceof JSONObject)
+                {
+                    JSONObject diffReturn = diffJSONObjects((JSONObject) a_value, (JSONObject) b_value);
+                    if (diffReturn.length() > 0)
+                    {
+                        ro.put(field, diffReturn);
+                    }
+                } else if (!a_value.equals(b_value)) {
+                    ro.put(field, b_value);
+                }
+            }
+
+            // Add keys missing from A as part of the diff
+            for(Iterator<String> fieldIterator = b.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                Object b_value = b.get(field);
+                if (!a.has(field)) {
+                    ro.put(field, b_value);
+                }
+            }
+        }
+        return ro;
+    }
+
     /* UNIT TESTS */
     public static void main(String[] args)
     {
@@ -234,5 +305,36 @@ public class JSONTools {
 
         System.err.println("getPathValue \"\" (blank) " + getPathValue(data, ""));
         System.err.println("getPathValue null (null) " + getPathValue(data, null));
+
+
+        JSONObject a = new JSONObject();
+        a.put("Home", "Town");
+        JSONObject job = new JSONObject();
+        job.put("clerical", true);
+        job.put("years", 15);
+        job.put("other", new JSONObject().put("style", true).put("clever",true));
+        a.put("JOB", job);
+
+        JSONObject b = new JSONObject();
+        b.put("Homers", "Towns");
+        JSONObject jobb = new JSONObject();
+        jobb.put("clericals", true);
+        jobb.put("years", 3);
+        jobb.put("other", new JSONObject().put("style", false).put("clever",true));
+        b.put("JOB", jobb);
+
+        System.err.println();
+        JSONObject merge = mergeJSONObjects(a, b);
+        System.err.println("MERGE A+B " + merge.toString(2));
+        System.err.println();
+        JSONObject diff = diffJSONObjects(a, b);
+        System.err.println("DIFF A+B " + diff.toString(2));
+        System.err.println();
+        JSONObject doubleMerge = mergeJSONObjects(a, diff);
+        System.err.println("MERGE2 A+DIFF " + doubleMerge.toString(2));
+        System.err.println();
+        JSONObject diffDoubleMerge = diffJSONObjects(merge, doubleMerge);
+        System.err.println("DIFF merge+merge2 " + diffDoubleMerge.toString(2));
+        System.err.println();
     }
 }
