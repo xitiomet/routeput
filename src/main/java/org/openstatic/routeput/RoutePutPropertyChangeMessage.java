@@ -14,6 +14,9 @@ import org.openstatic.routeput.util.JSONTools;
     There are two types of properties in routeput:
         TYPE_SESSION - linked to a session property
         TYPE_CHANNEL - linked to a channel property
+
+    Property Change Messages can contain a bunch of updates for the channel and its sessions
+    The channel of the property change update itself reflects the triggering channel of the updates
 */
 
 public class RoutePutPropertyChangeMessage extends RoutePutMessage
@@ -193,7 +196,8 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         //update.put("ts", System.currentTimeMillis());
         update.put("id", channel.getName());
         update.put("key", key);
-        update.put("old", oldValue);
+        if (oldValue != null)
+            update.put("old", oldValue);
         update.put("new", newValue);
         return this.addUpdate(update);
     }
@@ -205,7 +209,8 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         //update.put("ts", System.currentTimeMillis());
         update.put("id", session.getConnectionId());
         update.put("key", key);
-        update.put("old", oldValue);
+        if (oldValue != null)
+            update.put("old", oldValue);
         update.put("new", newValue);
         return this.addUpdate(update);
     }
