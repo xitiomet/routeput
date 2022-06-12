@@ -1,4 +1,4 @@
-package org.openstatic.routeput;
+package org.openstatic.routeput.util;
 
 import java.net.URLEncoder;
 import java.net.URL;

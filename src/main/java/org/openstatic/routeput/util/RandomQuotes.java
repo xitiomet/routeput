@@ -1,4 +1,4 @@
-package org.openstatic.routeput;
+package org.openstatic.routeput.util;
 
 import java.util.ArrayList;
 import java.util.concurrent.ThreadLocalRandom;

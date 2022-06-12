@@ -2,6 +2,7 @@ package org.openstatic.routeput.client;
 
 import org.json.*;
 import java.util.Vector;
+import java.util.concurrent.Future;
 import java.util.Collection;
 
 import org.openstatic.routeput.BLOBManager;
@@ -20,8 +21,6 @@ import java.net.URI;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
 import org.eclipse.jetty.websocket.client.WebSocketClient;
-import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
-import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
 import org.eclipse.jetty.websocket.common.WebSocketSession;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.annotations.WebSocket;
@@ -31,14 +30,15 @@ import org.eclipse.jetty.websocket.api.annotations.OnWebSocketMessage;
 import org.eclipse.jetty.websocket.api.annotations.OnWebSocketError;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
-public class RoutePutClient implements RoutePutSession, Runnable {
+public class RoutePutClient implements RoutePutSession, Runnable
+{
     private PropertyChangeSupport propertyChangeSupport;
     private RoutePutChannel channel;
     private String websocketUri;
     private String connectionId;
-    private WebSocketClient upstreamClient;
+    private WebSocketClient webSocketClient;
     private WebSocketSession session;
-    private EventsWebSocket socket;
+    private EventsWebSocket eventsWebSocket;
     private Vector<RoutePutMessageListener> listeners;
 
     private boolean stayConnected;
@@ -47,7 +47,8 @@ public class RoutePutClient implements RoutePutSession, Runnable {
     private boolean collector;
     private Thread keepAliveThread;
 
-    public RoutePutClient(RoutePutChannel channel, String websocketUri) {
+    public RoutePutClient(RoutePutChannel channel, String websocketUri)
+    {
         this.propertyChangeSupport = new PropertyChangeSupport(this);
         this.listeners = new Vector<RoutePutMessageListener>();
         this.channel = channel;
@@ -55,6 +56,19 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         this.collector = false;
         this.stayConnected = true;
         this.properties = new JSONObject();
+
+        SslContextFactory sec = new SslContextFactory.Client();
+        sec.setValidateCerts(false);
+        HttpClient httpClient = new HttpClient(sec);
+        RoutePutClient.this.webSocketClient = new WebSocketClient(httpClient);
+        try
+        {
+            this.webSocketClient.start();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+
+        RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
     }
 
     public void setCollector(boolean v) {
@@ -80,11 +94,12 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         this.send(pingMessage);
     }
 
-    public void setAutoReconnect(boolean v) {
+    public void setAutoReconnect(boolean v) 
+    {
         this.stayConnected = v;
     }
 
-    public boolean autoReconnect() {
+    public boolean isAutoReconnect() {
         return this.stayConnected;
     }
 
@@ -115,25 +130,26 @@ public class RoutePutClient implements RoutePutSession, Runnable {
 
     @Override
     public boolean isConnected() {
+        // Should only report true if there is a functioning pipe and we aren't in a reconnect phase
         if (this.session != null) {
             return this.session.isOpen();
-        } else if (this.upstreamClient != null) {
-            return this.upstreamClient.isStarted();
         } else {
             return false;
         }
     }
 
-    public void connect() {
-        SslContextFactory sec = new SslContextFactory.Client();
-        sec.setValidateCerts(false);
-        HttpClient httpClient = new HttpClient(sec);
-        RoutePutClient.this.upstreamClient = new WebSocketClient(httpClient);
-        try {
-            RoutePutClient.this.socket = new EventsWebSocket();
-            RoutePutClient.this.upstreamClient.start();
+    public void connect() 
+    {
+        
+        try 
+        {
             URI upstreamUri = new URI(this.websocketUri);
-            RoutePutClient.this.upstreamClient.connect(socket, upstreamUri, new ClientUpgradeRequest());
+            Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
+            if (ses instanceof WebSocketSession)
+            {
+                System.err.println("Got our WebSocketSession!");
+                this.session = (WebSocketSession) ses;
+            }
         } catch (Throwable t2) {
             System.err.println("Error on connect() URI: " + this.websocketUri);
             t2.printStackTrace(System.err);
@@ -142,12 +158,10 @@ public class RoutePutClient implements RoutePutSession, Runnable {
 
     public void close() {
         RoutePutChannel.removeFromAllChannels(this);
-        if (this.upstreamClient != null) {
-            try {
-                this.upstreamClient.stop();
-            } catch (Exception e) {
-                // e.printStackTrace();
-            }
+        if (this.session != null)
+        {
+            this.session.disconnect();
+            this.session = null;
         }
     }
 
@@ -220,6 +234,26 @@ public class RoutePutClient implements RoutePutSession, Runnable {
         }
     }
 
+    public void subscribe(RoutePutChannel channel)
+    {
+        RoutePutMessage subscribeMessage = new RoutePutMessage();
+        subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+        subscribeMessage.setChannel(channel);
+        subscribeMessage.setMetaField("connected",true);
+        subscribeMessage.setMetaField("properties", this.getProperties());
+        this.transmit(subscribeMessage);
+    }
+
+    public void unsubscribe(RoutePutChannel channel)
+    {
+        RoutePutMessage subscribeMessage = new RoutePutMessage();
+        subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+        subscribeMessage.setChannel(channel);
+        subscribeMessage.setMetaField("connected", false);
+        subscribeMessage.setMetaField("properties", this.getProperties());
+        this.transmit(subscribeMessage);
+    }
+
     public void addMessageListener(RoutePutMessageListener r) {
         if (!this.listeners.contains(r)) {
             this.listeners.add(r);
@@ -238,15 +272,6 @@ public class RoutePutClient implements RoutePutSession, Runnable {
 
     public boolean hasMessageListener(RoutePutMessageListener r) {
         return this.listeners.contains(r);
-    }
-
-    public static class EventsWebSocketServlet extends WebSocketServlet {
-        @Override
-        public void configure(WebSocketServletFactory factory) {
-            // System.err.println("Factory Initialized");
-            // factory.getPolicy().setIdleTimeout(10000);
-            factory.register(EventsWebSocket.class);
-        }
     }
 
     @WebSocket
@@ -293,7 +318,6 @@ public class RoutePutClient implements RoutePutSession, Runnable {
             // System.err.println("Close websocket");
             RoutePutClient.this.close();
             RoutePutClient.this.session = null;
-            RoutePutClient.this.upstreamClient = null;
             if (RoutePutClient.this.stayConnected) {
                 System.err.println("Connection Closed - Auto Reconnect");
             } else {
@@ -307,7 +331,6 @@ public class RoutePutClient implements RoutePutSession, Runnable {
             e.printStackTrace(System.err);
             RoutePutClient.this.close();
             RoutePutClient.this.session = null;
-            RoutePutClient.this.upstreamClient = null;
             if (RoutePutClient.this.stayConnected) {
                 System.err.println("Auto Reconnect");
             } else {
@@ -337,7 +360,6 @@ public class RoutePutClient implements RoutePutSession, Runnable {
                     System.err.println("No connection detected by keep alive reconnecting...");
                     RoutePutClient.this.close();
                     RoutePutClient.this.session = null;
-                    RoutePutClient.this.upstreamClient = null;
                     this.connect();
                 }
             } catch (Exception e) {
