@@ -409,10 +409,23 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             jo2.setMetaField("connectionId", this.connectionId);
             jo2.setChannel(this.defaultChannel);
             jo2.setMetaField("properties", this.properties);
-            jo2.setMetaField("channelProperties", this.defaultChannel.getProperties());
+            JSONObject channelProperties = this.defaultChannel.getProperties();
+            int channelPropertiesSize = channelProperties.toString().length();
+            boolean propertiesOversized = channelPropertiesSize > 512;
+            if (!propertiesOversized)
+                jo2.setMetaField("channelProperties", channelProperties);
+            else
+                jo2.setMetaField("channelProperties", new JSONObject());
             jo2.setMetaField("remoteIP", this.remoteIP);
             jo2.setMetaField("serverHostname", RoutePutChannel.getHostname());
             this.send(jo2);
+
+            if (propertiesOversized)
+            {
+                RoutePutPropertyChangeMessage.buildSmallUpdatesFor(this.defaultChannel).forEach((rppcm) -> {
+                    this.send(rppcm);
+                });
+            }
 
             this.defaultChannel.addMember(this);
             this.handshakeComplete = true;

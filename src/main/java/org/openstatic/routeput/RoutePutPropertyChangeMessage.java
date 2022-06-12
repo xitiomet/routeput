@@ -3,6 +3,7 @@ package org.openstatic.routeput;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import org.json.JSONObject;
 import org.openstatic.routeput.util.JSONTools;
@@ -26,6 +27,20 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         this.setType(RoutePutMessage.TYPE_PROPERTY_CHANGE);
         this.setSourceId(rpm.getSourceId());
         this.getRoutePutMeta().put("updates", rpm.getRoutePutMeta().optJSONArray("updates"));
+    }
+
+    public static List<RoutePutPropertyChangeMessage> buildSmallUpdatesFor(RoutePutChannel channel)
+    {
+        JSONObject properties = channel.getProperties();
+        Set<String> keys = properties.keySet();
+        ArrayList<RoutePutPropertyChangeMessage> messages = new ArrayList<RoutePutPropertyChangeMessage>(keys.size());
+        keys.forEach((key) -> {
+            RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+            rppcm.setChannel(channel);
+            rppcm.addUpdate(channel, key, null, properties.opt(key));
+            messages.add(rppcm);
+        });
+        return messages;
     }
 
     public RoutePutPropertyChangeMessage forChannel(RoutePutChannel channel)
