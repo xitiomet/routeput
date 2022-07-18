@@ -43,7 +43,7 @@ public class RoutePutRemoteSession implements RoutePutSession
             boolean c = jo.getRoutePutMeta().optBoolean("connected", false);
             if (c) {
                 // If this is a message notifying us that a downstream client connected
-                // lets find that connaction or create it and pass the message off.
+                // lets find that connection or create it and pass the message off.
                 RoutePutRemoteSession remoteSession = null;
                 if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                     remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
@@ -104,8 +104,11 @@ public class RoutePutRemoteSession implements RoutePutSession
             RoutePutChannel msgChannel = m.getRoutePutChannel();
             if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
                 boolean connected = m.getRoutePutMeta().optBoolean("connected", false);
-                this.properties = m.getRoutePutMeta().optJSONObject("properties");
-                this.remoteIP = m.getRoutePutMeta().optString("remoteIP", null);
+                if (m.hasMetaField("properties"))
+                {
+                    this.properties = m.getRoutePutMeta().optJSONObject("properties");
+                }
+                this.remoteIP = m.getRoutePutMeta().optString("remoteIP", "?.?.?.?");
                 if (this.defaultChannel == null) {
                     this.defaultChannel = msgChannel;
                 }
@@ -250,7 +253,8 @@ public class RoutePutRemoteSession implements RoutePutSession
     @Override
     public JSONObject getProperties()
     {
-        this.properties.put("_remoteIP", this.remoteIP);
+        if (this.remoteIP != null)
+            this.properties.put("_remoteIP", this.remoteIP);
         this.properties.put("_parentConnected", this.parent.isConnected());
         this.properties.put("_parentConnectionId", this.parent.getConnectionId());
         this.properties.put("_class", "RoutePutRemoteSession");

@@ -530,7 +530,11 @@ class RouteputConnection
                                 var updateChannel = this.getChannel(update.id);
                                 var key = update.key;
                                 var newValue = update.new;
-                                updateChannel.properties[key] = newValue;
+                                //This is where things get tricky, we want to merge objects but overwrite everything else.
+                                if (typeof newValue === 'object')
+                                    updateChannel.properties[key] = {...updateChannel.properties[key], ...newValue};
+                                else
+                                    updateChannel.properties[key] = newValue;
                                 if (this.debug)
                                 {
                                     console.log("setChannelProperty(" + updateChannel.name + "): " + key + " = " + newValue);
@@ -542,6 +546,7 @@ class RouteputConnection
                             } else if (update.type = "session") {
                                 var key = update.key;
                                 var newValue = update.new;
+                                // if this property update refers to the local session.
                                 if (update.id == this.connectionId)
                                 {
                                     if (key.startsWith('_')) // make sure its a server key
@@ -550,7 +555,11 @@ class RouteputConnection
                                         {
                                             console.log("setLocalSessionProperty(" + update.id + "): " + key + " = " + newValue);
                                         }
-                                        this.properties[key] = newValue;
+                                        //This is where things get tricky, we want to merge objects but overwrite everything else.
+                                        if (typeof newValue === 'object')
+                                            this.properties[key] = {...this.properties[key], ...newValue};
+                                        else
+                                           this.properties[key] = newValue;
                                         if (this.onpropertychange != undefined)
                                         {
                                             this.onpropertychange(key, newValue);
@@ -563,7 +572,11 @@ class RouteputConnection
                                     console.log("setSessionProperty(" + update.id + "): " + key + " = " + newValue);
                                 }
                                 members.forEach((member, channel, map) => {
-                                    member.properties[key] = newValue;
+                                    //This is where things get tricky, we want to merge objects but overwrite everything else.
+                                    if (typeof newValue === 'object')
+                                        member.properties[key] = {...member.properties[key], ...newValue};
+                                    else
+                                        member.properties[key] = newValue;
                                     if(member.onpropertychange != undefined)
                                     {
                                         member.onpropertychange(key, newValue);

@@ -123,6 +123,9 @@ public class RoutePutMain
                     if (channel == null) channel = RoutePutChannel.getChannel("LoRa");
                     clientTest2(xTarget, channel, settings.optString("message", "Hello World!"));
                     System.exit(0);
+                } else if ("prop".equals(test)) {
+                    propertyClientTest(xTarget, channel);
+                    System.exit(0);
                 }
             }
             
@@ -232,6 +235,77 @@ public class RoutePutMain
             }
         }
     }
+
+    // TEST overwriting of properties and cascading merges
+    public static void propertyClientTest(String url, RoutePutChannel channel)
+    {
+        RoutePutClient rpc = new RoutePutClient(channel, url);
+        channel.addChannelListener(new RoutePutChannelListener(){
+        
+            @Override
+            public void onJoin(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
+                {
+                    System.err.println("Remote Session Connected: " + session.getConnectionId());
+                    session.addMessageListener(new RoutePutMessageListener(){
+                    
+                        @Override
+                        public void onMessage(RoutePutSession session, RoutePutMessage message) {
+                            System.err.println(session.getConnectionId() + " Received " + message.toString());
+                        }
+                    });
+                } else {
+                    System.err.println("Local client connected");
+                }
+            }
+            
+            @Override
+            public void onLeave(RoutePutChannel channel, RoutePutSession session) {
+                if (session != rpc)
+                {
+                    System.err.println("Remote Session Disconnected: " + session.getConnectionId());
+                } else {
+                    System.err.println("Local client disconnected");
+                }
+            }
+        });
+        rpc.addMessageListener(new RoutePutMessageListener(){
+                    
+            @Override
+            public void onMessage(RoutePutSession session, RoutePutMessage message) {
+                System.err.println("CLIENT Received " + message.toString());
+            }
+        });
+        rpc.connect();
+        //rpc.becomeCollector();
+        RandomQuotes quotes = new RandomQuotes();
+        try
+        {
+            while(rpc.isConnected())
+            {
+                long ts = System.currentTimeMillis();
+                String tsString = String.valueOf(ts);
+                String strA = tsString.substring(tsString.length() - 2);
+                String strB = tsString.substring(tsString.length() -4, tsString.length() -2);
+                RoutePutMessage rpm = new RoutePutMessage();
+                JSONObject setChannelProperty = new JSONObject();
+                JSONObject subblocks = new JSONObject();
+                subblocks.put(strA, strB);
+                setChannelProperty.put("block", subblocks);
+                setChannelProperty.put("lastTS", tsString);
+                setChannelProperty.put("ts", ts);
+                rpm.setMetaField("setChannelProperty", setChannelProperty);
+                rpm.setChannel(channel);
+                rpc.send(rpm);
+
+                System.err.println("SENDING: " + rpm.toString());
+                Thread.sleep(1000);
+            }
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+    }
+
 
     public static void clientTest(String url, RoutePutChannel channel)
     {

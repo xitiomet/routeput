@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
+import java.util.Iterator;
 
 import javax.sound.midi.ShortMessage;
 
@@ -490,13 +491,21 @@ public class RoutePutChannel implements RoutePutMessageListener
             {
                 j.appendMetaArray("hops", RoutePutChannel.hostname);
             }
-            if (j.hasMetaField("rssi"))
+            JSONObject messageMeta = j.getRoutePutMeta();
+            Iterator<String> messageMetaKeys = messageMeta.keys();
+            while (messageMetaKeys.hasNext())
             {
-                int rssi = j.getRoutePutMeta().optInt("rssi",-120);
-                this.setProperty("rssi", rssi);
-                if (session !=null)
+                String messageMetaKey = messageMetaKeys.next();
+                if (messageMetaKey.endsWith("_rssi"))
                 {
-                    session.getProperties().put("rssi", rssi);
+                    int rssi = messageMeta.optInt(messageMetaKey,-120);
+                    this.setProperty(messageMetaKey, rssi);
+                    if (session !=null)
+                    {
+                        JSONObject sessionProps = session.getProperties();
+                        if (sessionProps != null)
+                        sessionProps.put(messageMetaKey, rssi);
+                    }
                 }
             }
             if (j.isType(RoutePutMessage.TYPE_MIDI))
@@ -539,9 +548,13 @@ public class RoutePutChannel implements RoutePutMessageListener
                 rppcm.setSource(session);
                 for(String k : storeRequest.keySet())
                 {
-                    String v = storeRequest.getString(k);
+                    Object v = storeRequest.opt(k);
                     Object oldValue = this.properties.opt(k);
-                    Object newValue = j.getPathValue(v);
+                    Object newValue = v;
+                    if (v instanceof String)
+                        newValue = j.getPathValue((String) v);
+                    else if (v instanceof JSONObject && oldValue instanceof JSONObject)
+                        oldValue = JSONTools.filterJSONObjects((JSONObject) oldValue, (JSONObject) v);
                     rppcm.addUpdate(this, k, oldValue, newValue);
                 }
                 j.removeMetaField("setChannelProperty");
@@ -725,11 +738,13 @@ public class RoutePutChannel implements RoutePutMessageListener
             Object oldValueHeld = this.properties.opt(key);
             if (oldValueHeld instanceof JSONObject && newValue instanceof JSONObject)
             {
+                // Lets merge with the old json if that's what they sent!
                 JSONObject existingJSON = (JSONObject) oldValueHeld;
                 JSONObject newJSON = (JSONObject) newValue;
                 this.properties.put(key, JSONTools.mergeJSONObjects(existingJSON, newJSON));
             } else {
-                this.properties.put(key,newValue);
+                // Not JSON just overwrite the property
+                this.properties.put(key, newValue);
             }
         }
         this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
@@ -789,6 +804,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    // Give a collection of all channels containing a session
     public static synchronized Collection<RoutePutChannel> channelsWithMember(RoutePutSession session)
     {
         return RoutePutChannel.channels.values()

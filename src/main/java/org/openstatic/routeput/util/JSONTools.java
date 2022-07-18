@@ -3,8 +3,10 @@ package org.openstatic.routeput.util;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
@@ -164,10 +166,6 @@ public class JSONTools {
                         rv = source.replaceAll(Pattern.quote(params[0]), params[1]);
                     } else if (methodName.equals("value") && params.length > 0) {
                         rv = params[0];
-                    } else if (methodName.equals("url") && params.length > 0) {
-                        PendingURLFetch purl = new PendingURLFetch(params[0]);
-                        purl.run();
-                        rv = new JSONObject(purl.getResponse());
                     } else if (methodName.equals("append") && params.length > 0) {
                         rv = source + params[0];
                     } else if (methodName.equals("prefix") && params.length > 0) {
@@ -263,6 +261,92 @@ public class JSONTools {
         return ro;
     }
 
+    // Compare two JSONObjects, create a third object showing a's values but only
+    // with the keys contained in b
+    public static JSONObject filterJSONObjects(JSONObject a, JSONObject b)
+    {
+        JSONObject ro = new JSONObject();
+        // Add all of B's fields
+        if (a != null && b != null)
+        {
+            // Scan all subobjects on b for updates to a
+            for(Iterator<String> fieldIterator = b.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                System.err.println("Working on:" + field);
+                Object a_value = a.opt(field);
+                Object b_value = b.opt(field);
+                if (a_value instanceof JSONObject && b_value instanceof JSONObject)
+                {
+                    JSONObject diffReturn = filterJSONObjects((JSONObject) a_value, (JSONObject) b_value);
+                    if (diffReturn.length() > 0)
+                    {
+                        ro.put(field, diffReturn);
+                    }
+                } else if (!a_value.equals(b_value)) {
+                    ro.put(field, a_value);
+                }
+            }
+        }
+        return ro;
+    }
+
+    // break a JSONObject into a collection of JSONObjects maintaining path for each key
+    // {"x":{"y":3, "z": 4}} would create two objects {"x":{"y":3}} and {"x":{"z": 4}}
+    public static Collection<JSONObject> dissectJSONObject(JSONObject aJsonObject)
+    {
+        ArrayList<JSONObject> rList = new ArrayList<JSONObject>();
+        // Add all of B's fields
+        if (aJsonObject != null)
+        {
+            // Scan all subobjects on b for updates to a
+            for(Iterator<String> fieldIterator = aJsonObject.keys(); fieldIterator.hasNext(); )
+            {
+                String field = fieldIterator.next();
+                System.err.println("Working on:" + field);
+                Object aJsonObjectValue = aJsonObject.opt(field);
+                if (aJsonObjectValue instanceof JSONObject)
+                {
+                    final ArrayList<String> keys = new ArrayList<String>();
+                    keys.add(field);
+                    Collection<JSONObject> disectReturn = dissectJSONObject((JSONObject) aJsonObjectValue);
+                    Collection<JSONObject> remapped = disectReturn.stream()
+                    .map((dr) ->
+                    {
+                        return buildJSONPath(keys, dr);
+                    }).collect(Collectors.toList());
+                    rList.addAll(remapped);
+                } else {
+                    JSONObject ro = new JSONObject();
+                    ro.put(field, aJsonObjectValue);
+                    rList.add(ro);
+                }
+            }
+        }
+        return rList;
+    }
+
+    // Provided a list of keys create a nested JSONObject following the list order
+    // ["a","b","c"], 100 would result in ("a":{"b":{"c": 100}})
+    public static JSONObject buildJSONPath(List<String> keys, Object finalValue)
+    {
+        JSONObject ro = new JSONObject();
+        String[] keysArray = keys.toArray(new String[keys.size()]);
+        int endIndex = (keysArray.length-1);
+        for(int i = endIndex; i > -1; i--)
+        {
+            if (i == endIndex)
+            {
+                ro.put(keysArray[i], finalValue);
+            } else {
+                JSONObject levelDown = ro;
+                ro = new JSONObject();
+                ro.put(keysArray[i], levelDown);
+            }
+        }
+        return ro;
+    }
+
     /* UNIT TESTS */
     public static void main(String[] args)
     {
@@ -334,5 +418,15 @@ public class JSONTools {
         JSONObject diffDoubleMerge = diffJSONObjects(merge, doubleMerge);
         System.err.println("DIFF merge+merge2 " + diffDoubleMerge.toString(2));
         System.err.println();
+
+        JSONObject filterObjects = filterJSONObjects(doubleMerge, new JSONObject("{\"JOB\": {\"other\": { \"clever\":\"fuck\"}}}"));
+        System.err.println("FILTER " + filterObjects.toString(2));
+        System.err.println();
+
+        Collection<JSONObject> disection = dissectJSONObject(doubleMerge);
+        disection.forEach((jo) -> {
+            System.err.println("DISECT " + jo.toString());
+
+        });
     }
 }

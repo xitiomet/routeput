@@ -169,7 +169,11 @@ public class RoutePutMessage extends JSONObject
     {
         if (!"".equals(path) && path != null)
         {
-            return JSONTools.getPathValue(this, path);
+            Object pathValue = JSONTools.getPathValue(this, path);
+            if (pathValue == null)
+                return path;
+            else
+                return pathValue;
         } else {
             return this.toCleanJSONObject();
         }
@@ -180,6 +184,7 @@ public class RoutePutMessage extends JSONObject
         return this.getRoutePutMeta().optString("msgId", null);
     }
 
+    // Mark this message as a response to another message
     public void setRef(RoutePutMessage msg)
     {
         if (msg != null)

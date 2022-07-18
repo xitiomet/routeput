@@ -89,9 +89,13 @@ routeput.onmessage = function (member, messageType, jsonObject) {
                 channelTR.id = key + "TR";
                 channelStatsTable.appendChild(channelTR);
             }
-            if (value.hasOwnProperty("signal"))
+            if (value.hasOwnProperty("loraSignal"))
             {
-                icons += "<img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.signal + "\" max=\"100\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress>";
+                icons += "<div style=\"display: inline-block;\"><img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.loraSignal + "\" max=\"100\" class=\"blue\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress></div>";
+            }
+            if (value.hasOwnProperty("wifiSignal"))
+            {
+                icons += "<div style=\"display: inline-block;\"><img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.wifiSignal + "\" max=\"100\" class=\"green\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress></div>";
             }
             channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
         }

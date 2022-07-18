@@ -4,7 +4,6 @@
   <script src="index.js"></script>
   <style type="text/css">
     progress::-webkit-progress-bar {background-color: #fff; width: 100%;}
-    progress::-webkit-progress-value {background-color: green !important;}
     progress {border: 1px solid black;}
 
    .radio-toolbar {
@@ -41,7 +40,24 @@
         border-color: #4c4;
         font-weight: bold;
     }
-
+    progress.blue{
+      background-color:#1E90FF;
+      color:#1E90FF;
+    }
+    progress.blue[value] {color:#1E90FF} /* IE10 */
+    progress.blue::-webkit-progress-bar-value {background-color:#1E90FF}
+    progress.blue::-webkit-progress-value {background-color:#1E90FF}
+    progress.blue::-moz-progress-bar {background-color:#1E90FF}
+    
+    progress.green{
+      background-color:#1c7a5b;
+      color:#1c7a5b;
+    }
+    progress.green[value] {color:#1c7a5b} /* IE10 */
+    progress.green::-webkit-progress-bar-value {background-color:#1c7a5b}
+    progress.green::-webkit-progress-value {background-color:#1c7a5b}
+    progress.green::-moz-progress-bar {background-color:#1c7a5b}
+  
   </style>
 </head>
 <body style="background: white; background-size: 100% 100%; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;">

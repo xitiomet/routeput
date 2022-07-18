@@ -16,6 +16,7 @@ import java.util.Date;
 import java.util.Random;
 import java.util.LinkedHashMap;
 import java.util.EnumSet;
+import java.util.Iterator;
 import java.text.SimpleDateFormat;
 
 import javax.servlet.DispatcherType;
@@ -271,13 +272,20 @@ public class RoutePutServer implements Runnable
             js.put("rx", chan.getMessagesRxPerSecond());
             js.put("tx", chan.getMessagesTxPerSecond());
             js.put("members", chan.memberCount());
-            if (chan.getProperties().has("rssi"))
+            JSONObject chanProps = chan.getProperties();
+            Iterator<String> chanPropsKeys = chanProps.keys();
+            while (chanPropsKeys.hasNext())
             {
-                int signal = 0;
-                signal = 120 - Math.abs(chan.getProperties().optInt("rssi", -120));
-                if (signal < 0) signal = 0;
-                if (signal > 100) signal = 100;
-                js.put("signal", signal);
+                String chanPropKey = chanPropsKeys.next();
+                if (chanPropKey.endsWith("_rssi"))
+                {
+                    int rssi = chanProps.optInt(chanPropKey,-120);
+                    int signal = 0;
+                    signal = 120 - Math.abs(rssi);
+                    if (signal < 0) signal = 0;
+                    if (signal > 100) signal = 100;
+                    js.put(chanPropKey.substring(0, chanPropKey.length()-5) + "Signal", signal);
+                }
             }
             if (chan.hasCollector())
                 js.put("collector", chan.getCollector().getConnectionId());
