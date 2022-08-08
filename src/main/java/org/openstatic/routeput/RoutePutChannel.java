@@ -36,6 +36,7 @@ public class RoutePutChannel implements RoutePutMessageListener
     private RoutePutSession collector;
     private int messagesTx;
     private int messagesRx;
+    private int pingAvg;
     private ArrayList<RoutePutChannelListener> listeners;
     private ArrayList<RoutePutMessageListener> messageListeners;
 
@@ -51,6 +52,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.msgRxPerSecond = 0;
         this.messagesTx = 0;
         this.messagesRx = 0;
+        this.pingAvg = 0;
         this.name = name;
         this.lastAccess = System.currentTimeMillis();
         this.members = new LinkedHashMap<String, RoutePutSession>();
@@ -237,12 +239,27 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private static void everySecond() throws Exception
     {
+        // Go through each channel and update its stats for the debug stream
         RoutePutChannel.channels.values().parallelStream().forEach((c) ->
         {
             c.msgTxPerSecond = c.messagesTx;
             c.messagesTx = 0;
             c.msgRxPerSecond = c.messagesRx;
             c.messagesRx = 0;
+            Iterator<RoutePutSession> si = c.members.values().iterator();
+            float pingTotal = 0;
+            float pingCount = 0;
+            while (si.hasNext())
+            {
+                RoutePutSession member = si.next();
+                JSONObject props = member.getProperties();
+                if (props.has("_ping"))
+                {
+                    pingTotal += props.optInt("_ping");
+                    pingCount++;
+                }
+            }
+            c.pingAvg = (int) (pingTotal / pingCount);
             try
             {
                 if (c.logWriter != null)
@@ -253,6 +270,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                 RoutePutServer.logError(e);
             }
         });
+        // Look for idle channels and put them to sleep
         long idleTimeout = 600l * 1000l;
         RoutePutChannel.channels.values().removeIf((c) -> {
             boolean removeIt = (c.getIdle() > idleTimeout) && c.memberCount() == 0 && !c.isPermanent();
@@ -262,6 +280,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             } 
             return removeIt; 
         });
+        // Make sure the channels properties are backed up to cold storage
         RoutePutChannel.channels.values().stream().filter(c -> c.unsavedProperties).forEach((c) -> {
             try
             {
@@ -271,6 +290,22 @@ public class RoutePutChannel implements RoutePutMessageListener
                 RoutePutServer.logError(e);
             }
         });
+        // Deal with weird connection drops!
+        if (RoutePutServer.instance != null)
+        {
+            RoutePutChannel.channels.values().forEach((channel) -> {
+                channel.members.values().forEach((member) -> {
+                    if (member instanceof RoutePutServerWebsocket)
+                    {
+                        if (!RoutePutServer.instance.sessions.containsValue(member))
+                        {
+                            RoutePutServer.logWarning("Found a RoutePutServerWebsocket in channel " + channel.getName() + " without belonging to RouteputServer..?");
+                            removeFromAllChannels(member);
+                        }
+                    }
+                });
+            });
+        }
     }
 
     /* Get the hostname of the routeput server, hostname is stored statically with RouteputChannel since it is the minimum
@@ -280,6 +315,8 @@ public class RoutePutChannel implements RoutePutMessageListener
         return RoutePutChannel.hostname;
     }
 
+    /* Set the hostname of the routeput server, hostname is stored statically with RouteputChannel since it is the minimum
+       requirement for a routeput implementation */
     public static void setHostname(String hostname)
     {
         RoutePutChannel.hostname = hostname;
@@ -315,11 +352,13 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.touch();
     }
 
+    // like unix touch command bumps the modified timestamp of a channel
     public void touch()
     {
         this.lastAccess = System.currentTimeMillis();
     }
 
+    // does this channel have a member?
     public boolean hasMember(RoutePutSession session)
     {
         return this.members.containsValue(session);
@@ -330,6 +369,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.members.replace(connectionId, oldSession, newSession);
     }
 
+    // does this channel have a member matching sessionId?
     public boolean hasMember(String sessionId)
     {
         return this.members.containsKey(sessionId);
@@ -499,7 +539,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                 if (messageMetaKey.endsWith("_rssi"))
                 {
                     int rssi = messageMeta.optInt(messageMetaKey,-120);
-                    this.setProperty(messageMetaKey, rssi);
+                    //this.setProperty(messageMetaKey, rssi);
                     if (session !=null)
                     {
                         JSONObject sessionProps = session.getProperties();
@@ -868,6 +908,11 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    public int getPingAverage()
+    {
+        return this.pingAvg;
+    }
+
     public JSONObject toJSONObject()
     {
         JSONObject jo = new JSONObject();
@@ -880,6 +925,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         jo.put("properties", this.getProperties());
         jo.put("msgTxPerSecond", this.msgTxPerSecond);
         jo.put("msgRxPerSecond", this.msgRxPerSecond);
+        jo.put("pingAvg", this.pingAvg);
         if (this.collector != null)
         {
             jo.put("collector", this.collector.getConnectionId());

@@ -24,6 +24,9 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_MIDI = "midi";
     public static final String TYPE_PULSE = "pulse";
 
+    // For sending GPS data over routeput
+    public static final String TYPE_GPS = "gps";
+
     // These messages should NEVER travel, they are simply for making requests between two endpoints
     public static final String TYPE_REQUEST = "request";
     public static final String TYPE_RESPONSE = "response";

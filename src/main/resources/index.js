@@ -97,7 +97,16 @@ routeput.onmessage = function (member, messageType, jsonObject) {
             {
                 icons += "<div style=\"display: inline-block;\"><img src=\"antenna.png\" style=\"width: 18px; height: 18px;\"><progress value=\"" + value.wifiSignal + "\" max=\"100\" class=\"green\" style=\"height: 8px; width: 24px; border-radius: 0px;\"></progress></div>";
             }
-            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td>";
+            var pingColor = "#FFFFFF";
+            if (value.ping < 50)
+            {
+                pingColor = "#CAE8DA"
+            } else if (value.ping < 150) {
+                pingColor = "#FFFCE0";
+            } else {
+                pingColor = "#FFCFCF";
+            }
+            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td><td style=\"background-color: " + pingColor + ";\">" + value.ping + " ms</td>";
         }
     }
 };

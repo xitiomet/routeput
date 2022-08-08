@@ -2,7 +2,6 @@ package org.openstatic.routeput.midi;
 
 import org.openstatic.routeput.*;
 
-import javax.lang.model.util.ElementScanner6;
 import javax.sound.midi.*;
 import org.json.*;
 

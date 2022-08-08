@@ -271,20 +271,26 @@ public class RoutePutServer implements Runnable
             JSONObject js = new JSONObject();
             js.put("rx", chan.getMessagesRxPerSecond());
             js.put("tx", chan.getMessagesTxPerSecond());
+            js.put("ping", chan.getPingAverage());
             js.put("members", chan.memberCount());
-            JSONObject chanProps = chan.getProperties();
-            Iterator<String> chanPropsKeys = chanProps.keys();
-            while (chanPropsKeys.hasNext())
+            Iterator<RoutePutSession> members = chan.getMembers().iterator();
+            while(members.hasNext())
             {
-                String chanPropKey = chanPropsKeys.next();
-                if (chanPropKey.endsWith("_rssi"))
+                RoutePutSession member = members.next();
+                JSONObject memberProps = member.getProperties();
+                Iterator<String> memberPropsKeys = memberProps.keys();
+                while (memberPropsKeys.hasNext())
                 {
-                    int rssi = chanProps.optInt(chanPropKey,-120);
-                    int signal = 0;
-                    signal = 120 - Math.abs(rssi);
-                    if (signal < 0) signal = 0;
-                    if (signal > 100) signal = 100;
-                    js.put(chanPropKey.substring(0, chanPropKey.length()-5) + "Signal", signal);
+                    String memberPropKey = memberPropsKeys.next();
+                    if (memberPropKey.endsWith("_rssi"))
+                    {
+                        int rssi = memberProps.optInt(memberPropKey,-120);
+                        int signal = 0;
+                        signal = 120 - Math.abs(rssi);
+                        if (signal < 0) signal = 0;
+                        if (signal > 100) signal = 100;
+                        js.put(memberPropKey.substring(0, memberPropKey.length()-5) + "Signal", signal);
+                    }
                 }
             }
             if (chan.hasCollector())

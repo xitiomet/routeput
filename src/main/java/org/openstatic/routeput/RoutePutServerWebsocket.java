@@ -5,7 +5,6 @@ import org.eclipse.jetty.websocket.common.WebSocketSession;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
-import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -26,7 +25,8 @@ import org.eclipse.jetty.websocket.api.annotations.OnWebSocketError;
 import org.eclipse.jetty.websocket.api.annotations.WebSocket;
 
 @WebSocket
-public class RoutePutServerWebsocket implements RoutePutSession {
+public class RoutePutServerWebsocket implements RoutePutSession
+{
     private PropertyChangeSupport propertyChangeSupport = new PropertyChangeSupport(this);
     private WebSocketSession websocketSession;
     protected String connectionId;
@@ -48,8 +48,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     private RoutePutMessage lastRxPacket;
     private RoutePutMessage lastTxPacket;
 
-    private void handleMessage(RoutePutMessage jo) {
-
+    private void handleMessage(RoutePutMessage jo)
+    {
             RoutePutChannel channel = jo.getRoutePutChannel();
             
             channel.onMessage(this, jo);
@@ -62,7 +62,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
             }
     }
 
-    public void handleRequest(RoutePutMessage jo) {
+    public void handleRequest(RoutePutMessage jo)
+    {
         String routeputCommand = jo.getRequest();
         JSONObject rpm = jo.getRoutePutMeta();
         if (routeputCommand.equals("subscribe")) {
@@ -180,7 +181,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    private boolean becomeCollector() {
+    private boolean becomeCollector()
+    {
         if (!this.defaultChannel.hasCollector() && this.handshakeComplete) {
             this.defaultChannel.setCollector(this);
             this.collector = true;
@@ -188,7 +190,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         return this.collector;
     }
 
-    private boolean dropCollector() {
+    private boolean dropCollector()
+    {
         this.collector = false;
         if (this.defaultChannel.getCollector() == this) {
             this.defaultChannel.setCollector(null);
@@ -197,7 +200,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     @OnWebSocketMessage
-    public void onText(Session session, String message) throws IOException {
+    public void onText(Session session, String message) throws IOException
+    {
         if (message.startsWith("{") && message.endsWith("}"))
         {
             try {
@@ -287,8 +291,10 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    private void processHeaders(Map<String, List<String>> headersMap) {
-        for (Iterator<String> headerNames = headersMap.keySet().iterator(); headerNames.hasNext();) {
+    private void processHeaders(Map<String, List<String>> headersMap)
+    {
+        for (Iterator<String> headerNames = headersMap.keySet().iterator(); headerNames.hasNext();) 
+        {
             String headerName = headerNames.next();
             List<String> values = headersMap.get(headerName);
             if (values.size() == 1) {
@@ -332,7 +338,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    private void processParameters(Map<String, List<String>> parameterMap) {
+    private void processParameters(Map<String, List<String>> parameterMap)
+    {
         for (Iterator<String> parameterNames = parameterMap.keySet().iterator(); parameterNames.hasNext();) {
             String parameterName = parameterNames.next();
             List<String> values = parameterMap.get(parameterName);
@@ -344,7 +351,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     @OnWebSocketConnect
-    public void onConnect(Session session) throws IOException {
+    public void onConnect(Session session) throws IOException
+    {
         this.rxPackets = 0;
         this.txPackets = 0;
         this.pingTime = -1;
@@ -359,7 +367,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         this.processHeaders(upgradeRequest.getHeaders());
         this.processParameters(upgradeRequest.getParameterMap());
         StringTokenizer st = new StringTokenizer(this.path, "/");
-        while (st.hasMoreTokens()) {
+        while (st.hasMoreTokens())
+        {
             String token = st.nextToken();
             if (token.equals("channel") && st.hasMoreTokens()) {
                 this.defaultChannel = RoutePutChannel.getChannel(st.nextToken());
@@ -382,13 +391,17 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    public String getRemoteIP() {
+    public String getRemoteIP()
+    {
         return this.remoteIP;
     }
 
-    private void finishHandshake() {
-        if (!this.handshakeComplete) {
-            if (this.connectionId == null) {
+    private void finishHandshake()
+    {
+        if (!this.handshakeComplete)
+        {
+            if (this.connectionId == null)
+            {
                 this.connectionId = RoutePutServer.generateBigAlphaKey(10);
             }
             if (!RoutePutServer.instance.sessions.containsKey(this.connectionId))
@@ -435,31 +448,37 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    private void cleanUp() {
+    private void cleanUp()
+    {
         RoutePutChannel.removeFromAllChannels(this);
         if (RoutePutServer.instance.sessions.containsKey(this.connectionId))
             RoutePutServer.instance.sessions.remove(this.connectionId);
     }
 
     @OnWebSocketClose
-    public void onClose(Session session, int status, String reason) {
+    public void onClose(Session session, int status, String reason)
+    {
         this.connected = false;
         this.cleanUp();
     }
 
     @OnWebSocketError
-    public void onError(Session session, Throwable throwable) {
+    public void onError(Session session, Throwable throwable)
+    {
         this.connected = false;
         this.cleanUp();
     }
 
-    public WebSocketSession getWebsocketSession() {
+    public WebSocketSession getWebsocketSession()
+    {
         return this.websocketSession;
     }
 
     @Override
-    public void send(RoutePutMessage jo) {
-        if (this.websocketSession != null && jo != null) {
+    public void send(RoutePutMessage jo)
+    {
+        if (this.websocketSession != null && jo != null)
+        {
             jo.setSourceIdIfNull(this.connectionId);
             //jo.setChannelIfNull(this.getDefaultChannel());
             this.websocketSession.getRemote().sendStringByFuture(jo.toString());
@@ -469,11 +488,13 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     @Override
-    public RoutePutChannel getDefaultChannel() {
+    public RoutePutChannel getDefaultChannel()
+    {
         return this.defaultChannel;
     }
 
-    public void addChannel(String channelName) {
+    public void addChannel(String channelName)
+    {
         if (channelName != null) {
             RoutePutChannel channel = RoutePutChannel.getChannel(channelName);
             if (!channel.hasMember(this))
@@ -481,8 +502,10 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         }
     }
 
-    public void removeChannel(String channelName) {
-        if (channelName != null) {
+    public void removeChannel(String channelName)
+    {
+        if (channelName != null)
+        {
             RoutePutChannel channel = RoutePutChannel.getChannel(channelName);
             if (channel.hasMember(this))
                 channel.removeMember(this);
@@ -490,12 +513,14 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     @Override
-    public String getConnectionId() {
+    public String getConnectionId()
+    {
         return this.connectionId;
     }
 
     @Override
-    public JSONObject toJSONObject() {
+    public JSONObject toJSONObject()
+    {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
         jo.put("defaultChannel", this.defaultChannel.getName());
@@ -520,7 +545,8 @@ public class RoutePutServerWebsocket implements RoutePutSession {
         return jo;
     }
 
-    public void ping() {
+    public void ping() 
+    {
         long ts = System.currentTimeMillis();
         if (this.lastPingTx > 0)
         {
@@ -558,52 +584,62 @@ public class RoutePutServerWebsocket implements RoutePutSession {
     }
 
     @Override
-    public boolean isRootConnection() {
+    public boolean isRootConnection() 
+    {
         return true;
     }
 
     @Override
-    public boolean containsConnectionId(String connectionId) {
+    public boolean containsConnectionId(String connectionId)
+    {
         return RoutePutRemoteSession.isChild(this, connectionId) || this.connectionId.equals(connectionId);
     }
 
     @Override
-    public boolean isConnected() {
+    public boolean isConnected()
+    {
         return this.connected;
     }
 
     @Override
-    public JSONObject getProperties() {
+    public JSONObject getProperties()
+    {
         this.properties.put("_remoteIP", this.remoteIP);
         this.properties.put("_class", "RoutePutServerWebsocket");
         this.properties.put("_listeners", this.listeners.size());
+        this.properties.put("_connected", this.isConnected());
         return this.properties;
     }
 
-    public void addMessageListener(RoutePutMessageListener r) {
+    public void addMessageListener(RoutePutMessageListener r)
+    {
         if (!this.listeners.contains(r)) {
             this.listeners.add(r);
         }
     }
 
-    public void removeMessageListener(RoutePutMessageListener r) {
+    public void removeMessageListener(RoutePutMessageListener r)
+    {
         if (this.listeners.contains(r)) {
             this.listeners.remove(r);
         }
     }
 
     @Override
-    public void addPropertyChangeListener(PropertyChangeListener listener) {
+    public void addPropertyChangeListener(PropertyChangeListener listener)
+    {
         this.propertyChangeSupport.addPropertyChangeListener(listener);
     }
 
     @Override
-    public void removePropertyChangeListener(PropertyChangeListener listener) {
+    public void removePropertyChangeListener(PropertyChangeListener listener)
+    {
         this.propertyChangeSupport.removePropertyChangeListener(listener);
     }
 
     @Override
-    public void firePropertyChange(String key, Object oldValue, Object newValue) {
+    public void firePropertyChange(String key, Object oldValue, Object newValue)
+    {
         this.properties.put(key, newValue);
         this.propertyChangeSupport.firePropertyChange(key, oldValue, newValue);
     }
