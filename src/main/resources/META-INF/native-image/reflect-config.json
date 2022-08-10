@@ -141,6 +141,10 @@
   "name":"org.eclipse.jetty.servlet.ServletMapping[]"
 },
 {
+  "name":"org.eclipse.jetty.util.ModuleLocation",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
   "name":"org.eclipse.jetty.util.TypeUtil",
   "methods":[
     {"name":"getClassLoaderLocation","parameterTypes":["java.lang.Class"] }, 

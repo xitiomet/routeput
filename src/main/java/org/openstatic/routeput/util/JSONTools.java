@@ -273,7 +273,7 @@ public class JSONTools {
             for(Iterator<String> fieldIterator = b.keys(); fieldIterator.hasNext(); )
             {
                 String field = fieldIterator.next();
-                System.err.println("Working on:" + field);
+                //System.err.println("Working on:" + field);
                 Object a_value = a.opt(field);
                 Object b_value = b.opt(field);
                 if (a_value instanceof JSONObject && b_value instanceof JSONObject)
@@ -283,7 +283,12 @@ public class JSONTools {
                     {
                         ro.put(field, diffReturn);
                     }
-                } else if (!a_value.equals(b_value)) {
+                } else if (a_value != null) {
+                    if (!a_value.equals(b_value))
+                    {
+                        ro.put(field, a_value);
+                    }
+                } else if (a_value == null) {
                     ro.put(field, a_value);
                 }
             }
@@ -303,7 +308,7 @@ public class JSONTools {
             for(Iterator<String> fieldIterator = aJsonObject.keys(); fieldIterator.hasNext(); )
             {
                 String field = fieldIterator.next();
-                System.err.println("Working on:" + field);
+                //System.err.println("Working on:" + field);
                 Object aJsonObjectValue = aJsonObject.opt(field);
                 if (aJsonObjectValue instanceof JSONObject)
                 {
