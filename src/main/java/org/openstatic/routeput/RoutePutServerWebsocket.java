@@ -479,11 +479,14 @@ public class RoutePutServerWebsocket implements RoutePutSession
     {
         if (this.websocketSession != null && jo != null)
         {
-            jo.setSourceIdIfNull(this.connectionId);
-            //jo.setChannelIfNull(this.getDefaultChannel());
-            this.websocketSession.getRemote().sendStringByFuture(jo.toString());
-            this.txPackets++;
-            this.lastTxPacket = jo;
+            try
+            {
+                jo.setSourceIdIfNull(this.connectionId);
+                //jo.setChannelIfNull(this.getDefaultChannel());
+                this.websocketSession.getRemote().sendStringByFuture(jo.toString());
+                this.txPackets++;
+                this.lastTxPacket = jo;
+            } catch (Exception e) { RoutePutServer.logError(e); }
         }
     }
 

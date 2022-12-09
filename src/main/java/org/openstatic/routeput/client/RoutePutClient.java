@@ -57,6 +57,15 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.stayConnected = true;
         this.properties = new JSONObject();
 
+        Runtime.getRuntime().addShutdownHook(new Thread() 
+        { 
+          public void run() 
+          { 
+            System.err.println("Routeput client received shutdown hook!");
+            RoutePutClient.this.cleanUp();
+          } 
+        }); 
+
         SslContextFactory sec = new SslContextFactory.Client();
         sec.setValidateCerts(false);
         HttpClient httpClient = new HttpClient(sec);
@@ -71,7 +80,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
     }
 
-    public void setCollector(boolean v) {
+    public void setCollector(boolean v)
+    {
         this.collector = v;
         if (this.isConnected()) {
             if (this.collector) {
@@ -156,7 +166,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
-    public void close() {
+    public void close() 
+    {
         RoutePutChannel.removeFromAllChannels(this);
         if (this.session != null)
         {
@@ -165,7 +176,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
-    private void cleanUp() {
+    private void cleanUp()
+    {
         RoutePutChannel.removeFromAllChannels(this);
         RoutePutClient.this.keepAliveThread = null;
     }
@@ -275,7 +287,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     @WebSocket
-    public class EventsWebSocket {
+    public class EventsWebSocket 
+    {
 
         @OnWebSocketMessage
         public void onText(Session session, String message) throws IOException {
@@ -318,7 +331,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
             // System.err.println("Close websocket");
             RoutePutClient.this.close();
             RoutePutClient.this.session = null;
-            if (RoutePutClient.this.stayConnected) {
+            if (RoutePutClient.this.stayConnected)
+            {
                 System.err.println("Connection Closed - Auto Reconnect");
             } else {
                 RoutePutClient.this.cleanUp();
@@ -350,8 +364,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     @Override
-    public void run() {
-        while (this.keepAliveThread != null) {
+    public void run() 
+    {
+        while (this.keepAliveThread != null)
+        {
             try {
                 Thread.sleep(10000);
                 if (this.isConnected()) {
@@ -366,7 +382,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 e.printStackTrace();
             }
         }
-
+        System.err.println("Leaving RoutePutClient keepAlive!");
     }
 
     public void setProperty(String key, Object value)
