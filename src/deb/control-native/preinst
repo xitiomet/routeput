@@ -1,11 +1,9 @@
 #!/bin/bash
 echo Route.put Pre-Install Script Running!
-if [ "$1" = install ]; then
-    echo Creating routeput user
-    useradd -s /usr/sbin/nologin -r -M routeput -d /usr/share/routeput
-    echo Creating /usr/share/routeput
-    mkdir -p /usr/share/routeput
-    chown -R routeput:routeput /usr/share/routeput
-    chmod -R 750 /usr/share/routeput
-fi
+echo Creating routeput user
+useradd -s /usr/sbin/nologin -r -M routeput -d /usr/share/routeput
+echo Creating /usr/share/routeput
+mkdir -p /usr/share/routeput
+chown -R routeput:routeput /usr/share/routeput
+chmod -R 750 /usr/share/routeput
 
