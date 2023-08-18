@@ -1,0 +1,16 @@
+#!/bin/bash
+echo Route.put Post-Install Script Running!
+if [[ ! -e /etc/routeput ]]; then
+    mkdir /etc/routeput
+    chown -R routeput:routeput /etc/routeput
+    echo Created /etc/routeput/
+fi
+if [[ ! -e /etc/routeput/routeput.json ]]; then
+    cp /usr/share/routeput/routeput-default.json /etc/routeput/routeput.json
+    chown routeput:routeput /etc/routeput/routeput.json
+    echo Created /etc/routeput/routeput.json from default
+fi
+chown -R routeput:routeput /usr/share/routeput
+update-rc.d routeput defaults
+update-rc.d routeput enable
+/etc/init.d/routeput start

@@ -186,7 +186,7 @@
                         <snapshotExpand>true</snapshotExpand>
                         <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
                         <snapshotEnv>USER</snapshotEnv>
-                        <controlDir>${basedir}/src/deb/control</controlDir>
+                        <controlDir>${basedir}/src/deb/control-native</controlDir>
                         <deb>${project.build.directory}/${project.artifactId}-${project.version}-native.deb</deb>
                         <dataSet>
                             <data>
@@ -256,7 +256,7 @@
                         <snapshotExpand>true</snapshotExpand>
                         <!-- expand "SNAPSHOT" to what is in the "USER" env variable -->
                         <snapshotEnv>USER</snapshotEnv>
-                        <controlDir>${basedir}/src/deb/control</controlDir>
+                        <controlDir>${basedir}/src/deb/control-java</controlDir>
                         <deb>${project.build.directory}/${project.artifactId}-${project.version}-jre.deb</deb>
                         <dataSet>
                             <data>
