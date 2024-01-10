@@ -710,7 +710,8 @@ public class RoutePutChannel implements RoutePutMessageListener
                 try
                 {                    
                     bumpTx();
-                    s.send(jo);
+                    if (s != null)
+                        s.send(jo);
                 } catch (Exception e) {
                     e.printStackTrace(System.err);
                 }
