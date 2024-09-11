@@ -482,7 +482,6 @@ public class RoutePutServerWebsocket implements RoutePutSession
             try
             {
                 jo.setSourceIdIfNull(this.connectionId);
-                //jo.setChannelIfNull(this.getDefaultChannel());
                 this.websocketSession.getRemote().sendStringByFuture(jo.toString());
                 this.txPackets++;
                 this.lastTxPacket = jo;
