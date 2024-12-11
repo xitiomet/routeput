@@ -70,6 +70,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         sec.setValidateCerts(false);
         HttpClient httpClient = new HttpClient(sec);
         RoutePutClient.this.webSocketClient = new WebSocketClient(httpClient);
+        RoutePutClient.this.webSocketClient.setMaxIdleTimeout(120000);
         try
         {
             this.webSocketClient.start();
@@ -150,20 +151,24 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void connect() 
     {
-        
-        try 
-        {
-            URI upstreamUri = new URI(this.websocketUri);
-            Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
-            if (ses instanceof WebSocketSession)
+        Thread t = new Thread(() -> {   
+            try
             {
-                System.err.println("Got our WebSocketSession!");
-                this.session = (WebSocketSession) ses;
+                Thread.sleep(1000);
+                URI upstreamUri = new URI(this.websocketUri);
+                RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
+                Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
+                if (ses instanceof WebSocketSession)
+                {
+                    System.err.println("Got our WebSocketSession!");
+                    this.session = (WebSocketSession) ses;
+                }
+            } catch (Throwable t2) {
+                System.err.println("Error on connect() URI: " + this.websocketUri);
+                t2.printStackTrace(System.err);
             }
-        } catch (Throwable t2) {
-            System.err.println("Error on connect() URI: " + this.websocketUri);
-            t2.printStackTrace(System.err);
-        }
+        });
+        t.start();
     }
 
     public void close() 
@@ -363,14 +368,20 @@ public class RoutePutClient implements RoutePutSession, Runnable
         return this.connectionId.equals(connectionId) || RoutePutRemoteSession.isChild(this, connectionId);
     }
 
+    // Keep alive thread
     @Override
     public void run() 
     {
         while (this.keepAliveThread != null)
         {
-            try {
+            try
+            {
+                // Initial delay while connection settles
                 Thread.sleep(10000);
-                if (this.isConnected()) {
+            } catch (Exception e) {}
+            try {
+                if (this.isConnected()) 
+                {
                     this.ping();
                 } else if (this.stayConnected) {
                     System.err.println("No connection detected by keep alive reconnecting...");
@@ -378,6 +389,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                     RoutePutClient.this.session = null;
                     this.connect();
                 }
+                Thread.sleep(10000);
             } catch (Exception e) {
                 e.printStackTrace();
             }
