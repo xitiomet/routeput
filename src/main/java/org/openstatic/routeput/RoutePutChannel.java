@@ -586,14 +586,17 @@ public class RoutePutChannel implements RoutePutMessageListener
                 rppcm.setSource(session);
                 for(String k : storeRequest.keySet())
                 {
-                    Object v = storeRequest.opt(k);
-                    Object oldValue = this.properties.opt(k);
-                    Object newValue = v;
-                    if (v instanceof String)
-                        newValue = j.getPathValue((String) v);
-                    else if (v instanceof JSONObject && oldValue instanceof JSONObject)
-                        oldValue = JSONTools.filterJSONObjects((JSONObject) oldValue, (JSONObject) v);
-                    rppcm.addUpdate(this, k, oldValue, newValue);
+                    if (!"".equals(k))
+                    {
+                        Object v = storeRequest.opt(k);
+                        Object oldValue = this.properties.opt(k);
+                        Object newValue = v;
+                        if (v instanceof String)
+                            newValue = j.getPathValue((String) v);
+                        else if (v instanceof JSONObject && oldValue instanceof JSONObject)
+                            oldValue = JSONTools.filterJSONObjects((JSONObject) oldValue, (JSONObject) v);
+                        rppcm.addUpdate(this, k, oldValue, newValue);
+                    }
                 }
                 j.removeMetaField("setChannelProperty");
                 rppcm.processUpdates(session);
