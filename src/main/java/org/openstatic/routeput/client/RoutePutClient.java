@@ -81,6 +81,19 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
     }
 
+    public String toString()
+    {
+        return this.getName();
+    }
+
+    public String getName()
+    {
+        String state = "disconnected";
+        if (this.isConnected())
+            state = "connected";
+        return "RoutePutClient(" + state + ") - " + this.websocketUri;
+    }
+
     public void setCollector(boolean v)
     {
         this.collector = v;
@@ -173,7 +186,6 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void close() 
     {
-        RoutePutChannel.removeFromAllChannels(this);
         if (this.session != null)
         {
             this.session.disconnect();
@@ -243,8 +255,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     @Override
-    public void send(RoutePutMessage jo) {
-        if (jo != null && this.session != null) {
+    public void send(RoutePutMessage jo) 
+    {
+        if (jo != null && this.session != null) 
+        {
             jo.setSourceIdIfNull(this.connectionId);
             jo.setChannelIfNull(this.getDefaultChannel());
             this.session.getRemote().sendStringByFuture(jo.toString());
@@ -372,13 +386,14 @@ public class RoutePutClient implements RoutePutSession, Runnable
     @Override
     public void run() 
     {
+        this.keepAliveThread.setName(this.getName());
+        try
+        {
+            // Initial delay while connection settles
+            Thread.sleep(2000);
+        } catch (Exception e) {}
         while (this.keepAliveThread != null)
         {
-            try
-            {
-                // Initial delay while connection settles
-                Thread.sleep(10000);
-            } catch (Exception e) {}
             try {
                 if (this.isConnected()) 
                 {
@@ -389,11 +404,13 @@ public class RoutePutClient implements RoutePutSession, Runnable
                     RoutePutClient.this.session = null;
                     this.connect();
                 }
+                this.keepAliveThread.setName(this.getName());
                 Thread.sleep(10000);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
+        this.keepAliveThread.setName("KLK " + this.getName());
         System.err.println("Leaving RoutePutClient keepAlive!");
     }
 
