@@ -6,15 +6,16 @@
   <version>1.${maven.build.timestamp}</version>
   <packaging>jar</packaging>
   <name>Routeput</name>
-  <url>http://openstatic.org/</url>
+  <url>https://openstatic.org/routeput/</url>
   <properties>
     <mainClass>org.openstatic.routeput.RoutePutMain</mainClass>
     <maven.build.timestamp.format>yyyy.MMdd</maven.build.timestamp.format>
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
-    <graalvm.version>21.2.0</graalvm.version>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <graalvm.version>24.1.2</graalvm.version>
+    <nativeMavenPluginVersion>0.10.4</nativeMavenPluginVersion>
     <imageName>routeput</imageName>
-    <jettyVersion>9.4.40.v20210413</jettyVersion>
+    <jettyVersion>9.4.57.v20241219</jettyVersion>
   </properties>
   <distributionManagement>
    <repository>
@@ -34,7 +35,7 @@
     <dependency>
         <groupId>org.json</groupId>
         <artifactId>json</artifactId>
-        <version>20160810</version>
+        <version>20250517</version>
     </dependency>
     <dependency>
         <groupId>org.eclipse.jetty</groupId>
@@ -75,7 +76,7 @@
     <dependency>
         <groupId>commons-cli</groupId>
         <artifactId>commons-cli</artifactId>
-        <version>1.4</version>
+        <version>1.9.0</version>
     </dependency>
     <dependency>
         <groupId>org.graalvm.sdk</groupId>
@@ -86,7 +87,7 @@
     <dependency>
       <groupId>io.fusionauth</groupId>
       <artifactId>fusionauth-jwt</artifactId>
-      <version>4.0.0</version>
+      <version>5.3.3</version>
     </dependency>
   </dependencies>
   <reporting>
@@ -94,7 +95,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>2.4</version>
+        <version>3.10.1</version>
         <configuration>
           <aggregate>true</aggregate>
           <quiet>true</quiet>
@@ -107,7 +108,7 @@
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-shade-plugin</artifactId>
-            <version>2.4.3</version>
+            <version>3.6.0</version>
             <configuration>
               <mainClass>${mainClass}</mainClass>
               <transformers>
@@ -126,13 +127,15 @@
             </executions>
         </plugin>
         <plugin>
-            <groupId>org.graalvm.nativeimage</groupId>
-            <artifactId>native-image-maven-plugin</artifactId>
-            <version>${graalvm.version}</version>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <version>${nativeMavenPluginVersion}</version>
+            <extensions>true</extensions>
             <executions>
                 <execution>
+                    <id>build-native</id>
                     <goals>
-                        <goal>native-image</goal>
+                        <goal>compile-no-fork</goal>
                     </goals>
                     <phase>package</phase>
                 </execution>
@@ -141,38 +144,33 @@
                 <skip>false</skip>
                 <imageName>${imageName}</imageName>
                 <mainClass>${mainClass}</mainClass>
+                <fallback>false</fallback>
                 <buildArgs>
-                    --no-server
-                    --no-fallback
-                    -Vorg.eclipse.jetty.LEVEL=OFF
-                    -Vjetty.httpConfig.sendServerVersion=false
-                    --initialize-at-build-time=org.eclipse.jetty.http.HttpTokens
-                    --initialize-at-build-time=org.eclipse.jetty.util.log.StdErrLog
-                    --initialize-at-build-time=org.eclipse.jetty.util.log.Log
-                    --initialize-at-build-time=org.eclipse.jetty.util.Uptime
-                    --initialize-at-build-time=org.eclipse.jetty.util.TypeUtil
-                    --initialize-at-build-time=org.eclipse.jetty.util.ModuleLocation
-                     -H:+UseServiceLoaderFeature
-                    --enable-https
-                    --enable-http
-                    -H:+AllowIncompleteClasspath
-                    -H:IncludeResourceBundles=javax.servlet.LocalStrings
-                    -H:IncludeResourceBundles=javax.servlet.http.LocalStrings
-                    -Dgraal.LogFile=graal.log
+                    <buildArg>-Vorg.eclipse.jetty.LEVEL=OFF</buildArg>
+                    <buildArg>-Vjetty.httpConfig.sendServerVersion=false</buildArg>
+                    <buildArg>--initialize-at-build-time=org.eclipse.jetty</buildArg>
+                    <buildArg>--initialize-at-build-time=javax.servlet</buildArg>
+                    <buildArg>-H:+UseServiceLoaderFeature</buildArg>
+                    <buildArg>--enable-https</buildArg>
+                    <buildArg>--enable-http</buildArg>
+                    <buildArg>-H:+AllowIncompleteClasspath</buildArg>
+                    <buildArg>-H:IncludeResourceBundles=javax.servlet.LocalStrings</buildArg>
+                    <buildArg>-H:IncludeResourceBundles=javax.servlet.http.LocalStrings</buildArg>
+                    <buildArg>-Dgraal.LogFile=graal.log</buildArg>
                 </buildArgs>
             </configuration>
        </plugin>
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
-            <version>3.0.1</version>
+            <version>3.10.1</version>
             <configuration>
             </configuration>
        </plugin>
        <plugin>
             <artifactId>jdeb</artifactId>
             <groupId>org.vafer</groupId>
-            <version>1.8</version>
+            <version>1.13</version>
             <executions>
                 <!-- build native image debian package -->
                 <execution>
