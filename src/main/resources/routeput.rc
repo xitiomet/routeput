@@ -1,0 +1,9 @@
+// Windows resource script — embedded into routeput.exe by GraalVM native-image.
+// Compiled to routeput.res by rc.exe during the windows-build profile.
+//
+// Drop a multi-resolution Windows icon at src/main/resources/routeput.ico
+// (e.g. converted from icon-256.png with: magick icon-256.png -define icon:auto-resize=256,128,64,48,32,16 routeput.ico)
+
+#define IDI_APP_ICON 1
+
+IDI_APP_ICON ICON "routeput.ico"
