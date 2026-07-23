@@ -288,7 +288,7 @@
                   <snapshotExpand>true</snapshotExpand>
                   <snapshotEnv>USER</snapshotEnv>
                   <controlDir>${basedir}/src/deb/control-native</controlDir>
-                  <deb>${project.build.directory}/${project.artifactId}-${project.version}-native.deb</deb>
+                  <deb>${project.build.directory}/${project.artifactId}-${project.version}-native-${os.arch}.deb</deb>
                   <dataSet>
                     <data>
                       <src>${project.build.directory}/${imageName}</src>
