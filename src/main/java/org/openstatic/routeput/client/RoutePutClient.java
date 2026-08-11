@@ -110,7 +110,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
-    public void ping() {
+    public void ping() 
+    {
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
         pingMessage.setChannel(this.getDefaultChannel());
@@ -123,27 +124,32 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.stayConnected = v;
     }
 
-    public boolean isAutoReconnect() {
+    public boolean isAutoReconnect()
+    {
         return this.stayConnected;
     }
 
     @Override
-    public String getConnectionId() {
+    public String getConnectionId()
+    {
         return this.connectionId;
     }
 
     @Override
-    public RoutePutChannel getDefaultChannel() {
+    public RoutePutChannel getDefaultChannel()
+    {
         return this.channel;
     }
 
     @Override
-    public String getRemoteIP() {
+    public String getRemoteIP()
+    {
         return this.remoteIP;
     }
 
     @Override
-    public JSONObject toJSONObject() {
+    public JSONObject toJSONObject()
+    {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
         jo.put("defaultChannel", this.getDefaultChannel());
@@ -153,7 +159,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     @Override
-    public boolean isConnected() {
+    public boolean isConnected() 
+    {
         // Should only report true if there is a functioning pipe and we aren't in a reconnect phase
         if (this.session != null) {
             return this.session.isOpen();
@@ -199,7 +206,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutClient.this.keepAliveThread = null;
     }
 
-    public void handleWebSocketEvent(RoutePutMessage j) {
+    public void handleWebSocketEvent(RoutePutMessage j)
+    {
         if (j.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
             this.connectionId = j.getRoutePutMeta().optString("connectionId", null);
             //System.err.println("Server Handed connectionId: " + this.connectionId);
@@ -285,23 +293,27 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.transmit(subscribeMessage);
     }
 
-    public void addMessageListener(RoutePutMessageListener r) {
+    public void addMessageListener(RoutePutMessageListener r) 
+    {
         if (!this.listeners.contains(r)) {
             this.listeners.add(r);
         }
     }
 
-    public void removeMessageListener(RoutePutMessageListener r) {
+    public void removeMessageListener(RoutePutMessageListener r) 
+    {
         if (this.listeners.contains(r)) {
             this.listeners.remove(r);
         }
     }
 
-    public Collection<RoutePutMessageListener> getMessageListeners() {
+    public Collection<RoutePutMessageListener> getMessageListeners()
+    {
         return this.listeners;
     }
 
-    public boolean hasMessageListener(RoutePutMessageListener r) {
+    public boolean hasMessageListener(RoutePutMessageListener r)
+    {
         return this.listeners.contains(r);
     }
 
@@ -310,8 +322,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     {
 
         @OnWebSocketMessage
-        public void onText(Session session, String message) throws IOException {
-            try {
+        public void onText(Session session, String message) throws IOException
+        {
+            try
+            {
                 RoutePutMessage jo = new RoutePutMessage(message);
                 if (jo.optMetaField("squeak", false)) {
                     System.err.println("SQUEAK! " + jo.toString());
@@ -323,7 +337,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
 
         @OnWebSocketConnect
-        public void onConnect(Session session) throws IOException {
+        public void onConnect(Session session) throws IOException
+        {
             // System.err.println("Connected websocket");
             if (session instanceof WebSocketSession) {
                 RoutePutClient.this.session = (WebSocketSession) session;
@@ -373,45 +388,50 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     @Override
-    public boolean isRootConnection() {
+    public boolean isRootConnection()
+    {
         return true;
     }
 
     @Override
-    public boolean containsConnectionId(String connectionId) {
+    public boolean containsConnectionId(String connectionId)
+    {
         return this.connectionId.equals(connectionId) || RoutePutRemoteSession.isChild(this, connectionId);
     }
 
     // Keep alive thread
+    // This should keep the connection alive and ping the server every 10 seconds, if the connection is lost it will attempt to reconnect
     @Override
     public void run() 
     {
-        this.keepAliveThread.setName(this.getName());
-        try
+        if (this.keepAliveThread != null)
         {
-            // Initial delay while connection settles
-            Thread.sleep(2000);
-        } catch (Exception e) {}
-        while (this.keepAliveThread != null)
-        {
-            try {
-                if (this.isConnected()) 
-                {
-                    this.ping();
-                } else if (this.stayConnected) {
-                    System.err.println("No connection detected by keep alive reconnecting...");
-                    RoutePutClient.this.close();
-                    RoutePutClient.this.session = null;
-                    this.connect();
+            this.keepAliveThread.setName(this.getName());
+            try
+            {
+                // Initial delay while connection settles
+                Thread.sleep(2000);
+            } catch (Exception e) {}
+            while (this.keepAliveThread != null)
+            {
+                try {
+                    if (this.isConnected()) 
+                    {
+                        this.ping();
+                    } else if (this.stayConnected) {
+                        System.err.println("No connection detected by keep alive reconnecting...");
+                        RoutePutClient.this.close();
+                        RoutePutClient.this.session = null;
+                        this.connect();
+                    }
+                    this.keepAliveThread.setName(this.getName());
+                    Thread.sleep(10000);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-                this.keepAliveThread.setName(this.getName());
-                Thread.sleep(10000);
-            } catch (Exception e) {
-                e.printStackTrace();
             }
+            System.err.println("Leaving RoutePutClient keepAlive!");
         }
-        this.keepAliveThread.setName("KLK " + this.getName());
-        System.err.println("Leaving RoutePutClient keepAlive!");
     }
 
     public void setProperty(String key, Object value)
