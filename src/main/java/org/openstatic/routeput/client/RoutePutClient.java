@@ -17,6 +17,7 @@ import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.IOException;
 import java.net.URI;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
@@ -37,15 +38,16 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private String websocketUri;
     private String connectionId;
     private WebSocketClient webSocketClient;
-    private WebSocketSession session;
+    private volatile WebSocketSession session;
     private EventsWebSocket eventsWebSocket;
     private Vector<RoutePutMessageListener> listeners;
 
-    private boolean stayConnected;
+    private volatile boolean stayConnected;
     private JSONObject properties;
     private String remoteIP;
     private boolean collector;
-    private Thread keepAliveThread;
+    private volatile Thread keepAliveThread;
+    private final AtomicBoolean connecting = new AtomicBoolean(false);
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
     {
@@ -60,7 +62,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         Runtime.getRuntime().addShutdownHook(new Thread() 
         { 
           public void run() 
-          { 
+          {
+            RoutePutClient.this.stayConnected = false;
             System.err.println("Routeput client received shutdown hook!");
             RoutePutClient.this.cleanUp();
           } 
@@ -119,9 +122,25 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.send(pingMessage);
     }
 
+    public void shutdown()
+    {
+        this.stayConnected = false;
+        this.close();
+        try
+        {
+            this.webSocketClient.stop();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+    }
+
     public void setAutoReconnect(boolean v) 
     {
         this.stayConnected = v;
+        if (!v) {
+            this.close();
+        }
+        this.wakeKeepAlive();
     }
 
     public boolean isAutoReconnect()
@@ -158,6 +177,15 @@ public class RoutePutClient implements RoutePutSession, Runnable
         return jo;
     }
 
+    public void waitForConnection(long timeoutMs) throws InterruptedException
+    {
+        long startTime = System.currentTimeMillis();
+        while (!this.isConnected() && (System.currentTimeMillis() - startTime) < timeoutMs)
+        {
+            Thread.sleep(100);
+        }
+    }
+
     @Override
     public boolean isConnected() 
     {
@@ -169,12 +197,43 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
+    public void connectAndWait(long timeoutMs) throws InterruptedException
+    {
+        this.connect();
+        this.waitForConnection(timeoutMs);
+    }
+
     public void connect() 
     {
-        Thread t = new Thread(() -> {   
+        this.ensureKeepAliveRunning();
+        this.attemptConnect();
+    }
+
+    private void ensureKeepAliveRunning()
+    {
+        synchronized (this) {
+            if (this.keepAliveThread == null) {
+                Thread t = new Thread(this);
+                t.setName(this.getName());
+                t.setDaemon(true);
+                this.keepAliveThread = t;
+                t.start();
+            }
+        }
+    }
+
+    private void attemptConnect()
+    {
+        if (this.isConnected()) {
+            return;
+        }
+        if (!this.connecting.compareAndSet(false, true)) {
+            // Another connect attempt is already in flight
+            return;
+        }
+        Thread t = new Thread(() -> {
             try
             {
-                Thread.sleep(1000);
                 URI upstreamUri = new URI(this.websocketUri);
                 RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
                 Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
@@ -186,18 +245,37 @@ public class RoutePutClient implements RoutePutSession, Runnable
             } catch (Throwable t2) {
                 System.err.println("Error on connect() URI: " + this.websocketUri);
                 t2.printStackTrace(System.err);
+            } finally {
+                RoutePutClient.this.connecting.set(false);
+                RoutePutClient.this.wakeKeepAlive();
             }
         });
+        t.setDaemon(true);
         t.start();
+    }
+
+    private void wakeKeepAlive()
+    {
+        Thread t = this.keepAliveThread;
+        if (t != null && t != Thread.currentThread()) {
+            t.interrupt();
+        }
     }
 
     public void close() 
     {
-        if (this.session != null)
+        WebSocketSession s = this.session;
+        this.session = null;
+        if (s != null)
         {
-            this.session.disconnect();
-            this.session = null;
+            try {
+                s.disconnect();
+            } catch (Exception e) {
+                // ignore
+            }
         }
+        // If stayConnected is still true, wake the keep-alive so it reconnects immediately.
+        this.wakeKeepAlive();
     }
 
     private void cleanUp()
@@ -342,10 +420,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             // System.err.println("Connected websocket");
             if (session instanceof WebSocketSession) {
                 RoutePutClient.this.session = (WebSocketSession) session;
-                if (RoutePutClient.this.keepAliveThread == null) {
-                    RoutePutClient.this.keepAliveThread = new Thread(RoutePutClient.this);
-                    RoutePutClient.this.keepAliveThread.start();
-                }
+                RoutePutClient.this.ensureKeepAliveRunning();
                 // System.out.println(RoutePutClient.this.session.getRemoteAddress().getHostString()
                 // + " connected!");
                 RoutePutMessage connectionIdMessage = new RoutePutMessage();
@@ -361,26 +436,28 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
 
         @OnWebSocketClose
-        public void onClose(Session session, int status, String reason) {
+        public void onClose(Session session, int status, String reason)
+        {
             // System.err.println("Close websocket");
-            RoutePutClient.this.close();
             RoutePutClient.this.session = null;
             if (RoutePutClient.this.stayConnected)
             {
                 System.err.println("Connection Closed - Auto Reconnect");
+                RoutePutClient.this.wakeKeepAlive();
             } else {
                 RoutePutClient.this.cleanUp();
             }
         }
 
         @OnWebSocketError
-        public void onError(Throwable e) {
+        public void onError(Throwable e)
+        {
             System.err.println("Connection Error - websocket");
             e.printStackTrace(System.err);
-            RoutePutClient.this.close();
             RoutePutClient.this.session = null;
             if (RoutePutClient.this.stayConnected) {
                 System.err.println("Auto Reconnect");
+                RoutePutClient.this.wakeKeepAlive();
             } else {
                 RoutePutClient.this.cleanUp();
             }
@@ -400,38 +477,50 @@ public class RoutePutClient implements RoutePutSession, Runnable
     }
 
     // Keep alive thread
-    // This should keep the connection alive and ping the server every 10 seconds, if the connection is lost it will attempt to reconnect
+    // Pings the server on a healthy connection; when the connection is down and
+    // stayConnected is true, retries with capped exponential backoff. Wakes on
+    // interrupt so close()/onClose()/onError() can trigger an immediate retry.
     @Override
     public void run() 
     {
-        if (this.keepAliveThread != null)
+        final int minBackoffMs = 1000;
+        final int maxBackoffMs = 30000;
+        final int pingIntervalMs = 10000;
+        int backoffMs = minBackoffMs;
+        while (this.keepAliveThread == Thread.currentThread() && this.stayConnected)
         {
-            this.keepAliveThread.setName(this.getName());
-            try
-            {
-                // Initial delay while connection settles
-                Thread.sleep(2000);
-            } catch (Exception e) {}
-            while (this.keepAliveThread != null)
-            {
-                try {
-                    if (this.isConnected()) 
-                    {
-                        this.ping();
-                    } else if (this.stayConnected) {
-                        System.err.println("No connection detected by keep alive reconnecting...");
-                        RoutePutClient.this.close();
-                        RoutePutClient.this.session = null;
-                        this.connect();
-                    }
+            try {
+                if (this.isConnected())
+                {
+                    this.ping();
+                    backoffMs = minBackoffMs;
                     this.keepAliveThread.setName(this.getName());
-                    Thread.sleep(10000);
-                } catch (Exception e) {
-                    e.printStackTrace();
+                    Thread.sleep(pingIntervalMs);
                 }
+                else if (this.connecting.get())
+                {
+                    // Wait briefly for the in-flight attempt to resolve
+                    Thread.sleep(500);
+                }
+                else
+                {
+                    System.err.println("No connection detected by keep alive, reconnecting to " + this.websocketUri);
+                    this.attemptConnect();
+                    this.keepAliveThread.setName(this.getName());
+                    Thread.sleep(backoffMs);
+                    backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+                }
+            } catch (InterruptedException ie) {
+                // Woken up by a state change (close, onClose, onError, setAutoReconnect); re-evaluate immediately
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-            System.err.println("Leaving RoutePutClient keepAlive!");
         }
+        this.keepAliveThread = null;
+        if (!this.stayConnected) {
+            this.cleanUp();
+        }
+        System.err.println("Leaving RoutePutClient keepAlive!");
     }
 
     public void setProperty(String key, Object value)

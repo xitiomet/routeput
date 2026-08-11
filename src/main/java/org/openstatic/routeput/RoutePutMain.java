@@ -348,11 +348,11 @@ public class RoutePutMain
         });
         rpc.setProperty("details", "random quote bot for testing");
         rpc.setProperty("username", "QuoteBot 5000");
-        rpc.connect();
-        //rpc.becomeCollector();
-        RandomQuotes quotes = new RandomQuotes();
         try
         {
+             rpc.connectAndWait(15000);
+            //rpc.becomeCollector();
+            RandomQuotes quotes = new RandomQuotes();
             while(rpc.isConnected())
             {
                 RoutePutMessage msg = new RoutePutMessage();
@@ -408,10 +408,10 @@ public class RoutePutMain
                 System.err.println("CLIENT Received " + message.toString());
             }
         });
-        rpc.connect();
-        //rpc.becomeCollector();
         try
         {
+            rpc.connectAndWait(15000); // Connect and wait for connection to be established
+            //rpc.becomeCollector();
             while(rpc.isConnected())
             {
                 RoutePutMessage msg = new RoutePutMessage();

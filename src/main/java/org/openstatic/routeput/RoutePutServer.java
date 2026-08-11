@@ -312,18 +312,33 @@ public class RoutePutServer implements Runnable
         log(RoutePutMessage.TYPE_LOG_WARNING, text);
     }
 
+    // Guards against re-entrant logging (e.g. the routeputDebug channel failing
+    // to write its own log message and then trying to log that failure).
+    private static final ThreadLocal<Boolean> IN_LOG = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
     public static void log(String type, String text)
     {
-        if (RoutePutServer.instance != null)
+        if (Boolean.TRUE.equals(IN_LOG.get()))
         {
-            if (RoutePutServer.instance.routeputDebug != null)
+            System.err.println("[log-reentry:" + type + "] " + text);
+            return;
+        }
+        IN_LOG.set(Boolean.TRUE);
+        try
+        {
+            if (RoutePutServer.instance != null)
             {
-                RoutePutMessage l = new RoutePutMessage();
-                l.setType(type);
-                l.setChannel("routeputDebug");
-                l.put("text",  text);
-                RoutePutServer.instance.routeputDebug.onMessage(null, l);
+                if (RoutePutServer.instance.routeputDebug != null)
+                {
+                    RoutePutMessage l = new RoutePutMessage();
+                    l.setType(type);
+                    l.setChannel("routeputDebug");
+                    l.put("text",  text);
+                    RoutePutServer.instance.routeputDebug.onMessage(null, l);
+                }
             }
+        } finally {
+            IN_LOG.set(Boolean.FALSE);
         }
     }
 

@@ -521,7 +521,11 @@ public class RoutePutChannel implements RoutePutMessageListener
                         this.logWriter.write(j.toString() + "\n");
                     }
                 } catch (Exception e) {
-                    RoutePutServer.logError(e);
+                    // Never route back through RoutePutServer.logError from here: this handler
+                    // is itself the log sink and would recurse until StackOverflowError.
+                    System.err.println("Channel log write failed on \"" + this.getName() + "\": " + e);
+                    try { this.logWriter.close(); } catch (Exception ignore) {}
+                    this.logWriter = null;
                 }
             }
             bumpRx();
@@ -907,6 +911,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             } catch (Exception e) {
                 RoutePutServer.logError(e);
             }
+            this.logWriter = null;
         }
     }
 
