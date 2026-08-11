@@ -470,6 +470,18 @@
       "allPublicConstructors": true
     },
     {
+      "type": "org.openstatic.routeput.RoutePutMain",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "main",
+          "parameterTypes": [
+            "java.lang.String[]"
+          ]
+        }
+      ]
+    },
+    {
       "type": "org.openstatic.routeput.RoutePutRemoteSession",
       "allDeclaredMethods": true,
       "allPublicMethods": true,
@@ -519,6 +531,24 @@
       "allPublicConstructors": true
     },
     {
+      "type": "sun.launcher.LauncherHelper",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "isStaticMain"
+        },
+        {
+          "name": "noArgMain"
+        }
+      ],
+      "methods": [
+        {
+          "name": "getApplicationClass",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
       "type": "sun.management.VMManagementImpl",
       "jniAccessible": true,
       "fields": [
@@ -566,6 +596,17 @@
         {
           "name": "<init>",
           "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.DRBG",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.security.SecureRandomParameters"
+          ]
         }
       ]
     },
@@ -901,6 +942,9 @@
     },
     {
       "type": "sun.text.resources.cldr.FormatData_en"
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData_en_US"
     },
     {
       "type": "sun.util.resources.cldr.CalendarData"
