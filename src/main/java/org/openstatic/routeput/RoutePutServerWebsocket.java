@@ -305,7 +305,6 @@ public class RoutePutServerWebsocket implements RoutePutSession
                         errorMsg.setMetaField("channel", this.defaultChannel.getName());
                         errorMsg.put("text", "Channel \"" + this.defaultChannel.getName() + "\" requires a password");
                         this.send(errorMsg);
-                        if (this.websocketSession != null) this.websocketSession.close();
                         return;
                     }
                     if (rpm.has("properties")) {

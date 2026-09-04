@@ -436,9 +436,6 @@ class RouteputConnection
     onpropertychange;
     onauthrequired;
     channelPasswords;
-    // Set when the server rejects our handshake with authRequired; suppresses the
-    // auto-reconnect in onclose so we don't hammer the server until the user retries.
-    authBlocked;
     
     constructor(channelName, channelPassword)
     {
@@ -506,7 +503,6 @@ class RouteputConnection
     {   
         try
         {
-            this.authBlocked = false;
             if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
@@ -794,13 +790,6 @@ class RouteputConnection
                             if (routePutMeta.authRequired)
                             {
                                 var affectedChannel = routePutMeta.channel || (channel && channel.name);
-                                var isDefault = affectedChannel === this.defaultChannel.name;
-                                if (isDefault)
-                                {
-                                    this.authBlocked = true;
-                                    if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
-                                    try { this.connection.close(); } catch (e) {}
-                                }
                                 if (this.onauthrequired) this.onauthrequired(affectedChannel, jsonObject.text);
                                 else this._defaultAuthPrompt(affectedChannel, jsonObject.text);
                             }
@@ -855,7 +844,6 @@ class RouteputConnection
             };
             
             this.connection.onclose = () => {
-              if (this.authBlocked) return;
               this.reconnectTimeout = setTimeout(() => { this.connect() }, 3000);
             };
         } catch (err) {
@@ -1128,6 +1116,29 @@ class RouteputConnection
         this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"unsubscribe", "channel": channel}});
     }
 
+    // Re-send the default-channel handshake on the existing socket. Used after the
+    // user supplies a password for a channel we failed to authenticate against, so we
+    // don't have to tear down the WebSocket and reconnect.
+    retryHandshake()
+    {
+        if (this.connection && this.connection.readyState === WebSocket.OPEN)
+        {
+            var meta = {
+                "type": "connectionId",
+                "channel": this.defaultChannel.name,
+                "properties": this.properties,
+                "connectionId": this.connectionId
+            };
+            var pw = this.channelPasswords.get(this.defaultChannel.name);
+            if (pw) meta.password = pw;
+            this.transmit({"__routeput": meta});
+        }
+        else
+        {
+            this.connect();
+        }
+    }
+
     // Remember a password for a channel so it's applied on the next connect/subscribe.
     setChannelPassword(channelName, password)
     {
@@ -1198,7 +1209,7 @@ class RouteputConnection
             var ch = modal.__routeput_channel;
             self.setChannelPassword(ch, pw);
             modal.style.display = 'none';
-            if (ch === self.defaultChannel.name) self.connect();
+            if (ch === self.defaultChannel.name) self.retryHandshake();
             else self.subscribe(ch, pw);
         };
         btn.addEventListener('click', submit);
