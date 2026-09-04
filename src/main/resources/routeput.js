@@ -403,6 +403,13 @@ class RouteputChannel
             reader.readAsDataURL(blob);
         });
     }
+
+    // Resolve immediately with the cached Blob when available, otherwise coalesce with
+    // any in-flight distribution or fire a fresh request for this channel's copy.
+    getBlob(blobName)
+    {
+        return this.routeputConnection.requestBlob("channel." + this.name, blobName);
+    }
 }
 
 class RouteputConnection
@@ -418,6 +425,7 @@ class RouteputConnection
     channels;
     chunkBuffer;
     blobCache;
+    pendingBlobRequests;
     requests;
     connectionId;
     serverHostname;
@@ -452,6 +460,9 @@ class RouteputConnection
         // Used to answer remote "do you have this blob?" queries with state=have and to
         // resolve requestBlob() locally without a round-trip.
         this.blobCache = new Map();
+        // Coalesces concurrent requestBlob() callers and in-flight server distributions
+        // for the same "context:name" so we never trigger overlapping chunk streams.
+        this.pendingBlobRequests = new Map();
         this.properties = {};
         this.wsUrl = this.wsProtocol + '://' + this.host + '/channel/';
     }
@@ -546,6 +557,9 @@ class RouteputConnection
                         if (routePutMeta.hasOwnProperty('context')) respMeta.context = routePutMeta.context;
                         if (routePutMeta.hasOwnProperty('channel')) respMeta.channel = routePutMeta.channel;
                         this.transmit({ "__routeput": respMeta });
+                        // Answering "need" means chunks are on the way — register a
+                        // coalescing entry so requestBlob() piggybacks on this stream.
+                        if (!have) this._ensureBlobPending(cacheKey);
                     }
                     else if (messageType == "blob" && routePutMeta.hasOwnProperty("exists"))
                     {
@@ -597,6 +611,13 @@ class RouteputConnection
                             if (this.onblob != undefined)
                             {
                                 this.onblob(context, routePutMeta.name, blob);
+                            }
+                            // Resolve any coalesced requestBlob() waiters for this blob.
+                            var pendingReq = this.pendingBlobRequests.get(chunkBufferKey);
+                            if (pendingReq)
+                            {
+                                this.pendingBlobRequests.delete(chunkBufferKey);
+                                pendingReq.resolve(blob);
                             }
                             // Check if there is a promise awaiting this blob
                             if (routePutMeta.hasOwnProperty('ref'))
@@ -973,8 +994,56 @@ class RouteputConnection
             if (this.debug) console.log("Routeput requestBlob '" + name + "' served from local cache.");
             return Promise.resolve(cached.blob);
         }
+        // Coalesce: if a fetch or server-initiated distribution for this blob is already
+        // in flight, return the existing promise so we don't trigger overlapping chunk
+        // streams that would corrupt chunkBuffer.
+        var existing = this.pendingBlobRequests.get(cacheKey);
+        if (existing) return existing.promise;
+
+        var pending = this._ensureBlobPending(cacheKey);
         var mm = {"__routeput": {"msgId": randomId(), "type": "request", "request": "blob", "name": name, "context": context}};
-        return this.makeRequest(mm);
+        var self = this;
+        this.makeRequest(mm).then(
+            (result) => {
+                // Chunk assembly already resolved pending in the Blob case. If the
+                // server short-circuited with a metadata ack (cached case), fall back
+                // to the cache or reject.
+                if (!(result instanceof Blob))
+                {
+                    var still = self.pendingBlobRequests.get(cacheKey);
+                    if (still === pending)
+                    {
+                        self.pendingBlobRequests.delete(cacheKey);
+                        var late = self.blobCache.get(cacheKey);
+                        if (late && late.blob) pending.resolve(late.blob);
+                        else pending.reject(result);
+                    }
+                }
+            },
+            (err) => {
+                var still = self.pendingBlobRequests.get(cacheKey);
+                if (still === pending)
+                {
+                    self.pendingBlobRequests.delete(cacheKey);
+                    pending.reject(err);
+                }
+            }
+        );
+        return pending.promise;
+    }
+
+    // Get or create the pending-blob entry for a given "context:name" key.
+    _ensureBlobPending(cacheKey)
+    {
+        var existing = this.pendingBlobRequests.get(cacheKey);
+        if (existing) return existing;
+        var pending = {};
+        pending.promise = new Promise((resolve, reject) => {
+            pending.resolve = resolve;
+            pending.reject = reject;
+        });
+        this.pendingBlobRequests.set(cacheKey, pending);
+        return pending;
     }
 
     requestBlobInfo(context, name)
