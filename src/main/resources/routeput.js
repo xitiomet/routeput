@@ -649,6 +649,7 @@ class RouteputConnection
                         this.properties = routePutMeta.properties;
                         channel.properties = routePutMeta.channelProperties;
                         this.serverHostname = routePutMeta.serverHostname;
+                        this._hideDefaultAuthPrompt();
                         if (this.onconnect != undefined)
                         {
                             this.onconnect();
@@ -708,6 +709,7 @@ class RouteputConnection
                             }
                         }
                     } else if (messageType == "response") {
+                        if (routePutMeta.response == "subscribe") this._hideDefaultAuthPrompt();
                         if (routePutMeta.hasOwnProperty('ref'))
                         {
                             if (this.requests.has(routePutMeta.ref))
@@ -791,10 +793,16 @@ class RouteputConnection
                         if (messageType == "error") {
                             if (routePutMeta.authRequired)
                             {
-                                this.authBlocked = true;
-                                if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
-                                try { this.connection.close(); } catch (e) {}
-                                if (this.onauthrequired) this.onauthrequired(routePutMeta.channel || (channel && channel.name), jsonObject.text);
+                                var affectedChannel = routePutMeta.channel || (channel && channel.name);
+                                var isDefault = affectedChannel === this.defaultChannel.name;
+                                if (isDefault)
+                                {
+                                    this.authBlocked = true;
+                                    if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
+                                    try { this.connection.close(); } catch (e) {}
+                                }
+                                if (this.onauthrequired) this.onauthrequired(affectedChannel, jsonObject.text);
+                                else this._defaultAuthPrompt(affectedChannel, jsonObject.text);
                             }
                             if (routePutMeta.hasOwnProperty('ref'))
                             {
@@ -1140,5 +1148,61 @@ class RouteputConnection
     logWarning(text)
     {
         this.transmit({"__routeput": {"type": "warning"}, "text": text});
+    }
+
+    // Default password prompt used when no `onauthrequired` handler is registered.
+    // Reuses the same DOM node across retries so the user's typing isn't wiped.
+    _defaultAuthPrompt(channelName, text)
+    {
+        if (typeof document === 'undefined' || !document.body) return;
+        var modal = document.getElementById('__routeput_auth_modal') || this._buildAuthModal();
+        var wasVisible = modal.style.display === 'flex';
+        modal.__routeput_channel = channelName;
+        var msg = modal.querySelector('.__routeput_auth_msg');
+        if (msg) msg.textContent = text || ('Channel "' + channelName + '" requires a password.');
+        modal.style.display = 'flex';
+        if (!wasVisible)
+        {
+            var input = modal.querySelector('input');
+            if (input) { input.value = ''; input.focus(); }
+        }
+    }
+
+    _hideDefaultAuthPrompt()
+    {
+        if (typeof document === 'undefined') return;
+        var modal = document.getElementById('__routeput_auth_modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    _buildAuthModal()
+    {
+        var self = this;
+        var modal = document.createElement('div');
+        modal.id = '__routeput_auth_modal';
+        modal.setAttribute('style', 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2147483000;align-items:center;justify-content:center;font-family:sans-serif;');
+        var box = document.createElement('div');
+        box.setAttribute('style', 'background:white;padding:20px 24px;border-radius:6px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,0.3);');
+        box.innerHTML =
+            '<div style="font-size:18px;font-weight:bold;margin-bottom:12px;">Channel password required</div>' +
+            '<div class="__routeput_auth_msg" style="font-size:12px;color:#666;margin-bottom:12px;"></div>' +
+            '<input type="password" style="width:100%;padding:8px;font-size:14px;box-sizing:border-box;" placeholder="Password" />' +
+            '<div style="margin-top:14px;text-align:right;"><button type="button" style="padding:6px 14px;font-size:14px;">Sign in</button></div>';
+        modal.appendChild(box);
+        document.body.appendChild(modal);
+        var input = modal.querySelector('input');
+        var btn = modal.querySelector('button');
+        var submit = function() {
+            var pw = input.value;
+            if (!pw) return;
+            var ch = modal.__routeput_channel;
+            self.setChannelPassword(ch, pw);
+            modal.style.display = 'none';
+            if (ch === self.defaultChannel.name) self.connect();
+            else self.subscribe(ch, pw);
+        };
+        btn.addEventListener('click', submit);
+        input.addEventListener('keydown', function(e) { if (e.key === 'Enter') submit(); });
+        return modal;
     }
 }
