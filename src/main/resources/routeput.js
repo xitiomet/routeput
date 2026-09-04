@@ -526,29 +526,17 @@ class RouteputConnection
                     {
                         messageType = routePutMeta.type;
                     }
-                    if (messageType == "blob" && routePutMeta.hasOwnProperty("state") && routePutMeta.hasOwnProperty("ref"))
+                    if (messageType == "request" && routePutMeta.request == "blobCheck")
                     {
-                        // Response to a "do you have this blob?" query. Dispatch to the
-                        // pending sender so it can either transmit chunks or skip.
-                        if (this.requests.has(routePutMeta.ref))
-                        {
-                            var promHooks = this.requests.get(routePutMeta.ref);
-                            this.requests.delete(routePutMeta.ref);
-                            promHooks.resolve(routePutMeta);
-                        }
-                    }
-                    else if (messageType == "blob" && routePutMeta.hasOwnProperty("md5")
-                             && routePutMeta.hasOwnProperty("size") && routePutMeta.hasOwnProperty("name")
-                             && !routePutMeta.hasOwnProperty("i") && !routePutMeta.hasOwnProperty("data")
-                             && !routePutMeta.hasOwnProperty("state"))
-                    {
-                        // Query from remote asking if we already have this blob.
+                        // Server is asking whether we already have this blob. Reply based
+                        // on our local cache; keeps the server from re-sending files we hold.
                         var qContext = routePutMeta.hasOwnProperty('context') ? routePutMeta.context : '';
                         var cacheKey = qContext + ":" + routePutMeta.name;
                         var cached = this.blobCache.get(cacheKey);
                         var have = !!(cached && cached.md5 && cached.md5.toLowerCase() === String(routePutMeta.md5).toLowerCase() && cached.size == routePutMeta.size);
                         var respMeta = {
-                            "type": "blob",
+                            "type": "response",
+                            "response": "blobCheck",
                             "ref": routePutMeta.msgId,
                             "name": routePutMeta.name,
                             "md5": routePutMeta.md5,
@@ -876,13 +864,15 @@ class RouteputConnection
         });
     }
 
-    // Send a blob preceded by a "do you already have it?" query. If the remote replies
-    // state=have we skip chunk transmission; on state=need we send the chunks.
+    // Send a blob preceded by a "do you already have it?" blobCheck request to the
+    // server. If the server replies state=have we skip chunk transmission; on
+    // state=need we send the chunks.
     _sendBlobWithCheck(opts)
     {
         var queryMsgId = randomId();
         var meta = {
-            "type": "blob",
+            "type": "request",
+            "request": "blobCheck",
             "msgId": queryMsgId,
             "name": opts.name,
             "md5": opts.md5,
@@ -897,7 +887,7 @@ class RouteputConnection
             "resolve": (respMeta) => {
                 if (respMeta && respMeta.state == "have")
                 {
-                    if (self.debug) console.log("Routeput blob '" + opts.name + "' already on remote, skipping chunks.");
+                    if (self.debug) console.log("Routeput blob '" + opts.name + "' already on server, skipping chunks.");
                     opts.resolve({ "name": opts.name, "context": opts.context, "cached": true, "exists": true });
                 }
                 else

@@ -307,11 +307,18 @@ public class RoutePutClient implements RoutePutSession, Runnable
             {
                 j.getRoutePutChannel().mergeProperties(j.getRoutePutMeta().optJSONObject("channelProperties"));
             }
+            else if ("blobCheck".equals(j.getResponse()))
+            {
+                BLOBManager.handleBlobCheckResponse(this, j);
+            }
         } else if (j.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE)) {
             RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(j);
             rppcm.processUpdates(this);
         } else if (j.isType(RoutePutMessage.TYPE_REQUEST)) {
-
+            if ("blobCheck".equals(j.getRequest()))
+            {
+                BLOBManager.handleBlobCheckRequest(this, j);
+            }
         } else if (j.isType(RoutePutMessage.TYPE_PONG)) {
             // do nada, just receive
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {

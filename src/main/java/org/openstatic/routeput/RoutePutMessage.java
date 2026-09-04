@@ -18,6 +18,8 @@ public class RoutePutMessage extends JSONObject
 
     // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
     public static final String TYPE_BLOB = "blob";
+
+    // for notifying about property changes within the network
     public static final String TYPE_PROPERTY_CHANGE = "propertyChange";
 
     // For sending midi messages over routeput

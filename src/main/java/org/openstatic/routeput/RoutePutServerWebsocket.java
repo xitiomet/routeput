@@ -152,6 +152,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
             } else if (rpm.has("name")) {
                 BLOBManager.fetchBlob(this, jo);
             }
+        } else if (routeputCommand.equals("blobCheck")) {
+            BLOBManager.handleBlobCheckRequest(this, jo);
         } else if (routeputCommand.equals("blobInfo")) {
             String name = rpm.optString("name", "");
             String context = rpm.optString("context");
@@ -240,7 +242,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
                         if (jo.isType(RoutePutMessage.TYPE_REQUEST)) {
                             handleRequest(jo);
                         } else if (jo.isType(RoutePutMessage.TYPE_RESPONSE)) {
-                            // Ignore this
+                            if ("blobCheck".equals(jo.getResponse())) {
+                                BLOBManager.handleBlobCheckResponse(this, jo);
+                            }
                         } else if (jo.isType(RoutePutMessage.TYPE_PING)) {
                             RoutePutMessage resp = new RoutePutMessage();
                             resp.setType("pong");
@@ -260,9 +264,12 @@ public class RoutePutServerWebsocket implements RoutePutSession
                                     rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
                                 }
                             }
+                        } else if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                            // Blobs never broadcast — server is the sole storage/distributor
+                            // and will re-emit chunks to other members after saving.
                         } else if (jo.hasChannel()) {
                             this.handleMessage(jo);
-                        } else if (!jo.isType(RoutePutMessage.TYPE_BLOB)) {
+                        } else {
                             RoutePutServer.logWarning("Lost Message " + jo.toString());
                         }
                     } else if (sourceId != null) {
