@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.security.MessageDigest;
 import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.jetty.http.MimeTypes;
 import org.json.JSONObject;
@@ -13,8 +14,14 @@ public class BLOBManager
 {
     private static HashMap<String, StringBuffer> blobStorage;
     private static HashMap<String, PendingBlobSend> pendingSends = new HashMap<String, PendingBlobSend>();
+    // Futures awaiting completion of a blob fetch we initiated, keyed by request msgId.
+    private static HashMap<String, CompletableFuture<BLOBFile>> pendingFetches = new HashMap<String, CompletableFuture<BLOBFile>>();
     private static File blobRoot;
     public static JSONObject settings = new JSONObject();
+    // True when the current init came from initClient() (temp dir); a later explicit
+    // init(settings) with non-null settings will replace it. Once a non-provisional
+    // init has run, subsequent init() calls are ignored.
+    private static boolean provisional = false;
 
     private static class PendingBlobSend
     {
@@ -76,25 +83,62 @@ public class BLOBManager
 
     public static void init(JSONObject settings)
     {
-        if (settings != null)
+        if (settings != null && (!isInitialized() || provisional))
         {
             BLOBManager.settings = settings;
-            if (BLOBManager.blobRoot == null)
+            BLOBManager.blobRoot = new File(BLOBManager.settings.optString("blobStorageRoot", "./blob/"));
+            if (!BLOBManager.blobRoot.exists())
             {
-                BLOBManager.blobRoot = new File(BLOBManager.settings.optString("blobStorageRoot", "./blob/"));
-                if (!BLOBManager.blobRoot.exists())
-                {
-                    BLOBManager.blobRoot.mkdir();
-                }
-                // 30 days default; caller can override with "blobStorageTimeout" in seconds.
-                long timeoutSecs = BLOBManager.settings.optLong("blobStorageTimeout", 30L * 24L * 60L * 60L);
-                sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
+                BLOBManager.blobRoot.mkdir();
             }
+            // 30 days default; caller can override with "blobStorageTimeout" in seconds.
+            long timeoutSecs = BLOBManager.settings.optLong("blobStorageTimeout", 30L * 24L * 60L * 60L);
+            sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
+            provisional = false;
         }
         if (BLOBManager.blobStorage == null)
         {
             BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
         }
+    }
+
+    // Bring up BLOBManager for a standalone RoutePutClient with a JVM temp directory
+    // that is recursively deleted on shutdown. No-op when a previous init already ran;
+    // an explicit init(settings) after this replaces the provisional temp root.
+    public static void initClient()
+    {
+        if (isInitialized()) return;
+        try
+        {
+            java.nio.file.Path tempPath = java.nio.file.Files.createTempDirectory("routeput-blob-");
+            final File temp = tempPath.toFile();
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursive(temp)));
+            BLOBManager.settings = new JSONObject();
+            BLOBManager.settings.put("blobStorageRoot", temp.getAbsolutePath());
+            BLOBManager.blobRoot = temp;
+            BLOBManager.provisional = true;
+            if (BLOBManager.blobStorage == null)
+            {
+                BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
+            }
+        } catch (Exception e) {
+            RoutePutServer.logError(e);
+        }
+    }
+
+    // Best-effort recursive delete used by the client temp-dir shutdown hook.
+    private static void deleteRecursive(File f)
+    {
+        if (f == null || !f.exists()) return;
+        if (f.isDirectory())
+        {
+            File[] children = f.listFiles();
+            if (children != null)
+            {
+                for (File c : children) deleteRecursive(c);
+            }
+        }
+        f.delete();
     }
 
     // Delete any regular files under root whose lastModified is older than timeoutSecs.
@@ -132,6 +176,26 @@ public class BLOBManager
         // Client libraries that never opted in to blob storage should ignore chunk data.
         if (!BLOBManager.isInitialized()) return;
         JSONObject rpm = jo.getRoutePutMeta();
+
+        // Non-chunk TYPE_BLOB messages (server ack for cached-remote or exists=false)
+        // may reference a requestBlob() we initiated — resolve/reject the pending future.
+        if (!jo.hasMetaField("i") && rpm.has("ref"))
+        {
+            String ref = rpm.optString("ref", null);
+            boolean exists = rpm.optBoolean("exists", true);
+            if (!exists)
+            {
+                completePendingFetch(ref, null, new java.util.NoSuchElementException("blob does not exist"));
+                return;
+            }
+            if (rpm.optBoolean("cached", false))
+            {
+                String ctx = rpm.optString("context", null);
+                String nm = rpm.optString("name", "");
+                completePendingFetch(ref, resolveBlob(ctx, nm), null);
+                return;
+            }
+        }
 
         // Only chunk data flows through TYPE_BLOB now; the have/need negotiation lives on
         // request/response messages (see handleBlobCheckRequest / handleBlobCheckResponse).
@@ -182,6 +246,12 @@ public class BLOBManager
                         resp.setChannel(jo.getRoutePutChannel());
                     }
                     session.send(resp);
+
+                    // If this was the final chunk of a fetch we started, resolve it.
+                    if (rpm.has("ref"))
+                    {
+                        completePendingFetch(rpm.optString("ref", null), blobFile, null);
+                    }
 
                     // Server is the sole distributor: push the new blob to every other
                     // channel member. Each push does its own have/need handshake.
@@ -349,6 +419,50 @@ public class BLOBManager
             return blobFile.exists();
         }
         return false;
+    }
+
+    // Ask the given session (typically a RoutePutClient's connection to the server) to
+    // send us a blob. Mirrors routeput.js `channel.getBlob(name)` semantics: emits a
+    // `type:request, request:"blob"` and returns a future that completes when the last
+    // chunk lands, or when the remote reports the blob as cached / missing.
+    public static CompletableFuture<BLOBFile> requestBlob(RoutePutSession session, RoutePutChannel channel, String context, String name)
+    {
+        CompletableFuture<BLOBFile> future = new CompletableFuture<BLOBFile>();
+        if (!BLOBManager.isInitialized())
+        {
+            future.completeExceptionally(new IllegalStateException("BLOBManager not initialized; call BLOBManager.init(settings) before requestBlob()"));
+            return future;
+        }
+        if (session == null)
+        {
+            future.completeExceptionally(new IllegalArgumentException("session is null"));
+            return future;
+        }
+        RoutePutMessage req = new RoutePutMessage();
+        req.setRequest("blob");
+        req.setMetaField("name", name);
+        if (context != null) req.setMetaField("context", context);
+        if (channel != null) req.setChannel(channel);
+        synchronized (BLOBManager.pendingFetches)
+        {
+            BLOBManager.pendingFetches.put(req.getMessageId(), future);
+        }
+        session.send(req);
+        return future;
+    }
+
+    // Resolve or reject a pending requestBlob() future keyed by the original msgId.
+    private static void completePendingFetch(String ref, BLOBFile file, Throwable error)
+    {
+        if (ref == null) return;
+        CompletableFuture<BLOBFile> future;
+        synchronized (BLOBManager.pendingFetches)
+        {
+            future = BLOBManager.pendingFetches.remove(ref);
+        }
+        if (future == null) return;
+        if (error != null) future.completeExceptionally(error);
+        else future.complete(file);
     }
 
     public static void fetchBlob(RoutePutSession session, RoutePutMessage request)

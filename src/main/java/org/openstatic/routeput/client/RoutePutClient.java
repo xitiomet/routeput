@@ -6,6 +6,7 @@ import java.util.concurrent.Future;
 import java.util.Collection;
 
 import org.openstatic.routeput.BLOBManager;
+import org.openstatic.routeput.BLOBFile;
 import org.openstatic.routeput.RoutePutChannel;
 import org.openstatic.routeput.RoutePutMessage;
 import org.openstatic.routeput.RoutePutSession;
@@ -66,6 +67,9 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.collector = false;
         this.stayConnected = true;
         this.properties = new JSONObject();
+        // Ensure blob storage is up so incoming chunks are actually kept; no-op if a
+        // RoutePutServer in the same JVM already initialized with its own settings.
+        BLOBManager.initClient();
         if (channel != null && defaultChannelPassword != null && !defaultChannelPassword.isEmpty())
         {
             this.channelPasswords.put(channel.getName(), defaultChannelPassword);
@@ -399,6 +403,24 @@ public class RoutePutClient implements RoutePutSession, Runnable
         subscribeMessage.setMetaField("connected", false);
         subscribeMessage.setMetaField("properties", this.getProperties());
         this.transmit(subscribeMessage);
+    }
+
+    // Java equivalent of routeput.js `channel.getBlob(name)`. Requires the caller to
+    // have opted in with BLOBManager.init(settings) so incoming chunks are stored.
+    public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(RoutePutChannel channel, String name)
+    {
+        String context = (channel != null) ? ("channel." + channel.getName()) : null;
+        return BLOBManager.requestBlob(this, channel, context, name);
+    }
+
+    public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(String name)
+    {
+        return this.requestBlob(this.getDefaultChannel(), name);
+    }
+
+    public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(String context, String name)
+    {
+        return BLOBManager.requestBlob(this, this.getDefaultChannel(), context, name);
     }
 
     // Remember a password so it will be attached to the next handshake or subscribe
