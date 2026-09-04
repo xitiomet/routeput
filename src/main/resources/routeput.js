@@ -57,6 +57,146 @@ function chunkSubstr(str, size)
   return chunks
 }
 
+// MD5 (public domain, Joseph Myers) — operates on a Uint8Array, returns lowercase hex.
+function md5Bytes(bytes)
+{
+    function add32(a, b) { return (a + b) & 0xFFFFFFFF; }
+    function cmn(q, a, b, x, s, t) {
+        a = add32(add32(a, q), add32(x, t));
+        return add32((a << s) | (a >>> (32 - s)), b);
+    }
+    function ff(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); }
+    function gg(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); }
+    function hh(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); }
+    function ii(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); }
+    function md5cycle(x, k) {
+        var a = x[0], b = x[1], c = x[2], d = x[3];
+        a = ff(a, b, c, d, k[0], 7, -680876936);
+        d = ff(d, a, b, c, k[1], 12, -389564586);
+        c = ff(c, d, a, b, k[2], 17, 606105819);
+        b = ff(b, c, d, a, k[3], 22, -1044525330);
+        a = ff(a, b, c, d, k[4], 7, -176418897);
+        d = ff(d, a, b, c, k[5], 12, 1200080426);
+        c = ff(c, d, a, b, k[6], 17, -1473231341);
+        b = ff(b, c, d, a, k[7], 22, -45705983);
+        a = ff(a, b, c, d, k[8], 7, 1770035416);
+        d = ff(d, a, b, c, k[9], 12, -1958414417);
+        c = ff(c, d, a, b, k[10], 17, -42063);
+        b = ff(b, c, d, a, k[11], 22, -1990404162);
+        a = ff(a, b, c, d, k[12], 7, 1804603682);
+        d = ff(d, a, b, c, k[13], 12, -40341101);
+        c = ff(c, d, a, b, k[14], 17, -1502002290);
+        b = ff(b, c, d, a, k[15], 22, 1236535329);
+        a = gg(a, b, c, d, k[1], 5, -165796510);
+        d = gg(d, a, b, c, k[6], 9, -1069501632);
+        c = gg(c, d, a, b, k[11], 14, 643717713);
+        b = gg(b, c, d, a, k[0], 20, -373897302);
+        a = gg(a, b, c, d, k[5], 5, -701558691);
+        d = gg(d, a, b, c, k[10], 9, 38016083);
+        c = gg(c, d, a, b, k[15], 14, -660478335);
+        b = gg(b, c, d, a, k[4], 20, -405537848);
+        a = gg(a, b, c, d, k[9], 5, 568446438);
+        d = gg(d, a, b, c, k[14], 9, -1019803690);
+        c = gg(c, d, a, b, k[3], 14, -187363961);
+        b = gg(b, c, d, a, k[8], 20, 1163531501);
+        a = gg(a, b, c, d, k[13], 5, -1444681467);
+        d = gg(d, a, b, c, k[2], 9, -51403784);
+        c = gg(c, d, a, b, k[7], 14, 1735328473);
+        b = gg(b, c, d, a, k[12], 20, -1926607734);
+        a = hh(a, b, c, d, k[5], 4, -378558);
+        d = hh(d, a, b, c, k[8], 11, -2022574463);
+        c = hh(c, d, a, b, k[11], 16, 1839030562);
+        b = hh(b, c, d, a, k[14], 23, -35309556);
+        a = hh(a, b, c, d, k[1], 4, -1530992060);
+        d = hh(d, a, b, c, k[4], 11, 1272893353);
+        c = hh(c, d, a, b, k[7], 16, -155497632);
+        b = hh(b, c, d, a, k[10], 23, -1094730640);
+        a = hh(a, b, c, d, k[13], 4, 681279174);
+        d = hh(d, a, b, c, k[0], 11, -358537222);
+        c = hh(c, d, a, b, k[3], 16, -722521979);
+        b = hh(b, c, d, a, k[6], 23, 76029189);
+        a = hh(a, b, c, d, k[9], 4, -640364487);
+        d = hh(d, a, b, c, k[12], 11, -421815835);
+        c = hh(c, d, a, b, k[15], 16, 530742520);
+        b = hh(b, c, d, a, k[2], 23, -995338651);
+        a = ii(a, b, c, d, k[0], 6, -198630844);
+        d = ii(d, a, b, c, k[7], 10, 1126891415);
+        c = ii(c, d, a, b, k[14], 15, -1416354905);
+        b = ii(b, c, d, a, k[5], 21, -57434055);
+        a = ii(a, b, c, d, k[12], 6, 1700485571);
+        d = ii(d, a, b, c, k[3], 10, -1894986606);
+        c = ii(c, d, a, b, k[10], 15, -1051523);
+        b = ii(b, c, d, a, k[1], 21, -2054922799);
+        a = ii(a, b, c, d, k[8], 6, 1873313359);
+        d = ii(d, a, b, c, k[15], 10, -30611744);
+        c = ii(c, d, a, b, k[6], 15, -1560198380);
+        b = ii(b, c, d, a, k[13], 21, 1309151649);
+        a = ii(a, b, c, d, k[4], 6, -145523070);
+        d = ii(d, a, b, c, k[11], 10, -1120210379);
+        c = ii(c, d, a, b, k[2], 15, 718787259);
+        b = ii(b, c, d, a, k[9], 21, -343485551);
+        x[0] = add32(a, x[0]);
+        x[1] = add32(b, x[1]);
+        x[2] = add32(c, x[2]);
+        x[3] = add32(d, x[3]);
+    }
+    function md5blk(bytes, offset) {
+        var blk = new Array(16);
+        for (var i = 0; i < 16; i++) {
+            blk[i] = bytes[offset + i*4]
+                   | (bytes[offset + i*4 + 1] << 8)
+                   | (bytes[offset + i*4 + 2] << 16)
+                   | (bytes[offset + i*4 + 3] << 24);
+        }
+        return blk;
+    }
+    var n = bytes.length;
+    var state = [1732584193, -271733879, -1732584194, 271733878];
+    var i;
+    for (i = 64; i <= n; i += 64) {
+        md5cycle(state, md5blk(bytes, i - 64));
+    }
+    var tail = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0];
+    var tailStart = i - 64;
+    var remaining = n - tailStart;
+    for (var j = 0; j < remaining; j++) {
+        tail[j >> 2] |= bytes[tailStart + j] << ((j & 3) << 3);
+    }
+    tail[remaining >> 2] |= 0x80 << ((remaining & 3) << 3);
+    if (remaining > 55) {
+        md5cycle(state, tail);
+        for (var k = 0; k < 16; k++) tail[k] = 0;
+    }
+    // 64-bit length in bits; safe for practical sizes.
+    tail[14] = n * 8;
+    md5cycle(state, tail);
+    var hexChars = '0123456789abcdef';
+    var result = '';
+    for (var wi = 0; wi < 4; wi++) {
+        var v = state[wi];
+        for (var bi = 0; bi < 4; bi++) {
+            var b = (v >> (bi*8)) & 0xFF;
+            result += hexChars[(b >> 4) & 0xF] + hexChars[b & 0xF];
+        }
+    }
+    return result;
+}
+
+// Compute md5 of a Blob asynchronously (returns Promise<string>).
+function md5OfBlob(blob)
+{
+    return blob.arrayBuffer().then((buf) => md5Bytes(new Uint8Array(buf)));
+}
+
+// Decode the base64 payload of a data URI into a Uint8Array.
+function dataURIToBytes(dataURI)
+{
+    var byteString = atob(dataURI.split(',')[1]);
+    var bytes = new Uint8Array(byteString.length);
+    for (var i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i);
+    return bytes;
+}
+
 function blobToHTML(fileName, blob)
   {
       var type = blob.type;
@@ -101,15 +241,9 @@ function getCookie(cname, defaultValue)
 
 function dataURItoBlob(dataURI)
 {
-  var byteString = atob(dataURI.split(',')[1]);
-  var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0]
-  var ab = new ArrayBuffer(byteString.length);
-  var ia = new Uint8Array(ab);
-  for (var i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-  }
-  var blob = new Blob([ab], {type: mimeString});
-  return blob;
+  var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+  var bytes = dataURIToBytes(dataURI);
+  return new Blob([bytes], {type: mimeString});
 }
 
 function getPathValue(object, path)
@@ -249,21 +383,19 @@ class RouteputChannel
             reader.onload = () => {
                 var chunks = chunkSubstr(reader.result, 4096);
                 var sz = chunks.length;
-                var outboundMessageQueue = [];
-                for (let i = 0; i < sz; i++)
-                {
-                    var ipo = i+1;
-                    var mm = {"__routeput": {"type": "blob", "channel": this.name, "name": blobName ,"i": ipo, "of": sz, "data": chunks[i]}};
-                    if (ipo == sz)
-                    {
-                        var finishMsgId = randomId();
-                        mm.__routeput['msgId'] = finishMsgId;
-                        var promHooks = {"resolve": resolve, "reject": reject, "request": mm};
-                        self.routeputConnection.requests.set(finishMsgId, promHooks);
-                    }
-                    outboundMessageQueue.push(mm);
-                }
-                self.routeputConnection.noLockTransmit(outboundMessageQueue, 0);
+                var payloadBytes = dataURIToBytes(reader.result);
+                var md5 = md5Bytes(payloadBytes);
+                var size = payloadBytes.length;
+                self.routeputConnection._sendBlobWithCheck({
+                    channel: this.name,
+                    context: null,
+                    name: blobName,
+                    md5: md5,
+                    size: size,
+                    chunks: chunks,
+                    resolve: resolve,
+                    reject: reject
+                });
             };
             reader.onerror = () => {
                 reject();
@@ -285,6 +417,7 @@ class RouteputConnection
     debug;
     channels;
     chunkBuffer;
+    blobCache;
     requests;
     connectionId;
     serverHostname;
@@ -315,6 +448,10 @@ class RouteputConnection
         this.reconnectTimeout = null;
         this.connection  = null;
         this.chunkBuffer = new Map();
+        // Cache of blobs we've received in full, keyed by "context:name" → {md5, size, blob}.
+        // Used to answer remote "do you have this blob?" queries with state=have and to
+        // resolve requestBlob() locally without a round-trip.
+        this.blobCache = new Map();
         this.properties = {};
         this.wsUrl = this.wsProtocol + '://' + this.host + '/channel/';
     }
@@ -389,7 +526,40 @@ class RouteputConnection
                     {
                         messageType = routePutMeta.type;
                     }
-                    if (messageType == "blob" && routePutMeta.hasOwnProperty("exists"))
+                    if (messageType == "blob" && routePutMeta.hasOwnProperty("state") && routePutMeta.hasOwnProperty("ref"))
+                    {
+                        // Response to a "do you have this blob?" query. Dispatch to the
+                        // pending sender so it can either transmit chunks or skip.
+                        if (this.requests.has(routePutMeta.ref))
+                        {
+                            var promHooks = this.requests.get(routePutMeta.ref);
+                            this.requests.delete(routePutMeta.ref);
+                            promHooks.resolve(routePutMeta);
+                        }
+                    }
+                    else if (messageType == "blob" && routePutMeta.hasOwnProperty("md5")
+                             && routePutMeta.hasOwnProperty("size") && routePutMeta.hasOwnProperty("name")
+                             && !routePutMeta.hasOwnProperty("i") && !routePutMeta.hasOwnProperty("data")
+                             && !routePutMeta.hasOwnProperty("state"))
+                    {
+                        // Query from remote asking if we already have this blob.
+                        var qContext = routePutMeta.hasOwnProperty('context') ? routePutMeta.context : '';
+                        var cacheKey = qContext + ":" + routePutMeta.name;
+                        var cached = this.blobCache.get(cacheKey);
+                        var have = !!(cached && cached.md5 && cached.md5.toLowerCase() === String(routePutMeta.md5).toLowerCase() && cached.size == routePutMeta.size);
+                        var respMeta = {
+                            "type": "blob",
+                            "ref": routePutMeta.msgId,
+                            "name": routePutMeta.name,
+                            "md5": routePutMeta.md5,
+                            "size": routePutMeta.size,
+                            "state": have ? "have" : "need"
+                        };
+                        if (routePutMeta.hasOwnProperty('context')) respMeta.context = routePutMeta.context;
+                        if (routePutMeta.hasOwnProperty('channel')) respMeta.channel = routePutMeta.channel;
+                        this.transmit({ "__routeput": respMeta });
+                    }
+                    else if (messageType == "blob" && routePutMeta.hasOwnProperty("exists"))
                     {
                         // Server just wants to tell us the file doesnt exist, lets check for a request and reject the promise
                         if (!routePutMeta.exists)
@@ -429,8 +599,13 @@ class RouteputConnection
                         } else if (routePutMeta.i == routePutMeta.of) {
                             // Final chunk of file
                             this.chunkBuffer[chunkBufferKey] += routePutMeta.data;
-                            var blob = dataURItoBlob(this.chunkBuffer[chunkBufferKey]);
+                            var assembled = this.chunkBuffer[chunkBufferKey];
+                            var assembledBytes = dataURIToBytes(assembled);
+                            var blob = dataURItoBlob(assembled);
                             this.chunkBuffer.delete(chunkBufferKey);
+                            // Remember this blob so we can answer future "do you have it?" queries
+                            // and serve local requestBlob() calls without a round-trip.
+                            this.blobCache.set(chunkBufferKey, { md5: md5Bytes(assembledBytes), size: assembledBytes.length, blob: blob });
                             if (this.onblob != undefined)
                             {
                                 this.onblob(context, routePutMeta.name, blob);
@@ -680,28 +855,83 @@ class RouteputConnection
             let reader = new FileReader();
             reader.onload = () => {
                 var chunks = chunkSubstr(reader.result, 4096);
-                var sz = chunks.length;
-                var outboundMessageQueue = [];
-                for (let i = 0; i < sz; i++)
-                {
-                    var ipo = i+1;
-                    var mm = {"__routeput": {"type": "blob", "context": context, "name": name ,"i": ipo, "of": sz, "data": chunks[i]}};
-                    if (ipo == sz)
-                    {
-                        var finishMsgId = randomId();
-                        mm.__routeput['msgId'] = finishMsgId;
-                        var promHooks = {"resolve": resolve, "reject": reject, "request": mm};
-                        this.requests.set(finishMsgId, promHooks);
-                    }
-                    outboundMessageQueue.push(mm);
-                }
-                this.noLockTransmit(outboundMessageQueue, 0);
+                var payloadBytes = dataURIToBytes(reader.result);
+                var md5 = md5Bytes(payloadBytes);
+                var size = payloadBytes.length;
+                this._sendBlobWithCheck({
+                    channel: null,
+                    context: context,
+                    name: name,
+                    md5: md5,
+                    size: size,
+                    chunks: chunks,
+                    resolve: resolve,
+                    reject: reject
+                });
             };
             reader.onerror = () => {
                 reject();
             };
             reader.readAsDataURL(blob);
         });
+    }
+
+    // Send a blob preceded by a "do you already have it?" query. If the remote replies
+    // state=have we skip chunk transmission; on state=need we send the chunks.
+    _sendBlobWithCheck(opts)
+    {
+        var queryMsgId = randomId();
+        var meta = {
+            "type": "blob",
+            "msgId": queryMsgId,
+            "name": opts.name,
+            "md5": opts.md5,
+            "size": opts.size
+        };
+        if (opts.channel != null) meta.channel = opts.channel;
+        if (opts.context != null) meta.context = opts.context;
+        var query = { "__routeput": meta };
+
+        var self = this;
+        this.requests.set(queryMsgId, {
+            "resolve": (respMeta) => {
+                if (respMeta && respMeta.state == "have")
+                {
+                    if (self.debug) console.log("Routeput blob '" + opts.name + "' already on remote, skipping chunks.");
+                    opts.resolve({ "name": opts.name, "context": opts.context, "cached": true, "exists": true });
+                }
+                else
+                {
+                    self._transmitBlobChunks(opts);
+                }
+            },
+            "reject": opts.reject,
+            "request": query
+        });
+        this.transmit(query);
+    }
+
+    _transmitBlobChunks(opts)
+    {
+        var chunks = opts.chunks;
+        var sz = chunks.length;
+        var outboundMessageQueue = [];
+        for (let i = 0; i < sz; i++)
+        {
+            var ipo = i+1;
+            var mm = { "__routeput": { "type": "blob", "name": opts.name, "i": ipo, "of": sz, "data": chunks[i] } };
+            if (opts.channel != null) mm.__routeput.channel = opts.channel;
+            if (opts.context != null) mm.__routeput.context = opts.context;
+            if (ipo == sz)
+            {
+                var finishMsgId = randomId();
+                mm.__routeput['msgId'] = finishMsgId;
+                var promHooks = { "resolve": opts.resolve, "reject": opts.reject, "request": mm };
+                this.requests.set(finishMsgId, promHooks);
+            }
+            outboundMessageQueue.push(mm);
+        }
+        this.noLockTransmit(outboundMessageQueue, 0);
     }
 
     setProperty(k, v)
@@ -746,6 +976,13 @@ class RouteputConnection
 
     requestBlob(context, name)
     {
+        var cacheKey = (context != null ? context : '') + ":" + name;
+        var cached = this.blobCache.get(cacheKey);
+        if (cached && cached.blob)
+        {
+            if (this.debug) console.log("Routeput requestBlob '" + name + "' served from local cache.");
+            return Promise.resolve(cached.blob);
+        }
         var mm = {"__routeput": {"msgId": randomId(), "type": "request", "request": "blob", "name": name, "context": context}};
         return this.makeRequest(mm);
     }
