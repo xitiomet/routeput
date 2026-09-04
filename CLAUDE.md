@@ -19,7 +19,9 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     - `RoutePutMessage.java` — JSON envelope wrapper (`__routeput` accessors).
     - `RoutePutRemoteSession.java` — subconnection routing (via `dstId`/`srcId`).
     - `BLOBManager.java` / `BLOBFile.java` — blob storage, chunked transfer, have/need.
-    - `client/RoutePutClient.java` — Java client library.
+    - `client/RoutePutClient.java` — Java client library used for upstream/federated
+        connections. Ship any protocol change (auth, blob handshake, etc.) here at the
+        same time as the server so both sides stay in lockstep.
 - `src/main/resources/routeput.js` — browser client library (shipped from JAR + `/`).
 - `src/main/resources/*.html` — bundled UI pages.
 - `src/main/resources/META-INF/native-image/` — GraalVM reachability config.
@@ -61,6 +63,13 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     `conn.setChannelPassword(name, pw)`. `conn.subscribe(name, pw)` takes an optional
     password. `conn.onauthrequired = (channel, msg) => ...` fires when the server
     rejects with `authRequired`.
+- Java `RoutePutClient`: `new RoutePutClient(chan, uri, password)`,
+    `client.setChannelPassword(name, pw)`, or `client.subscribe(chan, pw)`. The
+    password is attached to the outgoing `connectionId` handshake and to any
+    `TYPE_CONNECTION_STATUS` subscribe message.
+- The `TYPE_CONNECTION_STATUS`-based subscribe path (used by `RoutePutClient`) is
+    also password-gated in `RoutePutChannel.onMessage`; don't add an alternate join
+    path without repeating the check.
 
 ## Blob transmission model
 

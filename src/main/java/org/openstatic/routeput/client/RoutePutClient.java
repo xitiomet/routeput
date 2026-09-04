@@ -48,8 +48,16 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private boolean collector;
     private volatile Thread keepAliveThread;
     private final AtomicBoolean connecting = new AtomicBoolean(false);
+    // Passwords keyed by channel name; used for the initial handshake and any
+    // per-channel subscribe against a password-gated channel.
+    private final java.util.HashMap<String, String> channelPasswords = new java.util.HashMap<String, String>();
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
+    {
+        this(channel, websocketUri, null);
+    }
+
+    public RoutePutClient(RoutePutChannel channel, String websocketUri, String defaultChannelPassword)
     {
         this.propertyChangeSupport = new PropertyChangeSupport(this);
         this.listeners = new Vector<RoutePutMessageListener>();
@@ -58,6 +66,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.collector = false;
         this.stayConnected = true;
         this.properties = new JSONObject();
+        if (channel != null && defaultChannelPassword != null && !defaultChannelPassword.isEmpty())
+        {
+            this.channelPasswords.put(channel.getName(), defaultChannelPassword);
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread() 
         { 
@@ -360,11 +372,22 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void subscribe(RoutePutChannel channel)
     {
+        this.subscribe(channel, null);
+    }
+
+    public void subscribe(RoutePutChannel channel, String password)
+    {
+        if (password != null && !password.isEmpty())
+        {
+            this.channelPasswords.put(channel.getName(), password);
+        }
         RoutePutMessage subscribeMessage = new RoutePutMessage();
         subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
         subscribeMessage.setChannel(channel);
         subscribeMessage.setMetaField("connected",true);
         subscribeMessage.setMetaField("properties", this.getProperties());
+        String pw = this.channelPasswords.get(channel.getName());
+        if (pw != null) subscribeMessage.setMetaField("password", pw);
         this.transmit(subscribeMessage);
     }
 
@@ -376,6 +399,14 @@ public class RoutePutClient implements RoutePutSession, Runnable
         subscribeMessage.setMetaField("connected", false);
         subscribeMessage.setMetaField("properties", this.getProperties());
         this.transmit(subscribeMessage);
+    }
+
+    // Remember a password so it will be attached to the next handshake or subscribe
+    // targeting the given channel.
+    public void setChannelPassword(String channelName, String password)
+    {
+        if (password == null || password.isEmpty()) this.channelPasswords.remove(channelName);
+        else this.channelPasswords.put(channelName, password);
     }
 
     public void addMessageListener(RoutePutMessageListener r) 
@@ -436,6 +467,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 connectionIdMessage.setMetaField("collector", RoutePutClient.this.collector);
                 connectionIdMessage.setMetaField("channel", RoutePutClient.this.channel.getName());
                 connectionIdMessage.setMetaField("properties", RoutePutClient.this.properties);
+                String pw = RoutePutClient.this.channelPasswords.get(RoutePutClient.this.channel.getName());
+                if (pw != null) connectionIdMessage.setMetaField("password", pw);
                 RoutePutClient.this.send(connectionIdMessage);
             } else {
                 // System.err.println("Not an instance of WebSocketSession");

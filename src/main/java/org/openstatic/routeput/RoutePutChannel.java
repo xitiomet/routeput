@@ -617,6 +617,17 @@ public class RoutePutChannel implements RoutePutMessageListener
                     boolean c = j.getRoutePutMeta().optBoolean("connected", false);
                     if (c)
                     {
+                        if (this.hasPassword() && !this.checkPassword(j.getRoutePutMeta().optString("password", null)))
+                        {
+                            RoutePutMessage errorMsg = new RoutePutMessage();
+                            errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
+                            errorMsg.setRef(j);
+                            errorMsg.setMetaField("authRequired", true);
+                            errorMsg.setMetaField("channel", this.getName());
+                            errorMsg.put("text", "Channel \"" + this.getName() + "\" requires a password");
+                            session.send(errorMsg);
+                            return;
+                        }
                         this.addMember(session);
                     } else {
                         this.removeMember(session);
