@@ -436,6 +436,9 @@ class RouteputConnection
     onpropertychange;
     onauthrequired;
     channelPasswords;
+    // Set when the server rejects our handshake with authRequired; suppresses the
+    // auto-reconnect in onclose so we don't hammer the server until the user retries.
+    authBlocked;
     
     constructor(channelName, channelPassword)
     {
@@ -503,6 +506,8 @@ class RouteputConnection
     {   
         try
         {
+            this.authBlocked = false;
+            if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
                 console.log("Routeput connected - " + this.wsUrl);
@@ -784,9 +789,12 @@ class RouteputConnection
                         var channel = this.getChannel(routePutMeta.channel);
                         var member = channel.members.get(srcId);
                         if (messageType == "error") {
-                            if (routePutMeta.authRequired && this.onauthrequired)
+                            if (routePutMeta.authRequired)
                             {
-                                this.onauthrequired(routePutMeta.channel || (channel && channel.name), jsonObject.text);
+                                this.authBlocked = true;
+                                if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
+                                try { this.connection.close(); } catch (e) {}
+                                if (this.onauthrequired) this.onauthrequired(routePutMeta.channel || (channel && channel.name), jsonObject.text);
                             }
                             if (routePutMeta.hasOwnProperty('ref'))
                             {
@@ -839,6 +847,7 @@ class RouteputConnection
             };
             
             this.connection.onclose = () => {
+              if (this.authBlocked) return;
               this.reconnectTimeout = setTimeout(() => { this.connect() }, 3000);
             };
         } catch (err) {

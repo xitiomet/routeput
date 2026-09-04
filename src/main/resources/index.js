@@ -52,6 +52,7 @@ function showAdminAuthModal(message)
 {
     var modal = document.getElementById('adminAuthModal');
     if (!modal) return;
+    var wasVisible = modal.style.display === 'flex';
     modal.style.display = 'flex';
     var err = document.getElementById('adminAuthError');
     if (message)
@@ -61,9 +62,14 @@ function showAdminAuthModal(message)
     } else {
         err.style.display = 'none';
     }
-    var input = document.getElementById('adminAuthInput');
-    input.value = '';
-    input.focus();
+    // Only reset the input the first time the modal opens; otherwise we'd wipe
+    // what the user is currently typing on every retry.
+    if (!wasVisible)
+    {
+        var input = document.getElementById('adminAuthInput');
+        input.value = '';
+        input.focus();
+    }
 }
 
 function hideAdminAuthModal()
@@ -74,7 +80,6 @@ function hideAdminAuthModal()
 
 routeput.onauthrequired = function(channel, text) {
     sessionStorage.removeItem("routeputAdminPassword");
-    if (routeput.connection) try { routeput.connection.close(); } catch (e) {}
     showAdminAuthModal(text || "Admin password required.");
 };
 
