@@ -105,8 +105,17 @@ public class RoutePutServer implements Runnable
         }
 
         this.routeputDebug = RoutePutChannel.getChannel("routeputDebug");
-        this.routeputDebug.mergeProperties(this.settings);
+        // Don't leak secrets into the debug channel's public properties.
+        JSONObject debugSettings = new JSONObject(this.settings.toString());
+        debugSettings.remove("adminPassword");
+        this.routeputDebug.mergeProperties(debugSettings);
         this.routeputDebug.setPermanent(true);
+        // If an admin password is configured, gate access to the routeputDebug channel.
+        String adminPassword = this.settings.optString("adminPassword", null);
+        if (adminPassword != null && !adminPassword.isEmpty())
+        {
+            this.routeputDebug.setChannelPassword(adminPassword);
+        }
         this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
 
             @Override

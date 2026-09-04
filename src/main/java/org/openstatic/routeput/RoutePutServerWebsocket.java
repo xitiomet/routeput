@@ -68,6 +68,17 @@ public class RoutePutServerWebsocket implements RoutePutSession
         JSONObject rpm = jo.getRoutePutMeta();
         if (routeputCommand.equals("subscribe")) {
             RoutePutChannel chan = RoutePutChannel.getChannel(rpm.optString("channel", null));
+            if (chan.hasPassword() && !chan.checkPassword(rpm.optString("password", null)))
+            {
+                RoutePutMessage errorMsg = new RoutePutMessage();
+                errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
+                errorMsg.setRef(jo);
+                errorMsg.setMetaField("authRequired", true);
+                errorMsg.setMetaField("channel", chan.getName());
+                errorMsg.put("text", "Channel \"" + chan.getName() + "\" requires a password");
+                this.send(errorMsg);
+                return;
+            }
             this.addChannel(chan.getName());
             RoutePutMessage resp = new RoutePutMessage();
             resp.setResponse("subscribe", jo);
@@ -284,6 +295,19 @@ public class RoutePutServerWebsocket implements RoutePutSession
                     JSONObject rpm = jo.getRoutePutMeta();
                     this.connectionId = rpm.optString("connectionId", null);
                     this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
+                    if (this.defaultChannel.hasPassword()
+                        && !this.defaultChannel.checkPassword(rpm.optString("password", null)))
+                    {
+                        RoutePutMessage errorMsg = new RoutePutMessage();
+                        errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
+                        errorMsg.setRef(jo);
+                        errorMsg.setMetaField("authRequired", true);
+                        errorMsg.setMetaField("channel", this.defaultChannel.getName());
+                        errorMsg.put("text", "Channel \"" + this.defaultChannel.getName() + "\" requires a password");
+                        this.send(errorMsg);
+                        if (this.websocketSession != null) this.websocketSession.close();
+                        return;
+                    }
                     if (rpm.has("properties")) {
                         this.mergeProperties(rpm.optJSONObject("properties"));
                     }
@@ -392,7 +416,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
             this.websocketSession = (WebSocketSession) session;
             // System.out.println(this.websocketSession.getRemoteAddress().getHostString() +
             // " connected!");
-            if (this.defaultChannel != null) {
+            // If the channel is password-gated we defer finishHandshake() until the
+            // client's CONNECTION_ID message arrives with a password we can check.
+            if (this.defaultChannel != null && !this.defaultChannel.hasPassword()) {
                 finishHandshake();
             }
         }

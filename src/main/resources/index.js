@@ -45,8 +45,38 @@ function blobToHTML(fileName, blob)
     }
 }
 
-var routeput = new RouteputConnection("routeputDebug");
+var routeput = new RouteputConnection("routeputDebug", sessionStorage.getItem("routeputAdminPassword") || undefined);
 //routeput.debug = true;
+
+function showAdminAuthModal(message)
+{
+    var modal = document.getElementById('adminAuthModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    var err = document.getElementById('adminAuthError');
+    if (message)
+    {
+        err.textContent = message;
+        err.style.display = 'block';
+    } else {
+        err.style.display = 'none';
+    }
+    var input = document.getElementById('adminAuthInput');
+    input.value = '';
+    input.focus();
+}
+
+function hideAdminAuthModal()
+{
+    var modal = document.getElementById('adminAuthModal');
+    if (modal) modal.style.display = 'none';
+}
+
+routeput.onauthrequired = function(channel, text) {
+    sessionStorage.removeItem("routeputAdminPassword");
+    if (routeput.connection) try { routeput.connection.close(); } catch (e) {}
+    showAdminAuthModal(text || "Admin password required.");
+};
 
 routeput.onblob = function(name, blob) {
     logIt(blobToHTML(name, blob));
@@ -113,9 +143,22 @@ routeput.onmessage = function (member, messageType, jsonObject) {
 
 routeput.onconnect = function() {
     document.getElementById('serverTitle').innerHTML = "Routeput Server " + capitalize(routeput.serverHostname);
+    hideAdminAuthModal();
 }
 
 window.onload = function() {
+    var submitBtn = document.getElementById('adminAuthSubmit');
+    var input = document.getElementById('adminAuthInput');
+    var submit = function() {
+        var pw = input.value;
+        if (!pw) return;
+        sessionStorage.setItem("routeputAdminPassword", pw);
+        routeput.setChannelPassword("routeputDebug", pw);
+        hideAdminAuthModal();
+        routeput.connect();
+    };
+    if (submitBtn) submitBtn.addEventListener('click', submit);
+    if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     routeput.connect();
 };
 

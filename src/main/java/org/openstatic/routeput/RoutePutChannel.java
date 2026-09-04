@@ -37,6 +37,9 @@ public class RoutePutChannel implements RoutePutMessageListener
     private int pingAvg;
     private ArrayList<RoutePutChannelListener> listeners;
     private ArrayList<RoutePutMessageListener> messageListeners;
+    // Password required to subscribe to this channel. Null/empty = open channel.
+    // Stored outside `properties` so it is never broadcast to clients.
+    private String channelPassword;
 
     private int msgTxPerSecond;
     private int msgRxPerSecond;
@@ -808,6 +811,27 @@ public class RoutePutChannel implements RoutePutMessageListener
     public JSONObject getProperties()
     {
         return this.properties;
+    }
+
+    public void setChannelPassword(String password)
+    {
+        if (password == null || password.isEmpty())
+        {
+            this.channelPassword = null;
+        } else {
+            this.channelPassword = password;
+        }
+    }
+
+    public boolean hasPassword()
+    {
+        return this.channelPassword != null && !this.channelPassword.isEmpty();
+    }
+
+    public boolean checkPassword(String password)
+    {
+        if (!this.hasPassword()) return true;
+        return this.channelPassword.equals(password);
     }
 
     public static Collection<RoutePutChannel> getChannels()

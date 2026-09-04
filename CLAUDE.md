@@ -46,6 +46,22 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 - Message types used today: `connectionId`, `ping`/`pong`, `request`/`response`,
     `propertyChange`, `ConnectionStatus`, `blob`, `error`/`info`/`warning`.
 
+## Channel authentication
+
+- Channels can require a password. It's stored as `channelPassword` on
+    `RoutePutChannel` **outside** of `properties` so it is never broadcast to clients.
+- If `hasPassword()` is true, the server rejects both the initial handshake
+    (`type:connectionId`) and any `type:request, request:"subscribe"` unless the client
+    supplied a matching `password` field in the message's `__routeput` meta. Rejections
+    come back as `type:error` with `authRequired:true`.
+- `adminPassword` in `routeput.json` (default `""` = open) is applied at startup as
+    the `channelPassword` of the built-in `routeputDebug` channel and is stripped from
+    the settings before they are merged into that channel's public properties.
+- JS clients: `new RouteputConnection(channelName, password)` or
+    `conn.setChannelPassword(name, pw)`. `conn.subscribe(name, pw)` takes an optional
+    password. `conn.onauthrequired = (channel, msg) => ...` fires when the server
+    rejects with `authRequired`.
+
 ## Blob transmission model
 
 - The server is the **sole storage and distributor** of blobs. Clients never send blobs

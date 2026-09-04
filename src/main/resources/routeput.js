@@ -434,14 +434,19 @@ class RouteputConnection
     onblob;
     onconnect;
     onpropertychange;
+    onauthrequired;
+    channelPasswords;
     
-    constructor(channelName)
+    constructor(channelName, channelPassword)
     {
         this.host = location.host;
         this.channels = new Map();
         this.requests = new Map();
         this.defaultChannel = new RouteputChannel(channelName, this);
         this.channels.set(channelName, this.defaultChannel);
+        // Passwords keyed by channel name; sent with connectionId + subscribe payloads.
+        this.channelPasswords = new Map();
+        if (channelPassword) this.channelPasswords.set(channelName, channelPassword);
         if (this.host == undefined || this.host == "")
         {
             this.host = "openstatic.org:6144";
@@ -501,14 +506,15 @@ class RouteputConnection
             this.connection = new WebSocket(this.wsUrl);
             this.connection.onopen = () => {
                 console.log("Routeput connected - " + this.wsUrl);
-                var mm = {"__routeput": {
-                                "type": "connectionId",
-                                "channel": this.defaultChannel.name,
-                                "properties": this.properties,
-                                "connectionId": this.connectionId
-                            }
-                         };
-                this.transmit(mm);
+                var meta = {
+                    "type": "connectionId",
+                    "channel": this.defaultChannel.name,
+                    "properties": this.properties,
+                    "connectionId": this.connectionId
+                };
+                var pw = this.channelPasswords.get(this.defaultChannel.name);
+                if (pw) meta.password = pw;
+                this.transmit({"__routeput": meta});
             };
             
             this.connection.onerror = (error) => {
@@ -778,6 +784,10 @@ class RouteputConnection
                         var channel = this.getChannel(routePutMeta.channel);
                         var member = channel.members.get(srcId);
                         if (messageType == "error") {
+                            if (routePutMeta.authRequired && this.onauthrequired)
+                            {
+                                this.onauthrequired(routePutMeta.channel || (channel && channel.name), jsonObject.text);
+                            }
                             if (routePutMeta.hasOwnProperty('ref'))
                             {
                                 if (this.requests.has(routePutMeta.ref))
@@ -1080,14 +1090,32 @@ class RouteputConnection
         }
     }
     
-    subscribe(channel)
+    subscribe(channel, password)
     {
-        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": channel}});
+        var meta = {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": channel};
+        if (password)
+        {
+            this.channelPasswords.set(channel, password);
+            meta.password = password;
+        }
+        else
+        {
+            var stored = this.channelPasswords.get(channel);
+            if (stored) meta.password = stored;
+        }
+        this.transmit({"__routeput": meta});
     }
     
     unsubscribe(channel)
     {
-        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"subscribe", "channel": channel}});
+        this.transmit({"__routeput": {"msgId": randomId(), "type": "request", "request":"unsubscribe", "channel": channel}});
+    }
+
+    // Remember a password for a channel so it's applied on the next connect/subscribe.
+    setChannelPassword(channelName, password)
+    {
+        if (password) this.channelPasswords.set(channelName, password);
+        else this.channelPasswords.delete(channelName);
     }
 
     logError(text)
