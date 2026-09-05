@@ -68,7 +68,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
         JSONObject rpm = jo.getRoutePutMeta();
         if (routeputCommand.equals("subscribe")) {
             RoutePutChannel chan = RoutePutChannel.getChannel(rpm.optString("channel", null));
-            if (chan.hasPassword() && !chan.checkPassword(rpm.optString("password", null)))
+            String suppliedPw = rpm.optString("password", null);
+            chan.claimPassword(suppliedPw);
+            if (chan.hasPassword() && !chan.checkPassword(suppliedPw))
             {
                 RoutePutMessage errorMsg = new RoutePutMessage();
                 errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
@@ -295,8 +297,10 @@ public class RoutePutServerWebsocket implements RoutePutSession
                     JSONObject rpm = jo.getRoutePutMeta();
                     this.connectionId = rpm.optString("connectionId", null);
                     this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
+                    String suppliedPw = rpm.optString("password", null);
+                    this.defaultChannel.claimPassword(suppliedPw);
                     if (this.defaultChannel.hasPassword()
-                        && !this.defaultChannel.checkPassword(rpm.optString("password", null)))
+                        && !this.defaultChannel.checkPassword(suppliedPw))
                     {
                         RoutePutMessage errorMsg = new RoutePutMessage();
                         errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);

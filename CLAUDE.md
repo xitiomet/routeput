@@ -52,10 +52,19 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 
 - Channels can require a password. It's stored as `channelPassword` on
     `RoutePutChannel` **outside** of `properties` so it is never broadcast to clients.
+    The password is persisted per-channel in `channel/<name>/secureProperties.json`
+    (written by `saveSecureProperties()` whenever it changes) so a channel that
+    hibernates or the server that restarts still enforces the same password on wake.
 - If `hasPassword()` is true, the server rejects both the initial handshake
     (`type:connectionId`) and any `type:request, request:"subscribe"` unless the client
     supplied a matching `password` field in the message's `__routeput` meta. Rejections
     come back as `type:error` with `authRequired:true`.
+- Brand-new channels can be created with a password via `claimPassword(pw)`: if a
+    channel has never been persisted and has no member yet, the first `subscribe`,
+    `connectionId`, or `ConnectionStatus`-based join that includes a `password` in
+    its meta will adopt that password. Once the channel has a persisted state,
+    a stored password, or any member, `claimPassword` is a no-op — existing
+    password-less channels cannot be hijacked.
 - `adminPassword` in `routeput.json` (default `""` = open) is applied at startup as
     the `channelPassword` of the built-in `routeputDebug` channel and is stripped from
     the settings before they are merged into that channel's public properties.

@@ -110,12 +110,10 @@ public class RoutePutServer implements Runnable
         debugSettings.remove("adminPassword");
         this.routeputDebug.mergeProperties(debugSettings);
         this.routeputDebug.setPermanent(true);
-        // If an admin password is configured, gate access to the routeputDebug channel.
+        // adminPassword in routeput.json is authoritative for routeputDebug: setting it here
+        // (even to null/empty) also clears any stale password left in secureProperties.json.
         String adminPassword = this.settings.optString("adminPassword", null);
-        if (adminPassword != null && !adminPassword.isEmpty())
-        {
-            this.routeputDebug.setChannelPassword(adminPassword);
-        }
+        this.routeputDebug.setChannelPassword(adminPassword);
         this.routeputDebug.addMessageListener(new RoutePutMessageListener(){
 
             @Override

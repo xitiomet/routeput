@@ -40,6 +40,9 @@ public class RoutePutChannel implements RoutePutMessageListener
     // Password required to subscribe to this channel. Null/empty = open channel.
     // Stored outside `properties` so it is never broadcast to clients.
     private String channelPassword;
+    // True until this channel has been persisted or joined; used to decide whether
+    // an incoming password can claim ownership of a fresh channel.
+    private boolean newChannel;
 
     private int msgTxPerSecond;
     private int msgRxPerSecond;
@@ -62,13 +65,23 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.collector = null;
         this.properties = new JSONObject();
         this.unsavedProperties = false;
+        this.newChannel = true;
         File propertiesFile = this.getPropertiesFile();
         if (propertiesFile != null)
         {
             if (propertiesFile.exists())
             {
                 this.properties = RoutePutServer.loadJSONObject(propertiesFile);
+                this.newChannel = false;
             }
+        }
+        File securePropertiesFile = this.getSecurePropertiesFile();
+        if (securePropertiesFile != null && securePropertiesFile.exists())
+        {
+            JSONObject secure = RoutePutServer.loadJSONObject(securePropertiesFile);
+            String pw = secure.optString("channelPassword", null);
+            if (pw != null && !pw.isEmpty()) this.channelPassword = pw;
+            this.newChannel = false;
         }
         if (this.properties.optBoolean("log", true))
         {
@@ -151,6 +164,18 @@ public class RoutePutChannel implements RoutePutMessageListener
         {
             File channelPropertiesFile = new File(channelFolder, "properties.json");
             return channelPropertiesFile;
+        } else {
+            return null;
+        }
+    }
+
+    /* Returns a java.io.File object representing the channel's secure (never-broadcast) storage file */
+    private File getSecurePropertiesFile()
+    {
+        File channelFolder = this.getChannelFolder();
+        if (channelFolder != null)
+        {
+            return new File(channelFolder, "secureProperties.json");
         } else {
             return null;
         }
@@ -382,6 +407,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         String connectionId = session.getConnectionId();
         if (!this.members.containsKey(connectionId))
         {
+            this.newChannel = false;
             this.members.put(connectionId, session);
             RoutePutMessage jo = new RoutePutMessage();
             jo.setSourceId(connectionId);
@@ -617,7 +643,9 @@ public class RoutePutChannel implements RoutePutMessageListener
                     boolean c = j.getRoutePutMeta().optBoolean("connected", false);
                     if (c)
                     {
-                        if (this.hasPassword() && !this.checkPassword(j.getRoutePutMeta().optString("password", null)))
+                        String suppliedPw = j.getRoutePutMeta().optString("password", null);
+                        this.claimPassword(suppliedPw);
+                        if (this.hasPassword() && !this.checkPassword(suppliedPw))
                         {
                             RoutePutMessage errorMsg = new RoutePutMessage();
                             errorMsg.setType(RoutePutMessage.TYPE_LOG_ERROR);
@@ -831,6 +859,33 @@ public class RoutePutChannel implements RoutePutMessageListener
             this.channelPassword = null;
         } else {
             this.channelPassword = password;
+        }
+        this.newChannel = false;
+        this.saveSecureProperties();
+    }
+
+    /* Adopt a password only if this channel is brand-new and currently has none.
+       Used to let a subscribing client create a password-protected channel on the fly. */
+    public boolean claimPassword(String password)
+    {
+        if (password == null || password.isEmpty()) return false;
+        if (!this.newChannel) return false;
+        if (this.hasPassword()) return false;
+        this.setChannelPassword(password);
+        return true;
+    }
+
+    private void saveSecureProperties()
+    {
+        File secureFile = this.getSecurePropertiesFile();
+        if (secureFile == null) return;
+        if (this.hasPassword())
+        {
+            JSONObject secure = new JSONObject();
+            secure.put("channelPassword", this.channelPassword);
+            RoutePutServer.saveJSONObject(secureFile, secure);
+        } else if (secureFile.exists()) {
+            secureFile.delete();
         }
     }
 
