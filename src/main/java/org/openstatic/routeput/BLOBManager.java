@@ -217,6 +217,7 @@ public class BLOBManager
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " in context: " + context + " Client: " + session.getConnectionId());
                 File blobFolder = null;
                 RoutePutChannel chan = null;
                 if (context == null && jo.getRoutePutChannel() != null)
