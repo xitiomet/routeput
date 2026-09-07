@@ -87,10 +87,14 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 - Have/need negotiation uses `type: request, request: "blobCheck"` and
     `type: response, response: "blobCheck"`. The `blob` type is reserved for chunk data
     only.
-- Chunks are `type: blob` with `name`, `i`, `of`, `data`, and optional `context`. The
-    server does NOT broadcast chunks to a channel — it accumulates, saves to the
-    channel's blob folder, then re-emits chunks per member via `distributeChannelBlob`,
-    each with its own `blobCheck` handshake.
+- Chunks are `type: blob` with `name`, `i`, `of`, `data`, and optional `context`.
+    `context` describes ownership/storage only ("channel.X", a user id, or unset for the
+    root of `blobStorage`) — it never controls routing. Routing is decided by the
+    standard envelope fields: chunks with a `channel` and no `dstId` are relayed to the
+    other channel members in flight, chunks with a `dstId` go to that target only. The
+    server accumulates the same stream into the owner's folder for later
+    `getBlob`/`fetchBlob` requests. No per-recipient `blobCheck` handshake is performed
+    for the broadcast path.
 - `BLOBManager` is **opt-in**. Only a caller that invokes `BLOBManager.init(settings)`
     with a non-null `settings` receives blobs and stores them. Uninitialized processes
     (typical `RoutePutClient` library users) silently drop chunk data and answer any

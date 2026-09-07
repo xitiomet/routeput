@@ -278,8 +278,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
                                 }
                             }
                         } else if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
-                            // Blobs never broadcast — server is the sole storage/distributor
-                            // and will re-emit chunks to other members after saving.
+                            // Blob chunks are absorbed by BLOBManager (below) which relays
+                            // channel-scoped chunks to other members in flight.
                         } else if (jo.hasChannel()) {
                             this.handleMessage(jo);
                         } else {

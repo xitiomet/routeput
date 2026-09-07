@@ -206,6 +206,13 @@ public class BLOBManager
             int i = rpm.optInt("i", 0);
             int of = rpm.optInt("of", 0);
             String name = rpm.optString("name", "");
+            // Chunks with channel routing and no explicit target get relayed to the
+            // other members in flight so we don't re-negotiate per recipient. Routing
+            // is decided by the message's routing fields, not by context.
+            if (jo.hasChannel() && !jo.hasTargetId())
+            {
+                jo.getRoutePutChannel().broadcast(jo);
+            }
             StringBuffer sb;
             if (i == 1)
             {
@@ -217,12 +224,10 @@ public class BLOBManager
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
-                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " in context: " + context + " Client: " + session.getConnectionId());
                 File blobFolder = null;
-                RoutePutChannel chan = null;
                 if (context == null && jo.getRoutePutChannel() != null)
                 {
-                    chan = jo.getRoutePutChannel();
+                    RoutePutChannel chan = jo.getRoutePutChannel();
                     blobFolder = chan.getBlobFolder();
                     context = "channel." + chan.getName();
                 } else {
@@ -232,6 +237,7 @@ public class BLOBManager
                         blobFolder.mkdir();
                     }
                 }
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Context: " + context + " Client: " + session.getConnectionId());
                 if (blobFolder != null)
                 {
                     BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
@@ -253,31 +259,7 @@ public class BLOBManager
                     {
                         completePendingFetch(rpm.optString("ref", null), blobFile, null);
                     }
-
-                    // Server is the sole distributor: push the new blob to every other
-                    // channel member. Each push does its own have/need handshake.
-                    if (chan != null)
-                    {
-                        distributeChannelBlob(chan, session, name, context, blobFile);
-                    }
                 }
-            }
-        }
-    }
-
-    // Push a freshly-received channel blob to every member of the channel except the
-    // uploader. Each push independently negotiates have/need with the recipient.
-    private static void distributeChannelBlob(RoutePutChannel channel, RoutePutSession sender, String name, String context, BLOBFile blobFile)
-    {
-        for (RoutePutSession member : channel.getMembers())
-        {
-            if (member == sender) continue;
-            try
-            {
-                StringBuffer sb = blobFile.getBase64StringBuffer();
-                transmitBlobChunks(member, name, context, sb, null);
-            } catch (Exception e) {
-                RoutePutServer.logError(e);
             }
         }
     }
@@ -566,7 +548,6 @@ public class BLOBManager
     private static void sendBlobChunks(final RoutePutSession session, final String name, final String context, final StringBuffer sb, final RoutePutMessage request)
     {
         Thread x = new Thread(() -> {
-            RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"Starting blob transmission for: " + name + " in context: " + context + " Client: " + session.getConnectionId());
             int size = sb.length();
             int chunkSize = 4096;
             int numChunks = (size + chunkSize - 1) / chunkSize;
@@ -592,6 +573,7 @@ public class BLOBManager
                 mm.setMetaField("data", sb.substring(start,end));
                 session.send(mm);
             }
+            RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB transmitted: " + name + " in context: " + context + " Client: " + session.getConnectionId());
         });
         x.start();
     }
