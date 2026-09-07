@@ -17,6 +17,7 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_CONNECTION_STATUS = "ConnectionStatus";
 
     // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
+    // This message type is used for transferring large binary objects in chunks. Note that the actual data is base64-encoded within the message.
     public static final String TYPE_BLOB = "blob";
 
     // for notifying about property changes within the network
