@@ -490,6 +490,7 @@ public class BLOBManager
                 }
                 resp.setMetaField("exists", false);
                 session.send(resp);
+                RouteputServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getClientId());
             }
         } else {
             RoutePutMessage resp = new RoutePutMessage();
@@ -503,6 +504,7 @@ public class BLOBManager
             }
             resp.setMetaField("exists", false);
             session.send(resp);
+            RouteputServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getClientId());
         }
     }
 
@@ -563,6 +565,7 @@ public class BLOBManager
     private static void sendBlobChunks(final RoutePutSession session, final String name, final String context, final StringBuffer sb, final RoutePutMessage request)
     {
         Thread x = new Thread(() -> {
+            RouteputServer.log(RoutePutMessage.TYPE_LOG_INFO,"Starting blob transmission for: " + name + " in context: " + context + " Client: " + session.getClientId());
             int size = sb.length();
             int chunkSize = 4096;
             int numChunks = (size + chunkSize - 1) / chunkSize;
