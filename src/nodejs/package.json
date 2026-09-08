@@ -1,0 +1,15 @@
+{
+    "name": "routeput",
+    "version": "2.1.0",
+    "description": "Node.js client for the routeput WebSocket messaging server",
+    "main": "routeput.js",
+    "scripts": {
+        "example": "node example.js"
+    },
+    "dependencies": {
+        "ws": "^8.16.0"
+    },
+    "engines": {
+        "node": ">=14"
+    }
+}

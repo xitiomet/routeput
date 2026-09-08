@@ -19,3 +19,4 @@ __pycache__
 *.egg-info/
 dist/
 channel/
+src/nodejs/node_modules/
