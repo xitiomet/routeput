@@ -90,9 +90,11 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     public void maybeDestroy() {
-        if (RoutePutChannel.channelsWithMember(this).size() == 0) {
-            if (RoutePutRemoteSession.sessions.containsKey(this.connectionId)) {
-                RoutePutRemoteSession.sessions.remove(this.connectionId);
+        // Sync on the same monitor handleRoutedMessage uses so a concurrent inbound
+        // packet can't re-add this session to a channel between the check and remove.
+        synchronized (RoutePutRemoteSession.class) {
+            if (RoutePutChannel.channelsWithMember(this).size() == 0) {
+                RoutePutRemoteSession.sessions.remove(this.connectionId, this);
             }
         }
     }

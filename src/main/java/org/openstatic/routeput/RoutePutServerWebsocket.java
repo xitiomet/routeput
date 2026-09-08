@@ -487,8 +487,10 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private void cleanUp()
     {
         RoutePutChannel.removeFromAllChannels(this);
-        if (RoutePutServer.instance.sessions.containsKey(this.connectionId))
-            RoutePutServer.instance.sessions.remove(this.connectionId);
+        // Only drop the sessions entry if it still points at us: a reconnect with the
+        // same connectionId may have already replaced us, and blindly removing by key
+        // would orphan the live replacement session in every channel it joined.
+        RoutePutServer.instance.sessions.remove(this.connectionId, this);
     }
 
     @OnWebSocketClose
