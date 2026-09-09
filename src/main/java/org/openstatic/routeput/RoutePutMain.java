@@ -136,7 +136,6 @@ public class RoutePutMain
             if (cmd.hasOption("u"))
             {
                 String[] upstreams = cmd.getOptionValues('u');
-                if (channel == null) channel = RoutePutChannel.getChannel("*");
                 for(int i = 0; i < upstreams.length; i++)
                 {
                     String upstreamValue = upstreams[i];
