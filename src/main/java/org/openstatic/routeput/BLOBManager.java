@@ -141,8 +141,8 @@ public class BLOBManager
         f.delete();
     }
 
-    // Delete any regular files under root whose lastModified is older than timeoutSecs.
-    // Empty directories are left in place so channel folders survive.
+    // Delete any regular files under root whose lastModified is older than timeoutSecs,
+    // then drop any subdirectories that end up empty. The root itself is preserved.
     private static void sweepStaleBlobs(File root, long timeoutSecs)
     {
         if (timeoutSecs <= 0 || root == null || !root.exists()) return;
@@ -154,6 +154,19 @@ public class BLOBManager
             if (f.isDirectory())
             {
                 sweepStaleBlobs(f, timeoutSecs);
+                String[] remaining = f.list();
+                if (remaining != null && remaining.length == 0)
+                {
+                    try
+                    {
+                        if (f.delete())
+                        {
+                            RoutePutServer.logIt("BLOBManager removed empty blob folder: " + f.getAbsolutePath());
+                        }
+                    } catch (Exception e) {
+                        RoutePutServer.logError(e);
+                    }
+                }
             }
             else if (f.isFile() && f.lastModified() < cutoff)
             {
