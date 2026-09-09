@@ -116,12 +116,6 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.unsavedProperties = true;
     }
 
-    /* returns the context string for storing blobs in this channel */
-    public String getBLOBContext()
-    {
-        return "channel." + this.name;
-    }
-
     public JSONArray getBlobs()
     {
         JSONArray ja = new JSONArray();
@@ -133,7 +127,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             String[] names = blobFolder.list();
             for (int i = 0; i < names.length; i++)
             {
-                BLOBFile file = new BLOBFile(blobFolder, getBLOBContext(), names[i]);
+                BLOBFile file = new BLOBFile(blobFolder, this.name, names[i]);
                 ja.put(file.toJSONObject());
             }
         }
@@ -146,7 +140,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         File blobRoot = BLOBManager.getBlobRoot();
         if (blobRoot != null)
         {
-            File blobFolder = new File(blobRoot, getBLOBContext());
+            File blobFolder = new File(blobRoot, this.name);
             if (!blobFolder.exists())
             {
                 blobFolder.mkdir();

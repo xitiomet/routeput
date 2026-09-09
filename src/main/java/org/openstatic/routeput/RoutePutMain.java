@@ -41,7 +41,7 @@ public class RoutePutMain
             options.addOption(new Option("t", "test", true, "run named test mode"));
 
 
-            Option upstreamOption = new Option("u", "upstream", true, "Connect to upstream server URL");
+            Option upstreamOption = new Option("u", "upstream", true, "Create a bridge to another routeput server to link channels channel@ws://<server_channel_websocket_url>");
             upstreamOption.setOptionalArg(true);
             options.addOption(upstreamOption);
             
@@ -62,7 +62,8 @@ public class RoutePutMain
                 System.err.println("                           | |");
                 System.err.println("                           |_|");
                 System.err.println("");
-                System.err.println("  Simple, Websocket Server and message router");
+                System.err.println("  Simple websocket server and message router");
+                System.err.println("       https://openstatic.org/routeput/");
                 System.err.println("");
             }
             
@@ -134,8 +135,19 @@ public class RoutePutMain
             
             if (cmd.hasOption("u"))
             {
+                String[] upstreams = cmd.getOptionValues('u');
                 if (channel == null) channel = RoutePutChannel.getChannel("*");
-                rps.connectUpstream(channel, cmd.getOptionValue('u',"wss://openstatic.org/channel/"));
+                for(int i = 0; i < upstreams.length; i++)
+                {
+                    String upstreamValue = upstreams[i];
+                    if (upstreamValue.contains("@"))
+                    {
+                        String[] parts = upstreamValue.split("@", 2);
+                        channel = RoutePutChannel.getChannel(parts[0]);
+                        upstreamValue = parts[1];
+                    }
+                    rps.connectUpstream(channel, upstreamValue);
+                }
             }
         } catch (Exception e) {
             e.printStackTrace(System.err);

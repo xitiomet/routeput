@@ -169,16 +169,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
             BLOBManager.handleBlobCheckRequest(this, jo);
         } else if (routeputCommand.equals("blobInfo")) {
             String name = rpm.optString("name", "");
-            String context = rpm.optString("context");
             RoutePutMessage resp = new RoutePutMessage();
             resp.setResponse("blobInfo", jo);
             resp.setMetaField("name", name);
             resp.setChannel(jo.getRoutePutChannel());
-            if (context != null)
-            {
-                resp.setMetaField("context", context);
-            }
-            BLOBFile blobFile = BLOBManager.resolveBlob(context, name);
+            BLOBFile blobFile = BLOBManager.resolveBlob(jo.getRoutePutChannel(), name);
             if (blobFile != null)
             {
                 resp.mergeRouteputMeta(blobFile.toJSONObject());

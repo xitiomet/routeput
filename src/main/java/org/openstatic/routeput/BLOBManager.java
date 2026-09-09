@@ -27,7 +27,7 @@ public class BLOBManager
     {
         RoutePutSession session;
         String name;
-        String context;
+        RoutePutChannel channel;
         StringBuffer sb;
         RoutePutMessage request;
     }
@@ -190,9 +190,8 @@ public class BLOBManager
             }
             if (rpm.optBoolean("cached", false))
             {
-                String ctx = rpm.optString("context", null);
                 String nm = rpm.optString("name", "");
-                completePendingFetch(ref, resolveBlob(ctx, nm), null);
+                completePendingFetch(ref, resolveBlob(jo.getRoutePutChannel(), nm), null);
                 return;
             }
         }
@@ -201,14 +200,11 @@ public class BLOBManager
         // request/response messages (see handleBlobCheckRequest / handleBlobCheckResponse).
         if (jo.hasMetaField("i") && jo.hasMetaField("of") && jo.hasMetaField("data") && jo.hasMetaField("name"))
         {
-            String context = rpm.optString("context", null);
-
             int i = rpm.optInt("i", 0);
             int of = rpm.optInt("of", 0);
             String name = rpm.optString("name", "");
             // Chunks with channel routing and no explicit target get relayed to the
-            // other members in flight so we don't re-negotiate per recipient. Routing
-            // is decided by the message's routing fields, not by context.
+            // other members in flight so we don't re-negotiate per recipient.
             if (jo.hasChannel() && !jo.hasTargetId())
             {
                 jo.getRoutePutChannel().broadcast(jo);
@@ -224,23 +220,12 @@ public class BLOBManager
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
-                File blobFolder = null;
-                if (context == null && jo.getRoutePutChannel() != null)
-                {
-                    RoutePutChannel chan = jo.getRoutePutChannel();
-                    blobFolder = chan.getBlobFolder();
-                    context = "channel." + chan.getName();
-                } else {
-                    blobFolder = new File(BLOBManager.blobRoot, context);
-                    if (!blobFolder.exists())
-                    {
-                        blobFolder.mkdir();
-                    }
-                }
-                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Context: " + context + " Client: " + session.getConnectionId());
+                RoutePutChannel channel = jo.getRoutePutChannel();
+                File blobFolder = channel.getBlobFolder();
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Channel: " + channel.getName() + " Client: " + session.getConnectionId());
                 if (blobFolder != null)
                 {
-                    BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
+                    BLOBFile blobFile = new BLOBFile(blobFolder, channel.getName(), name);
                     BLOBManager.saveBase64Blob(blobFile, sb);
                     BLOBManager.blobStorage.remove(name);
                     // Acknowledge blob sent
@@ -273,43 +258,27 @@ public class BLOBManager
         String name = rpm.optString("name", "");
         String remoteMd5 = rpm.optString("md5", "");
         long remoteSize = rpm.optLong("size", -1);
-        String context = rpm.optString("context", null);
-
+        RoutePutChannel channel = request.getRoutePutChannel();
+        File blobFolder = channel.getBlobFolder();
         // Client libraries with no blob storage opt-in reply "have" so the remote skips
         // pushing chunks that would just be discarded.
         if (!BLOBManager.isInitialized())
         {
             RoutePutMessage resp = new RoutePutMessage();
+            resp.setChannel(request.getChannel());
             resp.setResponse("blobCheck", request);
             resp.setMetaField("name", name);
             resp.setMetaField("md5", remoteMd5);
             resp.setMetaField("size", remoteSize);
-            if (context != null) resp.setMetaField("context", context);
             resp.setMetaField("state", "have");
             session.send(resp);
             return;
         }
 
-        File blobFolder = null;
-        if (context == null && request.getRoutePutChannel() != null)
-        {
-            RoutePutChannel chan = request.getRoutePutChannel();
-            blobFolder = chan.getBlobFolder();
-            context = "channel." + chan.getName();
-        } else if (context != null) {
-            blobFolder = new File(BLOBManager.blobRoot, context);
-            if (!blobFolder.exists())
-            {
-                blobFolder.mkdir();
-            }
-        } else {
-            blobFolder = BLOBManager.blobRoot;
-        }
-
         boolean have = false;
         if (blobFolder != null && blobFolder.exists())
         {
-            BLOBFile bf = new BLOBFile(blobFolder, context, name);
+            BLOBFile bf = new BLOBFile(blobFolder, channel.getName(), name);
             if (bf.exists() && bf.length() == remoteSize)
             {
                 String localMd5 = bf.getMD5();
@@ -325,10 +294,6 @@ public class BLOBManager
         resp.setMetaField("name", name);
         resp.setMetaField("md5", remoteMd5);
         resp.setMetaField("size", remoteSize);
-        if (context != null)
-        {
-            resp.setMetaField("context", context);
-        }
         resp.setMetaField("state", have ? "have" : "need");
         session.send(resp);
     }
@@ -356,10 +321,6 @@ public class BLOBManager
                 ack.setType(RoutePutMessage.TYPE_BLOB);
                 ack.setRef(pending.request);
                 ack.setMetaField("name", pending.name);
-                if (pending.context != null)
-                {
-                    ack.setMetaField("context", pending.context);
-                }
                 ack.setMetaField("exists", true);
                 ack.setMetaField("cached", true);
                 if (pending.request.hasChannel())
@@ -371,32 +332,29 @@ public class BLOBManager
         }
         else
         {
-            sendBlobChunks(pending.session, pending.name, pending.context, pending.sb, pending.request);
+            sendBlobChunks(pending.session, pending.name, pending.channel, pending.sb, pending.request);
         }
     }
 
-    public static BLOBFile resolveBlob(String context, String name)
+    public static BLOBFile resolveBlob(RoutePutChannel channel, String name)
     {
         File blobFolder = BLOBManager.blobRoot;
-        if (context != null)
+        if (channel != null)
         {
-            blobFolder = new File(BLOBManager.blobRoot, context);
+            blobFolder = new File(BLOBManager.blobRoot, channel.getName());
             if (!blobFolder.exists())
             {
                 blobFolder.mkdir();
             }
-        }
-        if (blobFolder != null)
-        {
-            BLOBFile blobFile = new BLOBFile(blobFolder, context, name);
+            BLOBFile blobFile = new BLOBFile(blobFolder, channel.getName(), name);
             return blobFile;
         }
         return null;
     }
 
-    public static boolean blobExists(String context, String name)
+    public static boolean blobExists(RoutePutChannel channel, String name)
     {
-        File blobFile = resolveBlob(context, name);
+        File blobFile = resolveBlob(channel, name);
         if (blobFile != null)
         {
             return blobFile.exists();
@@ -408,7 +366,7 @@ public class BLOBManager
     // send us a blob. Mirrors routeput.js `channel.getBlob(name)` semantics: emits a
     // `type:request, request:"blob"` and returns a future that completes when the last
     // chunk lands, or when the remote reports the blob as cached / missing.
-    public static CompletableFuture<BLOBFile> requestBlob(RoutePutSession session, RoutePutChannel channel, String context, String name)
+    public static CompletableFuture<BLOBFile> requestBlob(RoutePutSession session, RoutePutChannel channel, String name)
     {
         CompletableFuture<BLOBFile> future = new CompletableFuture<BLOBFile>();
         if (!BLOBManager.isInitialized())
@@ -424,7 +382,6 @@ public class BLOBManager
         RoutePutMessage req = new RoutePutMessage();
         req.setRequest("blob");
         req.setMetaField("name", name);
-        if (context != null) req.setMetaField("context", context);
         if (channel != null) req.setChannel(channel);
         synchronized (BLOBManager.pendingFetches)
         {
@@ -452,25 +409,20 @@ public class BLOBManager
     {
         JSONObject rpm = request.getRoutePutMeta();
         String name = rpm.optString("name", "");
-        String context = rpm.optString("context");
         RoutePutChannel channel = request.getRoutePutChannel();
-        BLOBFile blobFile = resolveBlob(context, name);
+        BLOBFile blobFile = resolveBlob(channel, name);
         if (blobFile != null)
         {
             if (blobFile.exists())
             {
                 StringBuffer sb = blobFile.getBase64StringBuffer();
-                transmitBlobChunks(session, name, context, sb, request);
+                transmitBlobChunks(session, name, channel, sb, request);
             } else {
                 RoutePutMessage resp = new RoutePutMessage();
                 resp.setType(RoutePutMessage.TYPE_BLOB);
                 resp.setRef(request);
                 resp.setMetaField("name", name);
                 resp.setChannel(channel);
-                if (context != null)
-                {
-                    resp.setMetaField("context", context);
-                }
                 resp.setMetaField("exists", false);
                 session.send(resp);
                 RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getConnectionId());
@@ -481,10 +433,6 @@ public class BLOBManager
             resp.setRef(request);
             resp.setMetaField("name", name);
             resp.setChannel(channel);
-            if (context != null)
-            {
-                resp.setMetaField("context", context);
-            }
             resp.setMetaField("exists", false);
             session.send(resp);
             RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getConnectionId());
@@ -492,17 +440,17 @@ public class BLOBManager
     }
 
     // Send a chunked blob to client from byte array
-    public static void sendBlob(RoutePutSession session, String name, final String context, String contentType, byte[] bytes)
+    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes)
     {
         StringBuffer sb = new StringBuffer();
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        transmitBlobChunks(session, name, context, sb, null);
+        transmitBlobChunks(session, name, channel, sb, null);
     }
     
     // Transmit a blob to this session, first querying the remote to see if it already
     // has the file (matching name/size/md5). If so, chunks are skipped entirely.
-    private static void transmitBlobChunks(final RoutePutSession session, final String name, final String context, final StringBuffer sb, final RoutePutMessage request)
+    private static void transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
     {
         byte[] raw = decodeDataUri(sb);
         String md5 = (raw != null) ? md5OfBytes(raw) : null;
@@ -511,7 +459,7 @@ public class BLOBManager
         if (md5 == null)
         {
             // Cannot compute md5 — fall back to sending chunks directly.
-            sendBlobChunks(session, name, context, sb, request);
+            sendBlobChunks(session, name, channel, sb, request);
             return;
         }
 
@@ -520,10 +468,6 @@ public class BLOBManager
         query.setMetaField("name", name);
         query.setMetaField("md5", md5);
         query.setMetaField("size", size);
-        if (context != null)
-        {
-            query.setMetaField("context", context);
-        }
         if (request != null && request.hasChannel())
         {
             query.setChannel(request.getRoutePutChannel());
@@ -532,7 +476,7 @@ public class BLOBManager
         PendingBlobSend pending = new PendingBlobSend();
         pending.session = session;
         pending.name = name;
-        pending.context = context;
+        pending.channel = channel;
         pending.sb = sb;
         pending.request = request;
         synchronized (BLOBManager.pendingSends)
@@ -545,7 +489,7 @@ public class BLOBManager
 
     // Actual chunk transmission — called after the remote replies state=need, or as a
     // fallback when md5 can't be computed.
-    private static void sendBlobChunks(final RoutePutSession session, final String name, final String context, final StringBuffer sb, final RoutePutMessage request)
+    private static void sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
     {
         Thread x = new Thread(() -> {
             int size = sb.length();
@@ -556,10 +500,7 @@ public class BLOBManager
                 RoutePutMessage mm = new RoutePutMessage();
                 mm.setType("blob");
                 mm.setMetaField("name", name);
-                if (context != null)
-                {
-                    mm.setMetaField("context", context);
-                }
+                mm.setChannel(channel);
                 mm.setMetaField("i", i+1);
                 mm.setMetaField("of", numChunks);
                 if ((i + 1) == numChunks && request != null)
@@ -573,7 +514,8 @@ public class BLOBManager
                 mm.setMetaField("data", sb.substring(start,end));
                 session.send(mm);
             }
-            RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB transmitted: " + name + " in context: " + context + " Client: " + session.getConnectionId());
+            String channelName = (channel != null) ? channel.getName() : "(none)";
+            RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB transmitted: " + name + " in channel: " + channelName + " Client: " + session.getConnectionId());
         });
         x.start();
     }

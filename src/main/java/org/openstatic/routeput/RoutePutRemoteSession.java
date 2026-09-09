@@ -11,6 +11,12 @@ import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+/*
+    This class is meant to represent a remote session in the RoutePut system, 
+    typically corresponding to a client connected through an upstream server.
+    Or a client connected to a remote server.
+*/
+
 public class RoutePutRemoteSession implements RoutePutSession
 {
     private static HashMap<String, RoutePutRemoteSession> sessions;

@@ -409,18 +409,12 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // have opted in with BLOBManager.init(settings) so incoming chunks are stored.
     public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(RoutePutChannel channel, String name)
     {
-        String context = (channel != null) ? ("channel." + channel.getName()) : null;
-        return BLOBManager.requestBlob(this, channel, context, name);
+        return BLOBManager.requestBlob(this, channel, name);
     }
 
     public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(String name)
     {
         return this.requestBlob(this.getDefaultChannel(), name);
-    }
-
-    public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(String context, String name)
-    {
-        return BLOBManager.requestBlob(this, this.getDefaultChannel(), context, name);
     }
 
     // Remember a password so it will be attached to the next handshake or subscribe

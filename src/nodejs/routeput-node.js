@@ -201,7 +201,6 @@ class RouteputChannel
     {
         return this.routeputConnection._transmitBlob({
             channel: this.name,
-            context: 'channel.' + this.name,
             name,
             buffer,
             mime
@@ -223,13 +222,13 @@ class RouteputChannel
     // Fetch a blob stored under this channel's blob folder. Resolves to a Buffer.
     getBlob(name)
     {
-        return this.routeputConnection._requestBlob('channel.' + this.name, name);
+        return this.routeputConnection._requestBlob(this.name, name);
     }
 
     // Ask the server for metadata (md5, size, etc.) for a blob in this channel.
     requestBlobInfo(name)
     {
-        return this.routeputConnection._requestBlobInfo('channel.' + this.name, name);
+        return this.routeputConnection._requestBlobInfo(this.name, name);
     }
 }
 
@@ -257,7 +256,7 @@ class RouteputConnection
         if (options.password) this.channelPasswords.set(channelName, options.password);
 
         // Blob state. chunkBuffer accumulates in-flight base64 data URIs keyed by
-        // "context:name"; blobCache holds fully assembled blobs so we can answer
+        // "channel:name"; blobCache holds fully assembled blobs so we can answer
         // "do you have this?" queries and satisfy requestBlob() without a round-trip;
         // pendingBlobRequests coalesces concurrent readers of the same blob.
         this.chunkBuffer = new Map();
@@ -361,8 +360,8 @@ class RouteputConnection
 
         if (messageType === 'request' && meta.request === 'blobCheck')
         {
-            const qContext = Object.prototype.hasOwnProperty.call(meta, 'context') ? meta.context : '';
-            const cacheKey = (qContext == null ? '' : qContext) + ':' + meta.name;
+            const qChannel = Object.prototype.hasOwnProperty.call(meta, 'channel') ? meta.channel : '';
+            const cacheKey = (qChannel == null ? '' : qChannel) + ':' + meta.name;
             const cached = this.blobCache.get(cacheKey);
             const have = !!(this.receiveBlobs === false
                 || (cached && cached.md5 && String(cached.md5).toLowerCase() === String(meta.md5).toLowerCase() && cached.size === meta.size));
@@ -375,7 +374,6 @@ class RouteputConnection
                 size: meta.size,
                 state: have ? 'have' : 'need'
             };
-            if (Object.prototype.hasOwnProperty.call(meta, 'context')) respMeta.context = meta.context;
             if (Object.prototype.hasOwnProperty.call(meta, 'channel')) respMeta.channel = meta.channel;
             this.transmit({ __routeput: respMeta });
             // Answering "need" means chunks are on the way — register a coalescing
@@ -397,8 +395,8 @@ class RouteputConnection
         if (messageType === 'blob' && Object.prototype.hasOwnProperty.call(meta, 'i'))
         {
             if (this.receiveBlobs === false) return;
-            const context = Object.prototype.hasOwnProperty.call(meta, 'context') ? meta.context : '';
-            const cacheKey = (context == null ? '' : context) + ':' + meta.name;
+            const channelName = Object.prototype.hasOwnProperty.call(meta, 'channel') ? meta.channel : '';
+            const cacheKey = (channelName == null ? '' : channelName) + ':' + meta.name;
             if (meta.i === 1)
             {
                 this.chunkBuffer.set(cacheKey, meta.data);
@@ -412,21 +410,15 @@ class RouteputConnection
                     buffer: parsed.buffer,
                     mime: parsed.mime
                 });
-                // Map "channel.X" contexts back to the corresponding channel object so
-                // user code never has to deal with raw context strings.
-                let ctxChannel = null;
-                if (typeof context === 'string' && context.startsWith('channel.'))
+                const chanObj = (typeof channelName === 'string' && channelName.length > 0) ? this.getChannel(channelName) : null;
+                if (chanObj && typeof chanObj.onblob === 'function')
                 {
-                    ctxChannel = this.getChannel(context.substring('channel.'.length));
-                }
-                if (ctxChannel && typeof ctxChannel.onblob === 'function')
-                {
-                    try { ctxChannel.onblob(meta.name, parsed.buffer, parsed.mime); }
+                    try { chanObj.onblob(meta.name, parsed.buffer, parsed.mime); }
                     catch (e) { if (this.debug) console.log(e); }
                 }
                 if (typeof this.onblob === 'function')
                 {
-                    try { this.onblob(ctxChannel, meta.name, parsed.buffer, parsed.mime); }
+                    try { this.onblob(chanObj, meta.name, parsed.buffer, parsed.mime); }
                     catch (e) { if (this.debug) console.log(e); }
                 }
                 const pending = this.pendingBlobRequests.get(cacheKey);
@@ -656,8 +648,8 @@ class RouteputConnection
     logInfo(text)    { this.transmit({ __routeput: { type: 'info' },    text }); }
     logWarning(text) { this.transmit({ __routeput: { type: 'warning' }, text }); }
 
-    // Shared entry point for channel-scoped blob sends. `context` is an internal
-    // detail — callers use RouteputChannel.transmitBlob / transmitFile instead.
+    // Shared entry point for channel-scoped blob sends. Callers use
+    // RouteputChannel.transmitBlob / transmitFile instead.
     _transmitBlob(opts)
     {
         if (!Buffer.isBuffer(opts.buffer)) return Promise.reject(new Error('transmitBlob requires a Buffer'));
@@ -667,12 +659,11 @@ class RouteputConnection
         const chunks = chunkString(dataUri, BLOB_CHUNK_SIZE);
         const md5 = md5Hex(buffer);
         const size = buffer.length;
-        const cacheKey = (opts.context == null ? '' : opts.context) + ':' + opts.name;
+        const cacheKey = (opts.channel == null ? '' : opts.channel) + ':' + opts.name;
         this.blobCache.set(cacheKey, { md5, size, buffer, mime });
         return new Promise((resolve, reject) => {
             this._sendBlobWithCheck({
                 channel: opts.channel,
-                context: opts.context,
                 name: opts.name,
                 md5,
                 size,
@@ -695,7 +686,6 @@ class RouteputConnection
             size: opts.size
         };
         if (opts.channel != null) meta.channel = opts.channel;
-        if (opts.context != null) meta.context = opts.context;
         const query = { __routeput: meta };
         const self = this;
         this.requests.set(queryMsgId, {
@@ -727,7 +717,6 @@ class RouteputConnection
             const ipo = i + 1;
             const mm = { __routeput: { type: 'blob', name: opts.name, i: ipo, of: total, data: chunks[i] } };
             if (opts.channel != null) mm.__routeput.channel = opts.channel;
-            if (opts.context != null) mm.__routeput.context = opts.context;
             if (ipo === total)
             {
                 const finishMsgId = randomId();
@@ -740,11 +729,11 @@ class RouteputConnection
         sendOne();
     }
 
-    // Internal: resolve to a Buffer for the blob stored under `context:name`.
-    // Callers use RouteputChannel.getBlob so they never touch context strings.
-    _requestBlob(context, name)
+    // Internal: resolve to a Buffer for the blob stored under `channel:name`.
+    // Callers use RouteputChannel.getBlob so they never touch raw channel keys.
+    _requestBlob(channelName, name)
     {
-        const cacheKey = (context == null ? '' : context) + ':' + name;
+        const cacheKey = (channelName == null ? '' : channelName) + ':' + name;
         const cached = this.blobCache.get(cacheKey);
         if (cached && cached.buffer)
         {
@@ -755,7 +744,9 @@ class RouteputConnection
         if (existing) return existing.promise;
 
         const pending = this._ensureBlobPending(cacheKey);
-        const mm = { __routeput: { msgId: randomId(), type: 'request', request: 'blob', name, context } };
+        const reqMeta = { msgId: randomId(), type: 'request', request: 'blob', name };
+        if (channelName != null) reqMeta.channel = channelName;
+        const mm = { __routeput: reqMeta };
         const self = this;
         this.makeRequest(mm).then(
             (result) => {
@@ -796,9 +787,11 @@ class RouteputConnection
         return pending;
     }
 
-    _requestBlobInfo(context, name)
+    _requestBlobInfo(channelName, name)
     {
-        const mm = { __routeput: { msgId: randomId(), type: 'request', request: 'blobInfo', name, context } };
+        const reqMeta = { msgId: randomId(), type: 'request', request: 'blobInfo', name };
+        if (channelName != null) reqMeta.channel = channelName;
+        const mm = { __routeput: reqMeta };
         return this.makeRequest(mm);
     }
 }

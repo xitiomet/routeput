@@ -13,7 +13,7 @@ import org.json.JSONObject;
 
 public class BLOBFile extends File
 {
-    private String context;
+    private String channelName;
     
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
     private static String bytesToHex(byte[] bytes)
@@ -27,10 +27,15 @@ public class BLOBFile extends File
         return new String(hexChars);
     }
 
-    public BLOBFile(File containingFolder, String context, String name)
+    public BLOBFile(File containingFolder, String channelName, String name)
     {
         super(containingFolder, name);
-        this.context = context;
+        this.channelName = channelName;
+    }
+
+    public String getChannelName()
+    {
+        return this.channelName;
     }
 
     public String getURL()
@@ -39,18 +44,11 @@ public class BLOBFile extends File
         {
             String fallbackApiPath = "http://" + RoutePutChannel.getHostname() + ":" + String.valueOf(BLOBManager.settings.optInt("port", 6144)) + BLOBManager.settings.optString("apiMountPath", "/api/*").replace("*", "");
             String apiPath = BLOBManager.settings.optString("fullApiMountPath", fallbackApiPath);
-            if (this.context != null)
+            if (this.channelName != null)
             {
-                if (this.context.startsWith("channel."))
-                {
-                    String channelName = this.context.substring(8);
-                    return apiPath + "channel/" + URLEncoder.encode(channelName, "UTF-8") + "/blob/" + URLEncoder.encode(this.getName(), "UTF-8");
-                } else {
-                    return apiPath + "blob/" + URLEncoder.encode(this.context, "UTF-8") + "/" + URLEncoder.encode(this.getName(), "UTF-8");
-                }
-            } else {
-                return apiPath + "blob/" + URLEncoder.encode(this.getName(), "UTF-8");
+                return apiPath + "channel/" + URLEncoder.encode(this.channelName, "UTF-8") + "/blob/" + URLEncoder.encode(this.getName(), "UTF-8");
             }
+            return apiPath + "blob/" + URLEncoder.encode(this.getName(), "UTF-8");
         } catch (Exception e) {
             RoutePutServer.logError(e);
             return null;
@@ -142,9 +140,9 @@ public class BLOBFile extends File
         JSONObject jo = new JSONObject();
         boolean exists = this.exists();
         jo.put("name", this.getName());
-        if (this.context != null)
+        if (this.channelName != null)
         {
-            jo.put("context", this.context);
+            jo.put("channel", this.channelName);
         }
         jo.put("exists", exists);
         if (exists)

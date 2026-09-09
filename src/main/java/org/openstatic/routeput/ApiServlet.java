@@ -311,7 +311,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 }
             } else if (target.startsWith("/blob/")) {
                 StringTokenizer st = new StringTokenizer(target, "/");
-                String context = null;
+                String channelName = null;
                 String token = st.nextToken();
                 File blobContext = BLOBManager.getBlobRoot();
                 while (blobContext.isDirectory() && st.hasMoreTokens())
@@ -323,14 +323,14 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 {
                     if (!"blob".equals(token))
                     {
-                        context = token;
+                        channelName = token;
                     }
                     JSONArray ja = new JSONArray();
                     ja = new JSONArray();
                     String[] names = blobContext.list();
                     for (int i = 0; i < names.length; i++)
                     {
-                        BLOBFile file = new BLOBFile(blobContext, context, names[i]);
+                        BLOBFile file = new BLOBFile(blobContext, channelName, names[i]);
                         ja.put(file.toJSONObject());
                     }
                     response.put(token, ja);
