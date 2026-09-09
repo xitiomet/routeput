@@ -267,6 +267,7 @@ public class RoutePutRemoteSession implements RoutePutSession
         this.properties.put("_parentConnectionId", this.parent.getConnectionId());
         this.properties.put("_class", "RoutePutRemoteSession");
         this.properties.put("_listeners", this.listeners.size());
+        this.properties.put("_idle", this.getIdle());
         return this.properties;
     }
 

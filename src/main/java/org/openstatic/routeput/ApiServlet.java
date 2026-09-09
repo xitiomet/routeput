@@ -145,6 +145,16 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
+        if (request.getHeader("X-Real-IP") != null) {
+            remoteIP = request.getHeader("X-Real-IP");
+        } else if (request.getHeader("X-Forwarded-For") != null) {
+            remoteIP = request.getHeader("X-Forwarded-For");
+        } else if (request.getHeader("CF-Connecting-IP") != null) {
+            remoteIP = request.getHeader("CF-Connecting-IP");
+        } else if (request.getHeader("X-Client-IP") != null) {
+            remoteIP = request.getHeader("X-Client-IP");
+        }
+        final String finalRemoteIP = remoteIP;
         // System.err.println("Path: " + target);
         JSONObject response = new JSONObject();
         try {
@@ -166,7 +176,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 post.setMetaField("apiPost", true);
                 RoutePutChannel chan = post.getRoutePutChannel();
                 this.rxPackets++;
-                handleAPIMessage(remoteIP, post);
+                handleAPIMessage(finalRemoteIP, post);
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
                 StringTokenizer st = new StringTokenizer(target, "/");
@@ -191,7 +201,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                         rMsg.setMetaField("apiBatch", true);
                         RoutePutChannel chan = rMsg.getRoutePutChannel();
                         this.rxPackets++;
-                        handleAPIMessage(remoteIP, rMsg);
+                        handleAPIMessage(finalRemoteIP, rMsg);
                     }
                 });
             }
@@ -222,6 +232,16 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.addHeader("Server", "Routeput 1.0");
         String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
+        if (request.getHeader("X-Real-IP") != null) {
+            remoteIP = request.getHeader("X-Real-IP");
+        } else if (request.getHeader("X-Forwarded-For") != null) {
+            remoteIP = request.getHeader("X-Forwarded-For");
+        } else if (request.getHeader("CF-Connecting-IP") != null) {
+            remoteIP = request.getHeader("CF-Connecting-IP");
+        } else if (request.getHeader("X-Client-IP") != null) {
+            remoteIP = request.getHeader("X-Client-IP");
+        }
+        final String finalRemoteIP = remoteIP;
         // System.err.println("Path: " + target);
         // RoutePutServer.logIt("API Request: " + target);
         JSONObject response = new JSONObject();
@@ -292,7 +312,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     }
                                 });
                                 msg.setSourceIdIfNull(this.getConnectionId());
-                                handleAPIMessage(remoteIP, msg);
+                                handleAPIMessage(finalRemoteIP, msg);
                             } else if ("blob".equals(token)) {
                                 token = st.nextToken();
                                 String contentType = BLOBManager.getContentTypeFor(token);
