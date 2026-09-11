@@ -2,6 +2,7 @@ package org.openstatic.routeput;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
@@ -19,9 +20,19 @@ import org.json.*;
 
 public class RoutePutMain
 {
-    
+    public static boolean keep_running;
+
     public static void main(String[] args)
     {
+        RoutePutMain.keep_running = true;
+        Runtime.getRuntime().addShutdownHook(new Thread() 
+        { 
+            public void run() 
+            { 
+                RoutePutMain.keep_running = false;
+            } 
+        });
+        boolean serverMode = false;
         Thread channelTracker = RoutePutChannel.initTracker();
         RoutePutRemoteSession.init();
         //System.setProperty("org.eclipse.jetty.util.log.class", "org.eclipse.jetty.util.log.StdErrLog");
@@ -32,26 +43,36 @@ public class RoutePutMain
         {
             Options options = new Options();
             CommandLineParser parser = new DefaultParser();
-            options.addOption(new Option("c", "config", true, "Config file location"));
+            options.addOption(new Option("c", "config", true, "Config file location, also means server mode"));
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
+            options.addOption(new Option("i", "binary-input-pipe", true, "Pipe raw standard input to a specific channel, using binary messages"));
+            options.addOption(new Option("o", "binary-output-pipe", true, "Pipe raw standard output to a specific channel, using binary messages"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            options.addOption(new Option("x", "client", true, "Target URL to connect in test client"));
-            options.addOption(new Option("m", "message", true, "Set Message for test client"));
-            options.addOption(new Option("t", "test", true, "run named test mode"));
+            //options.addOption(new Option("x", "client", true, "Target URL to connect in test client"));
+            //options.addOption(new Option("m", "message", true, "Set Message for test client"));
+            //options.addOption(new Option("t", "test", true, "run named test mode"));
 
 
-            Option upstreamOption = new Option("u", "upstream", true, "Create a bridge to another routeput server to link channels channel@ws://<server_channel_websocket_url>");
+            Option upstreamOption = new Option("u", "upstream", true, "Create a bridge to another routeput server to link channels, or to specify a channel for a pipe operation Example: channel@ws://<server_channel_websocket_url>");
             upstreamOption.setOptionalArg(true);
             options.addOption(upstreamOption);
             
             Option channelOption = new Option("n", "channel", true, "Specify channel for --upstream or --client");
             channelOption.setOptionalArg(true);
             options.addOption(channelOption);
+            RoutePutChannel channel = null;
 
             cmd = parser.parse(options, args);
+    
+            if (cmd.hasOption("n"))
+            {
+                channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
+            } else {
+                channel = RoutePutChannel.getChannel("lobby");
+            }
             
-            if (!cmd.hasOption("q"))
+            if (!cmd.hasOption("q") && cmd.hasOption("c"))
             {
                 System.err.println("  ______            _                   _   ");
                 System.err.println("  | ___ \\          | |                 | |  ");
@@ -73,66 +94,7 @@ public class RoutePutMain
                 formatter.printHelp( "routeput", options );
                 System.exit(0);
             }
-            
-            if (cmd.hasOption("c"))
-            {
-                File config = new File(cmd.getOptionValue('c',"routeput.json"));
-                settings = RoutePutServer.loadJSONObject(config);
-            }
 
-            RoutePutChannel channel = null;
-            String xTarget = "wss://openstatic.org/channel/";
-
-            if (cmd.hasOption("n"))
-            {
-                channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
-            }
-
-            if (cmd.hasOption("m"))
-            {
-                settings.put("message", cmd.getOptionValue('m',"Hello World!"));
-            }
-
-            if (cmd.hasOption("p"))
-            {
-                int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
-                settings.put("port", port);
-            }
-
-            if (cmd.hasOption("x"))
-            {
-                xTarget = cmd.getOptionValue('x',"wss://openstatic.org/channel/");
-            }
-
-            if (cmd.hasOption("t"))
-            {
-                String test = cmd.getOptionValue('t',"binary_tx");
-                if ("binary_tx".equals(test))
-                {
-                    if (channel == null) channel = RoutePutChannel.getChannel("binary");
-                    binaryTx(xTarget, channel);
-                    System.exit(0);
-                } else if ("binary_rx".equals(test)) {
-                    if (channel == null) channel = RoutePutChannel.getChannel("binary");
-                    binaryRx(xTarget, channel);
-                    System.exit(0);
-                } else if ("quote".equals(test)) {
-                    if (channel == null) channel = RoutePutChannel.getChannel("lobby");
-                    clientTest(xTarget, channel);
-                    System.exit(0);
-                } else if ("message".equals(test)) {
-                    if (channel == null) channel = RoutePutChannel.getChannel("LoRa");
-                    clientTest2(xTarget, channel, settings.optString("message", "Hello World!"));
-                    System.exit(0);
-                } else if ("prop".equals(test)) {
-                    propertyClientTest(xTarget, channel);
-                    System.exit(0);
-                }
-            }
-            
-            RoutePutServer rps = new RoutePutServer(settings);
-            rps.setState(true);
-            
             if (cmd.hasOption("u"))
             {
                 String[] upstreams = cmd.getOptionValues('u');
@@ -145,7 +107,75 @@ public class RoutePutMain
                         channel = RoutePutChannel.getChannel(parts[0]);
                         upstreamValue = parts[1];
                     }
-                    rps.connectUpstream(channel, upstreamValue);
+                    RoutePutChannel.connectUpstream(channel, upstreamValue);
+                }
+            }
+            
+            if (cmd.hasOption("c"))
+            {
+                File config = new File(cmd.getOptionValue('c',"routeput.json"));
+                settings = RoutePutServer.loadJSONObject(config);
+                serverMode = true;
+            }
+
+            if (cmd.hasOption("p"))
+            {
+                int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
+                settings.put("port", port);
+            }
+            
+            if (cmd.hasOption("i"))
+            {
+                String inputChannel = cmd.getOptionValue('i');
+                final RoutePutOutputStream routeputOutputStream = new RoutePutOutputStream(RoutePutChannel.getChannel(inputChannel));
+                Thread inputCopier = new Thread(() -> {
+                    try {
+                        byte[] buf = new byte[4096];
+                        int n;
+                        while ((n = System.in.read(buf)) != -1) {
+                            routeputOutputStream.write(buf, 0, n);
+                        }
+                        routeputOutputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+                inputCopier.start();
+            }
+            
+            if (cmd.hasOption("o"))
+            {
+                String outputChannel = cmd.getOptionValue('o');
+                final RoutePutInputStream routeputInputStream = new RoutePutInputStream();
+                Thread outputCopier = new Thread(() -> {
+                    try {
+                        byte[] buf = new byte[4096];
+                        int n;
+                        while ((n = routeputInputStream.read(buf)) != -1) {
+                            System.out.write(buf, 0, n);
+                        }
+                        routeputInputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+                outputCopier.start();
+                RoutePutChannel.getChannel(outputChannel).addMessageListener(routeputInputStream);
+            }
+
+            if (serverMode)
+            {
+                RoutePutServer rps = new RoutePutServer(settings);
+                rps.setState(true);
+            }
+
+            while(RoutePutMain.keep_running)
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    e.printStackTrace(System.err);
                 }
             }
         } catch (Exception e) {
@@ -157,7 +187,7 @@ public class RoutePutMain
     public static void binaryTx(String url, RoutePutChannel channel)
     {
         RoutePutClient rpc = new RoutePutClient(channel, url);
-        RoutePutOutputStream rpos = new RoutePutOutputStream(rpc);
+        RoutePutOutputStream rpos = new RoutePutOutputStream(rpc.getDefaultChannel());
         //PrintWriter pw = new PrintWriter(rpos);
         //RandomQuotes quotes = new RandomQuotes();
         rpc.connect();

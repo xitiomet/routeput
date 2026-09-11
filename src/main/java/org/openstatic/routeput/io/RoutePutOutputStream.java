@@ -11,27 +11,14 @@ import org.openstatic.routeput.RoutePutSession;
 public class RoutePutOutputStream extends OutputStream implements Runnable
 {
     private ByteArrayOutputStream baos;
-    private RoutePutSession session;
     private Thread autoFlush;
     private boolean closed;
     private RoutePutChannel channel;
     private String targetId;
 
-    public RoutePutOutputStream(RoutePutSession session)
+    public RoutePutOutputStream(RoutePutChannel channel)
     {
         this.baos = new ByteArrayOutputStream();
-        this.session = session;
-        this.channel = session.getDefaultChannel();
-        this.closed = false;
-        this.targetId = null;
-        this.autoFlush = new Thread(this);
-        this.autoFlush.start();
-    }
-
-    public RoutePutOutputStream(RoutePutSession session, RoutePutChannel channel)
-    {
-        this.baos = new ByteArrayOutputStream();
-        this.session = session;
         this.channel = channel;
         this.closed = false;
         this.targetId = null;
@@ -71,7 +58,7 @@ public class RoutePutOutputStream extends OutputStream implements Runnable
             }
             msg.put("data", java.util.Base64.getEncoder().encodeToString(this.baos.toByteArray()));
             this.baos.reset();
-            this.session.send(msg);
+            this.channel.onMessage(null, msg);
         }
     }
 

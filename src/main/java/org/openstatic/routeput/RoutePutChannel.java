@@ -16,10 +16,13 @@ import java.util.Iterator;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.openstatic.routeput.util.JSONTools;
+import org.openstatic.routeput.client.RoutePutClient;
 
 public class RoutePutChannel implements RoutePutMessageListener
 {
     private static HashMap<String, RoutePutChannel> channels;
+    private static LinkedHashMap<String, RoutePutClient> upstreams;
+
     private static Thread channelTracker = null;
     private static File channelRoot;
     private static String hostname;
@@ -46,6 +49,16 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private int msgTxPerSecond;
     private int msgRxPerSecond;
+
+    public static RoutePutSession connectUpstream(RoutePutChannel channel, String uri)
+    {
+        RoutePutChannel.initTracker();
+        final RoutePutClient client = new RoutePutClient(channel, uri);
+        client.setProperty("upstream", uri);
+        client.connect();
+        RoutePutChannel.upstreams.put(client.getConnectionId(), client);
+        return client;
+    }
 
     /* Nobody should ever create a RoutePutChannel! it should always be pulled by static method getChannel() */
     private RoutePutChannel(String name)
@@ -224,6 +237,21 @@ public class RoutePutChannel implements RoutePutMessageListener
                 ip = InetAddress.getLocalHost();
                 RoutePutChannel.hostname = ip.getHostName();
             } catch (Exception e) {}
+        }
+
+        if (RoutePutChannel.upstreams == null)
+        {
+            RoutePutChannel.upstreams = new LinkedHashMap<String, RoutePutClient>();
+            Runtime.getRuntime().addShutdownHook(new Thread() 
+            { 
+                public void run() 
+                { 
+                    RoutePutChannel.upstreams.forEach((connectionId, rpc) -> {
+                        rpc.setAutoReconnect(false);
+                        rpc.close();
+                    });
+                } 
+            });
         }
 
         if (RoutePutChannel.channelTracker == null)
@@ -943,11 +971,21 @@ public class RoutePutChannel implements RoutePutMessageListener
     }
 
     /* Remove a session from all channels that exist in memory */
-    public static synchronized void removeFromAllChannels(RoutePutSession session)
+    public static void removeFromAllChannels(RoutePutSession session)
     {
-        RoutePutChannel.channels.values().stream().forEach((c) -> {
+        // Snapshot under the class monitor, then remove outside it. removeMember can
+        // reach RoutePutRemoteSession.maybeDestroy which locks RoutePutRemoteSession.class;
+        // holding Channel.class across that call causes an AB-BA deadlock with any thread
+        // already inside RoutePutRemoteSession.handleRoutedMessage that then calls getChannel().
+        java.util.ArrayList<RoutePutChannel> snapshot;
+        synchronized (RoutePutChannel.class)
+        {
+            snapshot = new java.util.ArrayList<RoutePutChannel>(RoutePutChannel.channels.values());
+        }
+        for (RoutePutChannel c : snapshot)
+        {
             c.removeMember(session);
-        });
+        }
         if (session.isRootConnection() && RoutePutRemoteSession.isInitialized())
         {
             for(RoutePutRemoteSession rSession : RoutePutRemoteSession.children(session))

@@ -373,7 +373,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             } else if ("/upstream/".equals(target)) {
                 RoutePutChannel channel = RoutePutChannel.getChannel(request.getParameter("channel"));
                 String uri = request.getParameter("uri");
-                RoutePutSession session = RoutePutServer.instance.connectUpstream(channel, uri);
+                RoutePutSession session = RoutePutChannel.connectUpstream(channel, uri);
                 response.put("session", session.toJSONObject());
             }
         } catch (Exception x) {

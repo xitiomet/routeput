@@ -150,7 +150,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
             if (channel.hasMember(this)) {
                 String uri = jo.optString("uri", null);
                 if (uri != null) {
-                    RoutePutSession upstreamSession = RoutePutServer.instance.connectUpstream(channel, uri);
+                    RoutePutSession upstreamSession = RoutePutChannel.connectUpstream(channel, uri);
                     if (upstreamSession != null) {
                         RoutePutMessage resp = new RoutePutMessage();
                         resp.setResponse("upstream", jo);

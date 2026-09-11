@@ -80,7 +80,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
           public void run() 
           {
             RoutePutClient.this.stayConnected = false;
-            System.err.println("Routeput client received shutdown hook!");
+            //System.err.println("Routeput client received shutdown hook!");
             RoutePutClient.this.cleanUp();
           } 
         }); 
@@ -255,7 +255,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
                 if (ses instanceof WebSocketSession)
                 {
-                    System.err.println("Got our WebSocketSession!");
+                    //System.err.println("Got our WebSocketSession!");
                     this.session = (WebSocketSession) ses;
                 }
             } catch (Throwable t2) {
