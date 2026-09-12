@@ -489,7 +489,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 connectionIdMessage.setMetaField("connectionId", RoutePutClient.this.connectionId);
                 connectionIdMessage.setMetaField("collector", RoutePutClient.this.collector);
                 connectionIdMessage.setMetaField("channel", RoutePutClient.this.channel.getName());
-                connectionIdMessage.setMetaField("properties", RoutePutClient.this.properties);
+                connectionIdMessage.setMetaField("properties", RoutePutClient.this.getProperties());
                 String pw = RoutePutClient.this.channelPasswords.get(RoutePutClient.this.channel.getName());
                 if (pw != null) connectionIdMessage.setMetaField("password", pw);
                 RoutePutClient.this.send(connectionIdMessage);
