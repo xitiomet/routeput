@@ -90,6 +90,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         RoutePutChannel.initTracker();
         final RoutePutClient client = new RoutePutClient(channel, uri);
         client.setProperty("upstream", uri);
+        client.setProperty("hostname", RoutePutChannel.getHostname());
         client.connect();
         RoutePutChannel.upstreams.add(client);
         return client;
