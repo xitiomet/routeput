@@ -47,9 +47,9 @@ public class RoutePutMain
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
             options.addOption(new Option("i", "binary-input-pipe", true, "Pipe raw standard input to a specific channel, using binary messages"));
             options.addOption(new Option("o", "binary-output-pipe", true, "Pipe raw standard output to a specific channel, using binary messages"));
+            options.addOption(new Option("x", "binary-i-o-pipe", true, "Pipe raw standard input and output to a specific channel, using binary messages"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            //options.addOption(new Option("x", "client", true, "Target URL to connect in test client"));
             //options.addOption(new Option("m", "message", true, "Set Message for test client"));
             //options.addOption(new Option("t", "test", true, "run named test mode"));
 
@@ -123,10 +123,28 @@ public class RoutePutMain
                 int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
                 settings.put("port", port);
             }
+
+            String inputChannel = null;
+            String outputChannel = null;
+
+            if (cmd.hasOption("o"))
+            {
+                outputChannel = cmd.getOptionValue('o');
+            }
             
             if (cmd.hasOption("i"))
             {
-                String inputChannel = cmd.getOptionValue('i');
+                inputChannel = cmd.getOptionValue('i');
+            }
+
+            if (cmd.hasOption("x"))
+            {
+                inputChannel = cmd.getOptionValue('x');
+                outputChannel = inputChannel;
+            }
+
+            if (inputChannel != null)
+            {
                 final RoutePutOutputStream routeputOutputStream = new RoutePutOutputStream(RoutePutChannel.getChannel(inputChannel));
                 Thread inputCopier = new Thread(() -> {
                     try {
@@ -143,9 +161,8 @@ public class RoutePutMain
                 inputCopier.start();
             }
             
-            if (cmd.hasOption("o"))
+            if (outputChannel != null)
             {
-                String outputChannel = cmd.getOptionValue('o');
                 final RoutePutInputStream routeputInputStream = new RoutePutInputStream();
                 Thread outputCopier = new Thread(() -> {
                     try {

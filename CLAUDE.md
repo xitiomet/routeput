@@ -137,3 +137,13 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 - The PHP and Python clients have not yet been updated for the request/response
     `blobCheck` protocol.
 - No unit test coverage for the blob handshake; verification is currently manual.
+
+
+# Definitions and important notes from the human designer
+
+RoutePutChannel is basically what this project is built around, in a local java environment
+there can be multiple Clients and Servers, but ultimately everything except for 
+request/response messages should eventually pass through a RoutePutChannel. Using the OnMessage method.
+
+RoutePutSession is the base interface for all connections to a RoutePutChannel, in order
+for an srcId to be valid in a channel the session must belong to the channel.

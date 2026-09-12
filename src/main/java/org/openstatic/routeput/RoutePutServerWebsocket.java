@@ -626,7 +626,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
 
     @Override
     public boolean containsConnectionId(String connectionId)
-    {
+    {        
+        // Check if the connectionId is a child of this session or of this session
         return RoutePutRemoteSession.isChild(this, connectionId) || this.connectionId.equals(connectionId);
     }
 

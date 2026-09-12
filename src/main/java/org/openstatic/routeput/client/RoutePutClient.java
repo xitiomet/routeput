@@ -66,6 +66,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.websocketUri = websocketUri;
         this.collector = false;
         this.stayConnected = true;
+        this.connectionId = RoutePutChannel.getMasterConnectionId();
         this.properties = new JSONObject();
         // Ensure blob storage is up so incoming chunks are actually kept; no-op if a
         // RoutePutServer in the same JVM already initialized with its own settings.
@@ -98,6 +99,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
 
         RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
+    }
+
+    public void setConnectionId(String connectionId)
+    {
+        this.connectionId = connectionId;
     }
 
     public String toString()
@@ -529,6 +535,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
     @Override
     public boolean containsConnectionId(String connectionId)
     {
+        // if the connectionId matches our master connection ID, and the source is not a child of this session, return false
+        // this ensures packets go to upstreams
+        if (this.connectionId.equals(RoutePutChannel.getMasterConnectionId()) && !RoutePutRemoteSession.isChild(this, connectionId))
+            return false;
+        // Check if the connectionId is a child of this session or if it matches this session's connectionId
         return this.connectionId.equals(connectionId) || RoutePutRemoteSession.isChild(this, connectionId);
     }
 

@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import org.openstatic.routeput.RoutePutMessage;
 import org.openstatic.routeput.RoutePutMessageListener;
 import org.openstatic.routeput.RoutePutSession;
+import org.openstatic.routeput.RoutePutChannel;
 
 public class RoutePutInputStream extends InputStream implements RoutePutMessageListener 
 {
@@ -93,7 +94,7 @@ public class RoutePutInputStream extends InputStream implements RoutePutMessageL
     @Override
     public void onMessage(RoutePutSession session, RoutePutMessage message)
     {
-        if(message.isType(RoutePutMessage.TYPE_BINARY_STREAM))
+        if(message.isType(RoutePutMessage.TYPE_BINARY_STREAM) && !message.isFrom(RoutePutChannel.getMasterConnectionId()))
         {
             synchronized(this)
             {

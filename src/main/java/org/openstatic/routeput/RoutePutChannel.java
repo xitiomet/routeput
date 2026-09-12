@@ -9,9 +9,12 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 import java.util.Iterator;
+import java.util.Random;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,11 +24,12 @@ import org.openstatic.routeput.client.RoutePutClient;
 public class RoutePutChannel implements RoutePutMessageListener
 {
     private static HashMap<String, RoutePutChannel> channels;
-    private static LinkedHashMap<String, RoutePutClient> upstreams;
+    private static Set<RoutePutClient> upstreams = new HashSet<RoutePutClient>();
 
     private static Thread channelTracker = null;
     private static File channelRoot;
     private static String hostname;
+    private static String masterConnectionId;
 
     private PropertyChangeSupport propertyChangeSupport;
     private String name;
@@ -50,13 +54,44 @@ public class RoutePutChannel implements RoutePutMessageListener
     private int msgTxPerSecond;
     private int msgRxPerSecond;
 
+    public static synchronized String generateBigAlphaKey(int key_length)
+    {
+        try
+        {
+            // make sure we never get the same millis!
+            Thread.sleep(1);
+        } catch (Exception e) {}
+        Random n = new Random(System.currentTimeMillis());
+        String alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        StringBuffer return_key = new StringBuffer();
+        for (int i = 0; i < key_length; i++)
+        {
+            return_key.append(alpha.charAt(n.nextInt(alpha.length())));
+        }
+        String randKey = return_key.toString();
+        //System.err.println("Generated Rule ID: " + randKey);
+        return randKey;
+    }
+
+    public static String getMasterConnectionId()
+    {
+        RoutePutChannel.initTracker();
+        return RoutePutChannel.masterConnectionId;
+    }
+
+    public static void setMasterConnectionId(String connectionId)
+    {
+        RoutePutChannel.initTracker();
+        RoutePutChannel.masterConnectionId = connectionId;
+    }
+
     public static RoutePutSession connectUpstream(RoutePutChannel channel, String uri)
     {
         RoutePutChannel.initTracker();
         final RoutePutClient client = new RoutePutClient(channel, uri);
         client.setProperty("upstream", uri);
         client.connect();
-        RoutePutChannel.upstreams.put(client.getConnectionId(), client);
+        RoutePutChannel.upstreams.add(client);
         return client;
     }
 
@@ -229,6 +264,10 @@ public class RoutePutChannel implements RoutePutMessageListener
     /* Start the channel tracker's internal thread if it hasn't been started already */
     public static Thread initTracker()
     {
+        if (RoutePutChannel.masterConnectionId == null)
+        {
+            RoutePutChannel.masterConnectionId = RoutePutChannel.generateBigAlphaKey(10);
+        }
         if (RoutePutChannel.hostname == null)
         {
             try 
@@ -241,12 +280,12 @@ public class RoutePutChannel implements RoutePutMessageListener
 
         if (RoutePutChannel.upstreams == null)
         {
-            RoutePutChannel.upstreams = new LinkedHashMap<String, RoutePutClient>();
+            RoutePutChannel.upstreams = new HashSet<RoutePutClient>();
             Runtime.getRuntime().addShutdownHook(new Thread() 
             { 
                 public void run() 
                 { 
-                    RoutePutChannel.upstreams.forEach((connectionId, rpc) -> {
+                    RoutePutChannel.upstreams.forEach((rpc) -> {
                         rpc.setAutoReconnect(false);
                         rpc.close();
                     });

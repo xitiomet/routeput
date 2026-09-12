@@ -229,6 +229,11 @@ public class RoutePutMessage extends JSONObject
     {
         return this.hasMetaField("srcId");
     }
+
+    public boolean isFrom(String connectionId)
+    {
+        return connectionId != null && connectionId.equals(this.getSourceId());
+    }
     
     public String getTargetId()
     {
@@ -248,6 +253,7 @@ public class RoutePutMessage extends JSONObject
         this.getRoutePutMeta().put("dstId", connectionId);
     }
 
+    // Create a new message for a specific target session
     public RoutePutMessage forTarget(RoutePutSession session)
     {
         RoutePutMessage newMsg = new RoutePutMessage(this);

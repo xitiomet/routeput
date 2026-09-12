@@ -15,6 +15,7 @@ public class RoutePutOutputStream extends OutputStream implements Runnable
     private boolean closed;
     private RoutePutChannel channel;
     private String targetId;
+    private String sourceId;
 
     public RoutePutOutputStream(RoutePutChannel channel)
     {
@@ -22,6 +23,7 @@ public class RoutePutOutputStream extends OutputStream implements Runnable
         this.channel = channel;
         this.closed = false;
         this.targetId = null;
+        this.sourceId = RoutePutChannel.getMasterConnectionId();
         this.autoFlush = new Thread(this);
         this.autoFlush.start();
     }
@@ -29,6 +31,11 @@ public class RoutePutOutputStream extends OutputStream implements Runnable
     public void setTargetId(String connectionId)
     {
         this.targetId = connectionId;
+    }
+
+    public void setSourceId(String connectionId)
+    {
+        this.sourceId = connectionId;
     }
 
     @Override
@@ -56,6 +63,11 @@ public class RoutePutOutputStream extends OutputStream implements Runnable
             {
                 msg.setTargetId(this.targetId);
             }
+            if (this.sourceId != null)
+            {
+                msg.setSourceId(this.sourceId);
+            }
+            msg.setMetaField("log",false);
             msg.put("data", java.util.Base64.getEncoder().encodeToString(this.baos.toByteArray()));
             this.baos.reset();
             this.channel.onMessage(null, msg);

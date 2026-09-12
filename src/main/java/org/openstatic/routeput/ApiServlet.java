@@ -392,7 +392,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     @Override
     public String getConnectionId() {
         // TODO Auto-generated method stub
-        return "api-" + RoutePutChannel.getHostname();
+        return RoutePutChannel.getMasterConnectionId() + "-api";
     }
 
     @Override
