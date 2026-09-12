@@ -21,9 +21,11 @@ import org.json.*;
 public class RoutePutMain
 {
     public static boolean keep_running;
+    public static String[] args;
 
     public static void main(String[] args)
     {
+        RoutePutMain.args = args;
         RoutePutMain.keep_running = true;
         Runtime.getRuntime().addShutdownHook(new Thread() 
         { 
@@ -50,9 +52,6 @@ public class RoutePutMain
             options.addOption(new Option("x", "binary-i-o-pipe", true, "Pipe raw standard input and output to a specific channel, using binary messages"));
             options.addOption(new Option("?", "help", false, "Shows help"));
             options.addOption(new Option("q", "quiet", false, "Quiet Mode"));
-            //options.addOption(new Option("m", "message", true, "Set Message for test client"));
-            //options.addOption(new Option("t", "test", true, "run named test mode"));
-
 
             Option upstreamOption = new Option("u", "upstream", true, "Create a bridge to another routeput server to link channels, or to specify a channel for a pipe operation Example: channel@ws://<server_channel_websocket_url>");
             upstreamOption.setOptionalArg(true);

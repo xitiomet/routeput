@@ -608,6 +608,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.properties.put("_listeners", this.listeners.size());
         this.properties.put("_remoteIP", this.remoteIP);
         this.properties.put("_hostname", RoutePutChannel.getHostname());
+        this.properties.put("_args", RoutePutMain.args);
         if (this.connectionId != null && this.connectionId.equals(RoutePutChannel.getMasterConnectionId()))
             this.properties.put("_master", true);
         return this.properties;
