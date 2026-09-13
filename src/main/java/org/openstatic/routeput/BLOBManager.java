@@ -375,6 +375,25 @@ public class BLOBManager
         return false;
     }
 
+    public static CompletableFuture<BLOBFile> getBlob(RoutePutSession session,RoutePutChannel channel, String name)
+    {
+        BLOBFile blobFile = resolveBlob(channel, name);
+        CompletableFuture<BLOBFile> future = new CompletableFuture<BLOBFile>();
+        if (blobFile != null)
+        {
+            if (blobFile.exists())
+            {
+                future.complete(blobFile);
+                return future;
+            } else {
+                return BLOBManager.requestBlob(null, channel, name);
+            }
+        } else {
+            future.completeExceptionally(new IllegalArgumentException("blobFile is null"));
+            return future;
+        }
+    }
+
     // Ask the given session (typically a RoutePutClient's connection to the server) to
     // send us a blob. Mirrors routeput.js `channel.getBlob(name)` semantics: emits a
     // `type:request, request:"blob"` and returns a future that completes when the last

@@ -412,16 +412,23 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.transmit(subscribeMessage);
     }
 
-    // Java equivalent of routeput.js `channel.getBlob(name)`. Requires the caller to
-    // have opted in with BLOBManager.init(settings) so incoming chunks are stored.
+    // will request the blob from the given channel.
     public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(RoutePutChannel channel, String name)
     {
         return BLOBManager.requestBlob(this, channel, name);
     }
 
+    // will always request the blob from the default channel if it is not available locally.
     public java.util.concurrent.CompletableFuture<BLOBFile> requestBlob(String name)
     {
         return this.requestBlob(this.getDefaultChannel(), name);
+    }
+
+    // Java equivalent of routeput.js `channel.getBlob(name)`.
+    // checks if file exists locally and requests it if not.
+    public java.util.concurrent.CompletableFuture<BLOBFile> getBlob(RoutePutChannel channel, String name)
+    {
+        return BLOBManager.getBlob(this, channel, name);
     }
 
     // Remember a password so it will be attached to the next handshake or subscribe
