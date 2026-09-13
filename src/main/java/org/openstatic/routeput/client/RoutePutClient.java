@@ -431,6 +431,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
         return BLOBManager.getBlob(this, channel, name);
     }
 
+    public java.util.concurrent.CompletableFuture<BLOBFile> getBlob(String name)
+    {
+        return this.getBlob(this.getDefaultChannel(), name);
+    }
+
     // Remember a password so it will be attached to the next handshake or subscribe
     // targeting the given channel.
     public void setChannelPassword(String channelName, String password)
