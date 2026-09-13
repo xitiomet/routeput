@@ -20,12 +20,14 @@ import org.json.*;
 
 public class RoutePutMain
 {
+    public static long startTime;
     public static boolean keep_running;
     public static String[] args;
 
     public static void main(String[] args)
     {
         RoutePutMain.args = args;
+        RoutePutMain.startTime = System.currentTimeMillis();
         Runtime.getRuntime().addShutdownHook(new Thread() 
         { 
             public void run() 
@@ -46,6 +48,7 @@ public class RoutePutMain
             CommandLineParser parser = new DefaultParser();
             options.addOption(new Option("c", "config", true, "Config file location, also means server mode"));
             options.addOption(new Option("p", "port", true, "Specify HTTP port"));
+            options.addOption(new Option("b", "blob-root", true, "Specify the root directory for blob storage"));
             options.addOption(new Option("i", "binary-input-pipe", true, "Pipe raw standard input to a specific channel, using binary messages"));
             options.addOption(new Option("o", "binary-output-pipe", true, "Pipe raw standard output to a specific channel, using binary messages"));
             options.addOption(new Option("x", "binary-i-o-pipe", true, "Pipe raw standard input and output to a specific channel, using binary messages"));
@@ -84,7 +87,7 @@ public class RoutePutMain
                 System.err.println("");
             }
             
-            if (cmd.hasOption("?"))
+            if (cmd.hasOption("?") || args.length == 0)
             {
                 HelpFormatter formatter = new HelpFormatter();
                 formatter.printHelp( "routeput", options );
@@ -114,6 +117,12 @@ public class RoutePutMain
                 settings = RoutePutServer.loadJSONObject(config);
                 serverMode = true;
                 RoutePutMain.keep_running = true;
+            }
+
+            if (cmd.hasOption("b"))
+            {
+                File blobRoot = new File(cmd.getOptionValue('b'));
+                settings.put("blobStorageRoot", blobRoot.getAbsolutePath());
             }
 
             if (cmd.hasOption("p"))
@@ -200,6 +209,11 @@ public class RoutePutMain
             e.printStackTrace(System.err);
         }
         
+    }
+
+    public static long getUptime()
+    {
+        return System.currentTimeMillis() - RoutePutMain.startTime;
     }
 
     public static void binaryTx(String url, RoutePutChannel channel)
