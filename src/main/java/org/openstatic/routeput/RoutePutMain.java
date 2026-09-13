@@ -68,7 +68,7 @@ public class RoutePutMain
                 channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
             }
             
-            if (!cmd.hasOption("q") && cmd.hasOption("c"))
+            if (!cmd.hasOption("q") && (cmd.hasOption("c") || cmd.hasOption("p")))
             {
                 System.err.println("  ______            _                   _   ");
                 System.err.println("  | ___ \\          | |                 | |  ");
