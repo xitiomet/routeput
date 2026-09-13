@@ -375,7 +375,7 @@ public class BLOBManager
         return false;
     }
 
-    public static CompletableFuture<BLOBFile> getBlob(RoutePutSession session,RoutePutChannel channel, String name)
+    public static CompletableFuture<BLOBFile> getBlob(RoutePutSession session, RoutePutChannel channel, String name)
     {
         BLOBFile blobFile = resolveBlob(channel, name);
         CompletableFuture<BLOBFile> future = new CompletableFuture<BLOBFile>();
@@ -386,7 +386,7 @@ public class BLOBManager
                 future.complete(blobFile);
                 return future;
             } else {
-                return BLOBManager.requestBlob(null, channel, name);
+                return BLOBManager.requestBlob(session, channel, name);
             }
         } else {
             future.completeExceptionally(new IllegalArgumentException("blobFile is null"));
