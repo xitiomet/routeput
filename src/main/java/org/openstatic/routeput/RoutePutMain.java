@@ -26,7 +26,6 @@ public class RoutePutMain
     public static void main(String[] args)
     {
         RoutePutMain.args = args;
-        RoutePutMain.keep_running = true;
         Runtime.getRuntime().addShutdownHook(new Thread() 
         { 
             public void run() 
@@ -67,8 +66,6 @@ public class RoutePutMain
             if (cmd.hasOption("n"))
             {
                 channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
-            } else {
-                channel = RoutePutChannel.getChannel("lobby");
             }
             
             if (!cmd.hasOption("q") && cmd.hasOption("c"))
@@ -108,6 +105,7 @@ public class RoutePutMain
                     }
                     RoutePutChannel.connectUpstream(channel, upstreamValue);
                 }
+                RoutePutMain.keep_running = true;
             }
             
             if (cmd.hasOption("c"))
@@ -115,10 +113,12 @@ public class RoutePutMain
                 File config = new File(cmd.getOptionValue('c',"routeput.json"));
                 settings = RoutePutServer.loadJSONObject(config);
                 serverMode = true;
+                RoutePutMain.keep_running = true;
             }
 
             if (cmd.hasOption("p"))
             {
+                serverMode = true;
                 int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
                 settings.put("port", port);
             }
@@ -144,6 +144,7 @@ public class RoutePutMain
 
             if (inputChannel != null)
             {
+                RoutePutMain.keep_running = true;
                 final RoutePutOutputStream routeputOutputStream = new RoutePutOutputStream(RoutePutChannel.getChannel(inputChannel));
                 Thread inputCopier = new Thread(() -> {
                     try {
@@ -162,6 +163,7 @@ public class RoutePutMain
             
             if (outputChannel != null)
             {
+                RoutePutMain.keep_running = true;
                 final RoutePutInputStream routeputInputStream = new RoutePutInputStream();
                 Thread outputCopier = new Thread(() -> {
                     try {
