@@ -482,6 +482,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private void cleanUp()
     {
         RoutePutChannel.removeFromAllChannels(this);
+        // Fail any blob fetch/send waiting on this connection so callers don't hang.
+        BLOBManager.failPendingTransfersForSession(this, new java.io.IOException("connection closed"));
         // Only drop the sessions entry if it still points at us: a reconnect with the
         // same connectionId may have already replaced us, and blindly removing by key
         // would orphan the live replacement session in every channel it joined.

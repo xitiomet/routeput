@@ -3,6 +3,7 @@ package org.openstatic.routeput;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.HashMap;
@@ -16,13 +17,20 @@ public class BLOBManager
     private static HashMap<String, StringBuffer> blobStorage;
     private static HashMap<String, PendingBlobSend> pendingSends = new HashMap<String, PendingBlobSend>();
     // Futures awaiting completion of a blob fetch we initiated, keyed by request msgId.
-    private static HashMap<String, CompletableFuture<BLOBFile>> pendingFetches = new HashMap<String, CompletableFuture<BLOBFile>>();
+    private static HashMap<String, PendingFetch> pendingFetches = new HashMap<String, PendingFetch>();
     private static File blobRoot;
     public static JSONObject settings = new JSONObject();
     // True when the current init came from initClient() (temp dir); a later explicit
     // init(settings) with non-null settings will replace it. Once a non-provisional
     // init has run, subsequent init() calls are ignored.
     private static boolean provisional = false;
+    // Fires timeouts for stalled blob transfers so pending futures can never orphan.
+    private static final java.util.concurrent.ScheduledExecutorService scheduler =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor((r) -> {
+            Thread t = new Thread(r, "BLOBManager-timeout");
+            t.setDaemon(true);
+            return t;
+        });
 
     private static class PendingBlobSend
     {
@@ -32,6 +40,25 @@ public class BLOBManager
         StringBuffer sb;
         RoutePutMessage request;
         CompletableFuture<Void> future;
+        java.util.concurrent.ScheduledFuture<?> timeout;
+    }
+
+    // A requestBlob() future paired with the session it rode out on so a disconnect
+    // (or a stalled stream) can fail it instead of leaving the caller blocked forever.
+    private static class PendingFetch
+    {
+        RoutePutSession session;
+        CompletableFuture<BLOBFile> future;
+        java.util.concurrent.ScheduledFuture<?> timeout;
+    }
+
+    // Schedule a stall timeout for a pending transfer; returns null when disabled
+    // (blobTransferTimeout <= 0).
+    private static java.util.concurrent.ScheduledFuture<?> scheduleTransferTimeout(Runnable r)
+    {
+        long secs = BLOBManager.settings.optLong("blobTransferTimeout", 60L);
+        if (secs <= 0) return null;
+        return BLOBManager.scheduler.schedule(r, secs, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
@@ -224,25 +251,41 @@ public class BLOBManager
             {
                 jo.getRoutePutChannel().broadcast(jo);
             }
+            // Key the reassembly buffer by channel + name so concurrent transfers of the
+            // same file (or the same name across channels) never clobber each other.
+            String channelKey = jo.hasChannel() ? jo.getChannel() : "";
+            String storeKey = channelKey + ":" + name;
             StringBuffer sb;
             if (i == 1)
             {
                 sb = new StringBuffer();
-                BLOBManager.blobStorage.put(name, sb);
+                BLOBManager.blobStorage.put(storeKey, sb);
             } else {
-                sb = BLOBManager.blobStorage.get(name);
+                sb = BLOBManager.blobStorage.get(storeKey);
+            }
+            // A missing buffer means we never saw chunk 1 (dropped/mis-routed); reject any
+            // fetch waiting on it instead of NPEing and orphaning the future.
+            if (sb == null)
+            {
+                if (rpm.has("ref"))
+                {
+                    completePendingFetch(rpm.optString("ref", null), null, new IllegalStateException("missing first chunk for blob: " + name));
+                }
+                return;
             }
             sb.append(rpm.optString("data",""));
             if (i == of)
             {
                 RoutePutChannel channel = jo.getRoutePutChannel();
-                File blobFolder = channel.getBlobFolder();
-                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Channel: " + channel.getName() + " Client: " + session.getConnectionId());
+                File blobFolder = (channel != null) ? channel.getBlobFolder() : null;
+                String channelName = (channel != null) ? channel.getName() : "(none)";
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Channel: " + channelName + " Client: " + session.getConnectionId());
+                BLOBManager.blobStorage.remove(storeKey);
+                BLOBFile blobFile = null;
                 if (blobFolder != null)
                 {
-                    BLOBFile blobFile = new BLOBFile(blobFolder, channel.getName(), name);
+                    blobFile = new BLOBFile(blobFolder, channel.getName(), name);
                     BLOBManager.saveBase64Blob(blobFile, sb);
-                    BLOBManager.blobStorage.remove(name);
                     // Acknowledge blob sent
                     RoutePutMessage resp = new RoutePutMessage();
                     resp.setType(RoutePutMessage.TYPE_BLOB);
@@ -253,12 +296,16 @@ public class BLOBManager
                         resp.setChannel(jo.getRoutePutChannel());
                     }
                     session.send(resp);
-
-                    // If this was the final chunk of a fetch we started, resolve it.
-                    if (rpm.has("ref"))
-                    {
-                        completePendingFetch(rpm.optString("ref", null), blobFile, null);
-                    }
+                }
+                // Always settle a fetch we started, even when there was no folder to save
+                // into, so the caller's future can never hang on the final chunk.
+                if (rpm.has("ref"))
+                {
+                    String ref = rpm.optString("ref", null);
+                    if (blobFile != null)
+                        completePendingFetch(ref, blobFile, null);
+                    else
+                        completePendingFetch(ref, null, new IllegalStateException("blob received but no storage folder for channel: " + channelName));
                 }
             }
         }
@@ -274,7 +321,6 @@ public class BLOBManager
         String remoteMd5 = rpm.optString("md5", "");
         long remoteSize = rpm.optLong("size", -1);
         RoutePutChannel channel = request.getRoutePutChannel();
-        File blobFolder = channel.getBlobFolder();
         // Client libraries with no blob storage opt-in reply "have" so the remote skips
         // pushing chunks that would just be discarded.
         if (!BLOBManager.isInitialized())
@@ -291,6 +337,7 @@ public class BLOBManager
         }
 
         boolean have = false;
+        File blobFolder = (channel != null) ? channel.getBlobFolder() : null;
         if (blobFolder != null && blobFolder.exists())
         {
             BLOBFile bf = new BLOBFile(blobFolder, channel.getName(), name);
@@ -304,6 +351,8 @@ public class BLOBManager
             }
         }
 
+        // Always answer — a missing response would strand the sender's pendingSends entry
+        // and, in turn, the fetcher waiting on those chunks.
         RoutePutMessage resp = new RoutePutMessage();
         resp.setResponse("blobCheck", request);
         resp.setMetaField("name", name);
@@ -326,6 +375,7 @@ public class BLOBManager
             pending = BLOBManager.pendingSends.remove(ref);
         }
         if (pending == null) return;
+        if (pending.timeout != null) pending.timeout.cancel(false);
 
         String state = rpm.optString("state", "need");
         if ("have".equals(state))
@@ -418,10 +468,16 @@ public class BLOBManager
         req.setRequest("blob");
         req.setMetaField("name", name);
         if (channel != null) req.setChannel(channel);
+        final String msgId = req.getMessageId();
+        final PendingFetch pf = new PendingFetch();
+        pf.session = session;
+        pf.future = future;
         synchronized (BLOBManager.pendingFetches)
         {
-            BLOBManager.pendingFetches.put(req.getMessageId(), future);
+            BLOBManager.pendingFetches.put(msgId, pf);
         }
+        pf.timeout = scheduleTransferTimeout(() ->
+            completePendingFetch(msgId, null, new java.util.concurrent.TimeoutException("blob request timed out: " + name)));
         session.send(req);
         return future;
     }
@@ -430,14 +486,62 @@ public class BLOBManager
     private static void completePendingFetch(String ref, BLOBFile file, Throwable error)
     {
         if (ref == null) return;
-        CompletableFuture<BLOBFile> future;
+        PendingFetch pf;
         synchronized (BLOBManager.pendingFetches)
         {
-            future = BLOBManager.pendingFetches.remove(ref);
+            pf = BLOBManager.pendingFetches.remove(ref);
         }
-        if (future == null) return;
-        if (error != null) future.completeExceptionally(error);
-        else future.complete(file);
+        if (pf == null) return;
+        if (pf.timeout != null) pf.timeout.cancel(false);
+        if (error != null) pf.future.completeExceptionally(error);
+        else pf.future.complete(file);
+    }
+
+    // Fail every in-flight fetch and send tied to a session that just went away so no
+    // caller is left blocked on a stream that can never resume.
+    public static void failPendingTransfersForSession(RoutePutSession session, Throwable error)
+    {
+        if (session == null) return;
+        Throwable cause = (error != null) ? error : new java.io.IOException("connection closed");
+        java.util.ArrayList<PendingFetch> fetches = new java.util.ArrayList<PendingFetch>();
+        synchronized (BLOBManager.pendingFetches)
+        {
+            java.util.Iterator<java.util.Map.Entry<String, PendingFetch>> it = BLOBManager.pendingFetches.entrySet().iterator();
+            while (it.hasNext())
+            {
+                java.util.Map.Entry<String, PendingFetch> e = it.next();
+                if (e.getValue().session == session)
+                {
+                    fetches.add(e.getValue());
+                    it.remove();
+                }
+            }
+        }
+        for (PendingFetch pf : fetches)
+        {
+            if (pf.timeout != null) pf.timeout.cancel(false);
+            pf.future.completeExceptionally(cause);
+        }
+
+        java.util.ArrayList<PendingBlobSend> sends = new java.util.ArrayList<PendingBlobSend>();
+        synchronized (BLOBManager.pendingSends)
+        {
+            java.util.Iterator<java.util.Map.Entry<String, PendingBlobSend>> it = BLOBManager.pendingSends.entrySet().iterator();
+            while (it.hasNext())
+            {
+                java.util.Map.Entry<String, PendingBlobSend> e = it.next();
+                if (e.getValue().session == session)
+                {
+                    sends.add(e.getValue());
+                    it.remove();
+                }
+            }
+        }
+        for (PendingBlobSend ps : sends)
+        {
+            if (ps.timeout != null) ps.timeout.cancel(false);
+            if (ps.future != null) ps.future.completeExceptionally(cause);
+        }
     }
 
     public static void fetchBlob(RoutePutSession session, RoutePutMessage request)
@@ -484,13 +588,13 @@ public class BLOBManager
             return f;
         }
         String name = file.getName();
-        StringBuffer sbuffer = new StringBuffer();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (FileInputStream fis = new FileInputStream(file))
         {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) != -1) {
-                sbuffer.append(new String(buffer, 0, bytesRead));
+                baos.write(buffer, 0, bytesRead);
             }
         }
         catch (IOException e)
@@ -499,14 +603,8 @@ public class BLOBManager
             f.completeExceptionally(e);
             return f;
         }
-        return sendBlob(session, name, channel, getContentTypeFor(name), sbuffer, request);
+        return sendBlob(session, name, channel, getContentTypeFor(name), baos.toByteArray(), request);
     }
-
-    public static CompletableFuture<Void> sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, StringBuffer bytes, RoutePutMessage request)
-    {
-        return sendBlob(session, name, channel, contentType, bytes.toString().getBytes(), request);
-    }
-
 
     // Send a chunked blob to client from byte array
     public static CompletableFuture<Void> sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes)
@@ -555,13 +653,28 @@ public class BLOBManager
         pending.sb = sb;
         pending.request = request;
         pending.future = future;
+        final String queryId = query.getMessageId();
         synchronized (BLOBManager.pendingSends)
         {
-            BLOBManager.pendingSends.put(query.getMessageId(), pending);
+            BLOBManager.pendingSends.put(queryId, pending);
         }
+        pending.timeout = scheduleTransferTimeout(() -> timeoutPendingSend(queryId, name));
 
         session.send(query);
         return future;
+    }
+
+    // Drop a blobCheck send that never got a reply so its future can't hang forever.
+    private static void timeoutPendingSend(String ref, String name)
+    {
+        PendingBlobSend pending;
+        synchronized (BLOBManager.pendingSends)
+        {
+            pending = BLOBManager.pendingSends.remove(ref);
+        }
+        if (pending == null) return;
+        if (pending.future != null)
+            pending.future.completeExceptionally(new java.util.concurrent.TimeoutException("blobCheck timed out: " + name));
     }
 
     // Actual chunk transmission — called after the remote replies state=need, or as a

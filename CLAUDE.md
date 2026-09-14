@@ -104,6 +104,14 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     timeout to `0` to disable the sweep.
 - MD5 (hex) + byte size uniquely identify a blob for the have/need check. Java uses
     upper-case hex, JS lower-case; comparisons are case-insensitive.
+- Java `BLOBManager` reassembles incoming chunks in a buffer keyed by
+    `channel + ":" + name` (matching the JS `chunkBuffer`), so concurrent transfers of
+    the same name never clobber each other.
+- Java in-flight transfers self-heal: `pendingFetches` (`requestBlob`) and
+    `pendingSends` (`blobCheck`) each carry a scheduled `blobTransferTimeout` (seconds,
+    default `60`, `0` disables) and are failed en masse when their session disconnects
+    via `BLOBManager.failPendingTransfersForSession(...)`. This keeps a
+    `getBlob`/`requestBlob` future from hanging when a stream stalls or the socket drops.
 - JS `blobCache` (`context:name → {md5, size, blob}`) satisfies `requestBlob(...)`
     from the local cache without a server round-trip.
 
@@ -132,8 +140,6 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 
 ## Known gaps / follow-ups
 
-- `BLOBManager.pendingSends` has no timeout; a peer that never responds to a
-    `blobCheck` leaks an entry. Consider a scheduled sweep.
 - The PHP and Python clients have not yet been updated for the request/response
     `blobCheck` protocol.
 - No unit test coverage for the blob handshake; verification is currently manual.

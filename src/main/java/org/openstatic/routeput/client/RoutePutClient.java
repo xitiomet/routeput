@@ -304,6 +304,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private void cleanUp()
     {
         RoutePutChannel.removeFromAllChannels(this);
+        // Fail any blob fetch/send waiting on this connection so callers don't hang.
+        BLOBManager.failPendingTransfersForSession(this, new java.io.IOException("connection closed"));
         RoutePutClient.this.keepAliveThread = null;
     }
 
@@ -515,6 +517,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         {
             // System.err.println("Close websocket");
             RoutePutClient.this.session = null;
+            // In-flight blob transfers can't resume across a reconnect; fail them now.
+            BLOBManager.failPendingTransfersForSession(RoutePutClient.this, new java.io.IOException("connection closed"));
             if (RoutePutClient.this.stayConnected)
             {
                 System.err.println("Connection Closed - Auto Reconnect");
@@ -530,6 +534,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             System.err.println("Connection Error - websocket");
             e.printStackTrace(System.err);
             RoutePutClient.this.session = null;
+            BLOBManager.failPendingTransfersForSession(RoutePutClient.this, e);
             if (RoutePutClient.this.stayConnected) {
                 System.err.println("Auto Reconnect");
                 RoutePutClient.this.wakeKeepAlive();

@@ -46,6 +46,9 @@ public class RoutePutMessage extends JSONObject
     // For Binary streams inside a channel
     public static final String TYPE_BINARY_STREAM = "binary";
 
+    // Shared source for message ids; seeded once so back-to-back calls can't collide.
+    private static final Random messageIdRandom = new Random();
+
     /* Create a routeput message from a JSONObject */
     public RoutePutMessage(JSONObject jsonObject)
     {
@@ -70,16 +73,11 @@ public class RoutePutMessage extends JSONObject
     public static synchronized String generateMessageId()
     {
         int key_length = 10;
-        try
-        {
-            Thread.sleep(1);
-        } catch (Exception e) {}
-        Random n = new Random(System.currentTimeMillis());
         String alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         StringBuffer return_key = new StringBuffer();
         for (int i = 0; i < key_length; i++)
         {
-            return_key.append(alpha.charAt(n.nextInt(alpha.length())));
+            return_key.append(alpha.charAt(messageIdRandom.nextInt(alpha.length())));
         }
         String randKey = return_key.toString();
         return randKey;
