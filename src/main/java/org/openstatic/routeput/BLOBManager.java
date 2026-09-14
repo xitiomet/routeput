@@ -3,6 +3,7 @@ package org.openstatic.routeput;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
@@ -471,13 +472,46 @@ public class BLOBManager
         }
     }
 
+
+    public static void sendBlob(RoutePutSession session, RoutePutChannel channel, File file, RoutePutMessage request)
+    {
+        if (file == null || !file.exists()) return;
+        String name = file.getName();
+        StringBuffer sbuffer = new StringBuffer();
+        try (FileInputStream fis = new FileInputStream(file))
+        {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                sbuffer.append(new String(buffer, 0, bytesRead));
+            }
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+            return;
+        }
+        sendBlob(session, name, channel, getContentTypeFor(name), sbuffer, request);
+    }
+
+    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, StringBuffer bytes, RoutePutMessage request)
+    {
+        sendBlob(session, name, channel, contentType, bytes.toString().getBytes(), request);
+    }
+
+
     // Send a chunked blob to client from byte array
     public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes)
+    {
+        sendBlob(session, name, channel, contentType, bytes, null);
+    }
+
+    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes, RoutePutMessage request)
     {
         StringBuffer sb = new StringBuffer();
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        transmitBlobChunks(session, name, channel, sb, null);
+        transmitBlobChunks(session, name, channel, sb, request);
     }
     
     // Transmit a blob to this session, first querying the remote to see if it already
@@ -635,6 +669,22 @@ public class BLOBManager
             return "video/x-ms-wmv";
         } else if (lc_file.endsWith(".3gp")) {
             return "video/3gpp";
+        } else if (lc_file.endsWith(".flv")) {
+            return "video/x-flv";
+        } else if (lc_file.endsWith(".webm")) {
+            return "video/webm";
+        } else if (lc_file.endsWith(".ogm")) {
+            return "video/ogg";
+        } else if (lc_file.endsWith(".ogg")) {
+            return "audio/ogg";
+        } else if (lc_file.endsWith(".wav")) {
+            return "audio/wav";
+        } else if (lc_file.endsWith(".flac")) {
+            return "audio/flac";
+        } else if (lc_file.endsWith(".aac")) {
+            return "audio/aac";
+        } else if (lc_file.endsWith(".m4a")) {
+            return "audio/mp4";
         } else {
             String result = MimeTypes.getDefaultMimeByExtension(filename);
             if ("".equals(result) || result == null)
