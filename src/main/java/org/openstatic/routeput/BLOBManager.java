@@ -31,6 +31,7 @@ public class BLOBManager
         RoutePutChannel channel;
         StringBuffer sb;
         RoutePutMessage request;
+        CompletableFuture<Void> future;
     }
 
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
@@ -343,10 +344,11 @@ public class BLOBManager
                 }
                 pending.session.send(ack);
             }
+            if (pending.future != null) pending.future.complete(null);
         }
         else
         {
-            sendBlobChunks(pending.session, pending.name, pending.channel, pending.sb, pending.request);
+            sendBlobChunks(pending.session, pending.name, pending.channel, pending.sb, pending.request, pending.future);
         }
     }
 
@@ -473,9 +475,14 @@ public class BLOBManager
     }
 
 
-    public static void sendBlob(RoutePutSession session, RoutePutChannel channel, File file, RoutePutMessage request)
+    public static CompletableFuture<Void> sendBlob(RoutePutSession session, RoutePutChannel channel, File file, RoutePutMessage request)
     {
-        if (file == null || !file.exists()) return;
+        if (file == null || !file.exists())
+        {
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(new IllegalArgumentException("file is null or does not exist"));
+            return f;
+        }
         String name = file.getName();
         StringBuffer sbuffer = new StringBuffer();
         try (FileInputStream fis = new FileInputStream(file))
@@ -488,36 +495,38 @@ public class BLOBManager
         }
         catch (IOException e)
         {
-            e.printStackTrace();
-            return;
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(e);
+            return f;
         }
-        sendBlob(session, name, channel, getContentTypeFor(name), sbuffer, request);
+        return sendBlob(session, name, channel, getContentTypeFor(name), sbuffer, request);
     }
 
-    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, StringBuffer bytes, RoutePutMessage request)
+    public static CompletableFuture<Void> sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, StringBuffer bytes, RoutePutMessage request)
     {
-        sendBlob(session, name, channel, contentType, bytes.toString().getBytes(), request);
+        return sendBlob(session, name, channel, contentType, bytes.toString().getBytes(), request);
     }
 
 
     // Send a chunked blob to client from byte array
-    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes)
+    public static CompletableFuture<Void> sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes)
     {
-        sendBlob(session, name, channel, contentType, bytes, null);
+        return sendBlob(session, name, channel, contentType, bytes, null);
     }
 
-    public static void sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes, RoutePutMessage request)
+    public static CompletableFuture<Void> sendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes, RoutePutMessage request)
     {
         StringBuffer sb = new StringBuffer();
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        transmitBlobChunks(session, name, channel, sb, request);
+        return transmitBlobChunks(session, name, channel, sb, request);
     }
     
     // Transmit a blob to this session, first querying the remote to see if it already
     // has the file (matching name/size/md5). If so, chunks are skipped entirely.
-    private static void transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
+    private static CompletableFuture<Void> transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
     {
+        CompletableFuture<Void> future = new CompletableFuture<Void>();
         byte[] raw = decodeDataUri(sb);
         String md5 = (raw != null) ? md5OfBytes(raw) : null;
         long size = (raw != null) ? raw.length : sb.length();
@@ -525,8 +534,8 @@ public class BLOBManager
         if (md5 == null)
         {
             // Cannot compute md5 — fall back to sending chunks directly.
-            sendBlobChunks(session, name, channel, sb, request);
-            return;
+            sendBlobChunks(session, name, channel, sb, request, future);
+            return future;
         }
 
         RoutePutMessage query = new RoutePutMessage();
@@ -545,45 +554,55 @@ public class BLOBManager
         pending.channel = channel;
         pending.sb = sb;
         pending.request = request;
+        pending.future = future;
         synchronized (BLOBManager.pendingSends)
         {
             BLOBManager.pendingSends.put(query.getMessageId(), pending);
         }
 
         session.send(query);
+        return future;
     }
 
     // Actual chunk transmission — called after the remote replies state=need, or as a
-    // fallback when md5 can't be computed.
-    private static void sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
+    // fallback when md5 can't be computed. Completes `future` when the last chunk is sent.
+    private static Thread sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final CompletableFuture<Void> future)
     {
         Thread x = new Thread(() -> {
-            int size = sb.length();
-            int chunkSize = 4096;
-            int numChunks = (size + chunkSize - 1) / chunkSize;
-            for (int i = 0; i < numChunks; i++)
+            try
             {
-                RoutePutMessage mm = new RoutePutMessage();
-                mm.setType("blob");
-                mm.setMetaField("name", name);
-                mm.setChannel(channel);
-                mm.setMetaField("i", i+1);
-                mm.setMetaField("of", numChunks);
-                if ((i + 1) == numChunks && request != null)
+                int size = sb.length();
+                int chunkSize = 4096;
+                int numChunks = (size + chunkSize - 1) / chunkSize;
+                for (int i = 0; i < numChunks; i++)
                 {
-                    mm.setRef(request);
+                    RoutePutMessage mm = new RoutePutMessage();
+                    mm.setType("blob");
+                    mm.setMetaField("name", name);
+                    mm.setChannel(channel);
+                    mm.setMetaField("i", i+1);
+                    mm.setMetaField("of", numChunks);
+                    if ((i + 1) == numChunks && request != null)
+                    {
+                        mm.setRef(request);
+                    }
+                    int start = i*chunkSize;
+                    int end = start + chunkSize;
+                    if (end > size)
+                        end = size;
+                    mm.setMetaField("data", sb.substring(start,end));
+                    session.send(mm);
                 }
-                int start = i*chunkSize;
-                int end = start + chunkSize;
-                if (end > size)
-                    end = size;
-                mm.setMetaField("data", sb.substring(start,end));
-                session.send(mm);
+                String channelName = (channel != null) ? channel.getName() : "(none)";
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB transmitted: " + name + " in channel: " + channelName + " Client: " + session.getConnectionId());
+                if (future != null) future.complete(null);
+            } catch (Exception t) {
+                if (future != null) future.completeExceptionally(t);
+                else RoutePutServer.logError(t);
             }
-            String channelName = (channel != null) ? channel.getName() : "(none)";
-            RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB transmitted: " + name + " in channel: " + channelName + " Client: " + session.getConnectionId());
         });
         x.start();
+        return x;
     }
 
     public static File saveBase64Blob(File file, StringBuffer sb)
