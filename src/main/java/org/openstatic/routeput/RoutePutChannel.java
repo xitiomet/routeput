@@ -153,17 +153,6 @@ public class RoutePutChannel implements RoutePutMessageListener
         saveChannelProperties();
     }
 
-    public void setChannelBlobPrefixUrl(String url)
-    {
-        this.properties.put("channelBlobPrefixUrl", url);
-        saveChannelProperties();
-    }
-
-    public String getChannelBlobPrefixUrl()
-    {
-        return this.properties.optString("channelBlobPrefixUrl", null);
-    }
-
     /* will this channel be automatically deleted when idle */
     public boolean isPermanent()
     {

@@ -53,16 +53,6 @@ public class BLOBFile extends File
     {
         try
         {
-            String channelBlobPrefixUrl = null;
-            if (this.channel != null)
-            {
-                channelBlobPrefixUrl = this.channel.getChannelBlobPrefixUrl();
-                if (!channelBlobPrefixUrl.endsWith("/")) channelBlobPrefixUrl += "/";
-                if (channelBlobPrefixUrl != null && !channelBlobPrefixUrl.isEmpty())
-                {
-                    return channelBlobPrefixUrl + URLEncoder.encode(this.getName(), "UTF-8");
-                }
-            }
             String fallbackApiPath = "http://" + RoutePutChannel.getHostname() + ":" + String.valueOf(BLOBManager.settings.optInt("port", 6144)) + BLOBManager.settings.optString("apiMountPath", "/api/*").replace("*", "");
             String apiPath = BLOBManager.settings.optString("fullApiMountPath", fallbackApiPath);
             if (this.channelName != null)
@@ -198,7 +188,8 @@ public class BLOBFile extends File
             jo.put("timeTillExpiration", this.timeTillExpiration());
             jo.put("md5", this.getMD5());
             jo.put("size", this.length());
-            jo.put("url", this.getURL());
+            if (RoutePutServer.instance != null)
+                jo.put("url", this.getURL());
             if (!this.isDirectory())
             {
                 jo.put("contentType", this.getContentType());
