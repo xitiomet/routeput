@@ -15,6 +15,7 @@ public class BLOBFile extends File
 {
     private String channelName;
     private String md5;
+    private RoutePutChannel channel;
     private long md5LastModified;
     
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
@@ -33,6 +34,7 @@ public class BLOBFile extends File
     {
         super(containingFolder, name);
         this.channelName = channelName;
+        this.channel = RoutePutChannel.getChannel(channelName);
         this.md5 = generateMD5(this);
         this.md5LastModified = this.lastModified();
     }
@@ -42,10 +44,25 @@ public class BLOBFile extends File
         return this.channelName;
     }
 
+    public RoutePutChannel getChannel()
+    {
+        return this.channel;
+    }
+
     public String getURL()
     {
         try
         {
+            String channelBlobPrefixUrl = null;
+            if (this.channel != null)
+            {
+                channelBlobPrefixUrl = this.channel.getChannelBlobPrefixUrl();
+                if (!channelBlobPrefixUrl.endsWith("/")) channelBlobPrefixUrl += "/";
+                if (channelBlobPrefixUrl != null && !channelBlobPrefixUrl.isEmpty())
+                {
+                    return channelBlobPrefixUrl + URLEncoder.encode(this.getName(), "UTF-8");
+                }
+            }
             String fallbackApiPath = "http://" + RoutePutChannel.getHostname() + ":" + String.valueOf(BLOBManager.settings.optInt("port", 6144)) + BLOBManager.settings.optString("apiMountPath", "/api/*").replace("*", "");
             String apiPath = BLOBManager.settings.optString("fullApiMountPath", fallbackApiPath);
             if (this.channelName != null)
