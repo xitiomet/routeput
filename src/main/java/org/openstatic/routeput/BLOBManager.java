@@ -136,6 +136,11 @@ public class BLOBManager
         return BLOBManager.settings.optLong("blobStorageTimeout", 30L * 24L * 60L * 60L);
     }
 
+    public static long getBlobStorageTimeoutMillis()
+    {
+        return getBlobStorageTimeout() * 1000L;
+    }
+
     // Bring up BLOBManager for a standalone RoutePutClient with a JVM temp directory
     // that is recursively deleted on shutdown. No-op when a previous init already ran;
     // an explicit init(settings) after this replaces the provisional temp root.

@@ -147,7 +147,7 @@ public class BLOBFile extends File
     {
         if (!this.exists())
             return 0;
-        return BLOBManager.getBlobStorageTimeout() + this.lastModified();
+        return BLOBManager.getBlobStorageTimeoutMillis() + this.lastModified();
     }
 
     public long timeTillExpiration()
