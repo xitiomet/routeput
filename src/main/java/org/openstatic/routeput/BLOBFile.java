@@ -14,6 +14,8 @@ import org.json.JSONObject;
 public class BLOBFile extends File
 {
     private String channelName;
+    private String md5;
+    private long md5LastModified;
     
     final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
     private static String bytesToHex(byte[] bytes)
@@ -31,6 +33,8 @@ public class BLOBFile extends File
     {
         super(containingFolder, name);
         this.channelName = channelName;
+        this.md5 = generateMD5(this);
+        this.md5LastModified = this.lastModified();
     }
 
     public String getChannelName()
@@ -57,6 +61,8 @@ public class BLOBFile extends File
 
     private static String generateMD5(File file)
     {
+        if (!file.exists())
+            return null;
         //this.cancel_operation = false;
         FileInputStream inputStream = null;
         try
@@ -130,9 +136,30 @@ public class BLOBFile extends File
         return sb;
     }
 
+    public long getExpires()
+    {
+        if (!this.exists())
+            return 0;
+        return BLOBManager.getBlobStorageTimeout() + this.lastModified();
+    }
+
+    public long timeTillExpiration()
+    {
+        if (this.md5 == null || this.md5LastModified != this.lastModified())
+            return 0;
+        return this.getExpires() - System.currentTimeMillis();
+    }
+
     public String getMD5()
     {
-        return generateMD5(this);
+        if (!this.exists())
+            return null;
+        if (this.md5 == null || this.md5LastModified != this.lastModified())
+        {
+            this.md5 = generateMD5(this);
+            this.md5LastModified = this.lastModified();
+        }
+        return this.md5;
     }
 
     public JSONObject toJSONObject()
@@ -147,6 +174,12 @@ public class BLOBFile extends File
         jo.put("exists", exists);
         if (exists)
         {
+            long lastModified = this.lastModified();
+            long expires = this.getExpires();
+            jo.put("lastModified", lastModified);
+            jo.put("expires", expires);
+            jo.put("timeTillExpiration", this.timeTillExpiration());
+            jo.put("md5", this.getMD5());
             jo.put("size", this.length());
             jo.put("url", this.getURL());
             if (!this.isDirectory())

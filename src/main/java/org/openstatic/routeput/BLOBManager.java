@@ -121,7 +121,7 @@ public class BLOBManager
                 BLOBManager.blobRoot.mkdir();
             }
             // 30 days default; caller can override with "blobStorageTimeout" in seconds.
-            long timeoutSecs = BLOBManager.settings.optLong("blobStorageTimeout", 30L * 24L * 60L * 60L);
+            long timeoutSecs = getBlobStorageTimeout();
             sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
             provisional = false;
         }
@@ -129,6 +129,11 @@ public class BLOBManager
         {
             BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
         }
+    }
+
+    public static long getBlobStorageTimeout()
+    {
+        return BLOBManager.settings.optLong("blobStorageTimeout", 30L * 24L * 60L * 60L);
     }
 
     // Bring up BLOBManager for a standalone RoutePutClient with a JVM temp directory
