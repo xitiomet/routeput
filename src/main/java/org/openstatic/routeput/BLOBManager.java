@@ -298,7 +298,7 @@ public class BLOBManager
                 RoutePutChannel channel = jo.getRoutePutChannel();
                 File blobFolder = (channel != null) ? channel.getBlobFolder() : null;
                 String channelName = (channel != null) ? channel.getName() : "(none)";
-                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"BLOB received: " + name + " Channel: " + channelName + " Client: " + session.getConnectionId());
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_INFO,"(" + session.getConnectionId() + ") BLOB received: " + name + " Channel: " + channelName );
                 BLOBManager.blobStorage.remove(storeKey);
                 BLOBFile blobFile = null;
                 if (blobFolder != null)
@@ -583,7 +583,7 @@ public class BLOBManager
                 resp.setChannel(channel);
                 resp.setMetaField("exists", false);
                 session.send(resp);
-                RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getConnectionId());
+                RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"(" + session.getConnectionId() + ") BLOB not found: " + name + " in Channel: " + channel.getName());
             }
         } else {
             RoutePutMessage resp = new RoutePutMessage();
@@ -593,7 +593,7 @@ public class BLOBManager
             resp.setChannel(channel);
             resp.setMetaField("exists", false);
             session.send(resp);
-            RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"BLOB not found: " + name + " in Channel: " + channel.getName() + " Client: " + session.getConnectionId());
+            RoutePutServer.log(RoutePutMessage.TYPE_LOG_ERROR,"(" + session.getConnectionId() + ") BLOB not found: " + name + " in Channel: " + channel.getName());
         }
     }
 

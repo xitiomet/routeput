@@ -523,7 +523,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
     {
         if (this.websocketSession != null && jo != null)
         {
-            jo.setSourceIdIfNull(this.connectionId);
+            jo.setSourceIdIfNull(RoutePutChannel.getMasterSourceId());
             this.writeQueue.offer(jo);
         }
     }
@@ -667,6 +667,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
         this.lastPingTx = ts;
         RoutePutMessage pingMessage = new RoutePutMessage();
         pingMessage.setType("ping");
+        pingMessage.setSourceId(RoutePutChannel.getMasterSourceId());
+        pingMessage.setTargetId(this.connectionId);
         //pingMessage.setChannel(this.getDefaultChannel());
         pingMessage.setMetaField("timestamp", ts);
         this.send(pingMessage);
