@@ -571,7 +571,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
                     this.lastTxPacket = jo;
                 } catch (InterruptedException ie) {
                     break;
-                } catch (Exception e) { RoutePutServer.logError(e); }
+                } catch (Exception e) {  }
             }
         }
     }
