@@ -207,9 +207,13 @@ public class BLOBManager
                 {
                     try
                     {
-                        if (f.delete())
+                        String folderName = f.getName();
+                        if (!RoutePutChannel.channelExists(folderName))
                         {
-                            RoutePutServer.logIt("BLOBManager removed empty blob folder: " + f.getAbsolutePath());
+                            if (f.delete())
+                            {
+                                RoutePutServer.logIt("BLOBManager removed empty blob folder: " + f.getAbsolutePath());
+                            }
                         }
                     } catch (Exception e) {
                         RoutePutServer.logError(e);

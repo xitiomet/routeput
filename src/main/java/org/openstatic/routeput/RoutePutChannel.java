@@ -1040,6 +1040,12 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    public static synchronized boolean channelExists(String channelName)
+    {
+        initTracker();
+        return RoutePutChannel.channels.containsKey(channelName);
+    }
+
     /* Remove a session from all channels that exist in memory */
     public static void removeFromAllChannels(RoutePutSession session)
     {
