@@ -73,6 +73,9 @@ public class RoutePutChannel implements RoutePutMessageListener
         return randKey;
     }
 
+
+    // Get the connection id for this particular environment which might be a server
+    // or an implementation of a client connecting to the server.
     public static String getMasterConnectionId()
     {
         RoutePutChannel.initTracker();
