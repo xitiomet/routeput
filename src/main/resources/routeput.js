@@ -871,7 +871,10 @@ class RouteputConnection
         }, 100);
     }
 
-    transmitBlob(channelName, name, blob)
+    // Pass skipCheck=true to bypass the blobCheck handshake and stream the chunks
+    // straight to the server; the server fans them out to the channel and every node
+    // overwrites whatever it had stored under that name.
+    transmitBlob(channelName, name, blob, skipCheck = false)
     {
         return new Promise((resolve, reject) => {
             let reader = new FileReader();
@@ -880,7 +883,7 @@ class RouteputConnection
                 var payloadBytes = dataURIToBytes(reader.result);
                 var md5 = md5Bytes(payloadBytes);
                 var size = payloadBytes.length;
-                this._sendBlobWithCheck({
+                var opts = {
                     channel: channelName,
                     name: name,
                     md5: md5,
@@ -888,7 +891,11 @@ class RouteputConnection
                     chunks: chunks,
                     resolve: resolve,
                     reject: reject
-                });
+                };
+                if (skipCheck)
+                    this._transmitBlobChunks(opts);
+                else
+                    this._sendBlobWithCheck(opts);
             };
             reader.onerror = () => {
                 reject();

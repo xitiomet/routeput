@@ -349,6 +349,9 @@ public class BLOBManager
         String name = rpm.optString("name", "");
         String remoteMd5 = rpm.optString("md5", "");
         long remoteSize = rpm.optLong("size", -1);
+        // An offer probe is a blobCheck we sent while fanning a blob out; a peer that
+        // already has it must not answer by launching its own offer (that would loop).
+        boolean offerProbe = rpm.optBoolean("offerProbe", false);
         RoutePutChannel channel = request.getRoutePutChannel();
         // Client libraries with no blob storage opt-in reply "have" so the remote skips
         // pushing chunks that would just be discarded.
@@ -389,6 +392,34 @@ public class BLOBManager
         resp.setMetaField("size", remoteSize);
         resp.setMetaField("state", have ? "have" : "need");
         session.send(resp);
+
+        // A real sender told us about a blob we already hold: make sure the rest of the
+        // channel has it too. Skip when this check is itself an offer probe so peers that
+        // have the file don't bounce offers back and forth.
+        if (have && !offerProbe && channel != null)
+        {
+            offerBlobToChannel(channel, name, session);
+        }
+    }
+
+    // After answering "have" to a real sender, push the blob to any other channel member
+    // that still needs it: probe each member and send chunks only on a "need" reply. The
+    // probe flag stops a member that has the file from kicking off its own offer, and the
+    // in-flight chunk broadcast (with hop stamping) handles cascading past that member.
+    public static void offerBlobToChannel(RoutePutChannel channel, String name, RoutePutSession exclude)
+    {
+        if (!isInitialized() || channel == null) return;
+        File blobFolder = channel.getBlobFolder();
+        if (blobFolder == null || !blobFolder.exists()) return;
+        BLOBFile blobFile = new BLOBFile(blobFolder, channel.getName(), name);
+        if (!blobFile.exists()) return;
+        StringBuffer sb = blobFile.getBase64StringBuffer();
+        for (RoutePutSession member : new java.util.ArrayList<RoutePutSession>(channel.getMembers()))
+        {
+            if (member == null || member == exclude) continue;
+            if (!member.isRootConnection()) continue;
+            transmitBlobChunks(member, name, channel, sb, null, true);
+        }
     }
 
     // Handle the response to a blobCheck request we sent earlier. Either fires the
@@ -457,6 +488,8 @@ public class BLOBManager
         return false;
     }
 
+    // Requests a blob from the given session. If the blob already exists locally, the future completes immediately.
+    // Otherwise, it sends a request to the remote session and completes the future when the blob is received.
     public static CompletableFuture<BLOBFile> getBlob(RoutePutSession session, RoutePutChannel channel, String name)
     {
         BLOBFile blobFile = resolveBlob(channel, name);
@@ -584,7 +617,7 @@ public class BLOBManager
             if (blobFile.exists())
             {
                 StringBuffer sb = blobFile.getBase64StringBuffer();
-                transmitBlobChunks(session, name, channel, sb, request);
+                transmitBlobChunks(session, name, channel, sb, request, false);
             } else {
                 RoutePutMessage resp = new RoutePutMessage();
                 resp.setType(RoutePutMessage.TYPE_BLOB);
@@ -646,12 +679,14 @@ public class BLOBManager
         StringBuffer sb = new StringBuffer();
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
-        return transmitBlobChunks(session, name, channel, sb, request);
+        return transmitBlobChunks(session, name, channel, sb, request, false);
     }
     
     // Transmit a blob to this session, first querying the remote to see if it already
     // has the file (matching name/size/md5). If so, chunks are skipped entirely.
-    private static CompletableFuture<Void> transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request)
+    // When offerProbe is true the query is tagged so a peer that already has the blob
+    // won't answer by launching its own offer fan-out.
+    private static CompletableFuture<Void> transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final boolean offerProbe)
     {
         CompletableFuture<Void> future = new CompletableFuture<Void>();
         byte[] raw = decodeDataUri(sb);
@@ -670,9 +705,17 @@ public class BLOBManager
         query.setMetaField("name", name);
         query.setMetaField("md5", md5);
         query.setMetaField("size", size);
-        if (request != null && request.hasChannel())
+        if (channel != null)
+        {
+            query.setChannel(channel);
+        }
+        else if (request != null && request.hasChannel())
         {
             query.setChannel(request.getRoutePutChannel());
+        }
+        if (offerProbe)
+        {
+            query.setMetaField("offerProbe", true);
         }
 
         PendingBlobSend pending = new PendingBlobSend();

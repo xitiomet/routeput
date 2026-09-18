@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 import java.util.Iterator;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -151,6 +152,60 @@ public class RoutePutChannel implements RoutePutMessageListener
                 RoutePutServer.logError(e);
             }
         }
+    }
+
+    /**
+     * Provides access to a specific BLOB file within the channel's storage.
+     * If the blob doesn't exist locally, it probes other members of the channel and requests it
+     * from them if necessary. The first to respond with a copy completes the future.
+     *
+     * @param name The name of the BLOB file to retrieve.
+     * @return A CompletableFuture that will be completed with the BLOBFile once it is available.
+     */
+    public CompletableFuture<BLOBFile> getBLOB(String name)
+    {
+        CompletableFuture<BLOBFile> result = new CompletableFuture<BLOBFile>();
+        File blobFolder = getBlobFolder();
+        if (blobFolder != null)
+        {
+            BLOBFile bf = new BLOBFile(blobFolder, this.name, name);
+            if (bf.exists())
+            {
+                result.complete(bf);
+                return result;
+            }
+        }
+        // Not stored locally: ask the other channel members one at a time and complete
+        // with the first copy delivered. Sequential on purpose — concurrent fetches of the
+        // same name would share and clobber BLOBManager's reassembly buffer.
+        ArrayList<RoutePutSession> candidates = new ArrayList<RoutePutSession>();
+        for (RoutePutSession member : new ArrayList<RoutePutSession>(this.getMembers()))
+        {
+            if (member == null || !member.isConnected() || !member.isRootConnection())
+                continue;
+            candidates.add(member);
+        }
+        requestBlobFromMember(name, candidates, 0, result);
+        return result;
+    }
+
+    // Non-blocking walk of the candidate members: request from one, and on failure or a
+    // "don't have it" reply fall through to the next, completing `result` with the first
+    // copy that lands or null once the list is exhausted.
+    private void requestBlobFromMember(final String name, final ArrayList<RoutePutSession> candidates, final int index, final CompletableFuture<BLOBFile> result)
+    {
+        if (index >= candidates.size())
+        {
+            result.complete(null);
+            return;
+        }
+        RoutePutSession member = candidates.get(index);
+        BLOBManager.requestBlob(member, this, name).whenComplete((got, err) -> {
+            if (err == null && got != null && got.exists())
+                result.complete(got);
+            else
+                requestBlobFromMember(name, candidates, index + 1, result);
+        });
     }
 
     /* Disable auto-disposing of channel */

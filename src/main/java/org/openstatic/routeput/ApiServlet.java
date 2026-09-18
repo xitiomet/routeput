@@ -319,7 +319,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 httpServletResponse.setContentType(contentType);
                                 httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                                 httpServletResponse.setCharacterEncoding("iso-8859-1");
-                                InputStream inputStream = new FileInputStream(new File(channel.getBlobFolder(), token));
+                                BLOBFile blob = channel.getBlob(token).get();
+                                InputStream inputStream = new FileInputStream(blob);
                                 OutputStream output = httpServletResponse.getOutputStream();
                                 inputStream.transferTo(output);
                                 output.flush();
@@ -328,43 +329,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                             }
                         }
                     }
-                }
-            } else if (target.startsWith("/blob/")) {
-                StringTokenizer st = new StringTokenizer(target, "/");
-                String channelName = null;
-                String token = st.nextToken();
-                File blobContext = BLOBManager.getBlobRoot();
-                while (blobContext.isDirectory() && st.hasMoreTokens())
-                {
-                    token = st.nextToken();
-                    blobContext = new File(blobContext, token);
-                }
-                if (blobContext.isDirectory())
-                {
-                    if (!"blob".equals(token))
-                    {
-                        channelName = token;
-                    }
-                    JSONArray ja = new JSONArray();
-                    ja = new JSONArray();
-                    String[] names = blobContext.list();
-                    for (int i = 0; i < names.length; i++)
-                    {
-                        BLOBFile file = new BLOBFile(blobContext, channelName, names[i]);
-                        ja.put(file.toJSONObject());
-                    }
-                    response.put(token, ja);
-                } else {
-                    String contentType = BLOBManager.getContentTypeFor(token);
-                    httpServletResponse.setContentType(contentType);
-                    httpServletResponse.setStatus(HttpServletResponse.SC_OK);
-                    httpServletResponse.setCharacterEncoding("iso-8859-1");
-                    InputStream inputStream = new FileInputStream(blobContext);
-                    OutputStream output = httpServletResponse.getOutputStream();
-                    inputStream.transferTo(output);
-                    output.flush();
-                    inputStream.close();
-                    return;
                 }
             } else if ("/channels/".equals(target)) {
                 response.put("channels", RoutePutChannel.channelBreakdown());
