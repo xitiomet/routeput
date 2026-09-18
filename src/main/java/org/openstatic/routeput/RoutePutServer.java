@@ -54,7 +54,7 @@ public class RoutePutServer implements Runnable
                 if (response instanceof HttpServletResponse)
                 {
                     HttpServletResponse httpResponse = (HttpServletResponse) response;
-                    httpResponse.addHeader("Server", "Routeput 1.0");
+                    httpResponse.addHeader("Server", "Routeput 2.1.5");
                 }
                 chain.doFilter(request, response);
         }
@@ -194,6 +194,10 @@ public class RoutePutServer implements Runnable
                     sws.ping();
                 }
             });
+        }
+        if (tick == 0)
+        {
+            BLOBManager.sweepStaleBlobs();
         }
         if (this.apiServlet != null)
         {

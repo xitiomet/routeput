@@ -165,6 +165,15 @@ public class BLOBManager
         }
     }
 
+    public static void sweepStaleBlobs()
+    {
+        if (BLOBManager.blobRoot != null)
+        {
+            long timeoutSecs = getBlobStorageTimeout();
+            sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
+        }
+    }
+
     // Best-effort recursive delete used by the client temp-dir shutdown hook.
     private static void deleteRecursive(File f)
     {
