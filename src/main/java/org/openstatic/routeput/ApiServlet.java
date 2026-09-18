@@ -319,7 +319,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 httpServletResponse.setContentType(contentType);
                                 httpServletResponse.setStatus(HttpServletResponse.SC_OK);
                                 httpServletResponse.setCharacterEncoding("iso-8859-1");
-                                BLOBFile blob = channel.getBlob(token).get();
+                                BLOBFile blob = channel.getBLOB(token).get();
                                 InputStream inputStream = new FileInputStream(blob);
                                 OutputStream output = httpServletResponse.getOutputStream();
                                 inputStream.transferTo(output);
