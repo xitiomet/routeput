@@ -252,6 +252,7 @@ public class RoutePutServer implements Runnable
             js.put("rx", chan.getMessagesRxPerSecond());
             js.put("tx", chan.getMessagesTxPerSecond());
             js.put("ping", chan.getPingAverage());
+            js.put("blobBytes", chan.totalBlobStorageUseBytes());
             js.put("members", chan.memberCount());
             Iterator<RoutePutSession> members = chan.getMembers().iterator();
             while(members.hasNext())

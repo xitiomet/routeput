@@ -38,6 +38,8 @@ public class RoutePutChannel implements RoutePutMessageListener
     private boolean unsavedProperties;
     protected LinkedHashMap<String, RoutePutSession> members;
     private long lastAccess;
+    private long lastCalcBlobSize;
+    private long lastCalcBlobSizeAt;
     private RoutePutSession collector;
     private int messagesTx;
     private int messagesRx;
@@ -106,6 +108,8 @@ public class RoutePutChannel implements RoutePutMessageListener
         this.msgTxPerSecond = 0;
         this.msgRxPerSecond = 0;
         this.messagesTx = 0;
+        this.lastCalcBlobSize = 0;
+        this.lastCalcBlobSizeAt = 0;
         this.messagesRx = 0;
         this.pingAvg = 0;
         this.name = name;
@@ -165,6 +169,29 @@ public class RoutePutChannel implements RoutePutMessageListener
     private void saveChannelProperties()
     {
         this.unsavedProperties = true;
+    }
+
+    // Keep cached but recalc every 60s
+    public long totalBlobStorageUseBytes()
+    {
+        if (this.lastCalcBlobSizeAt > 0 && (System.currentTimeMillis() - this.lastCalcBlobSizeAt) < 60000)
+            return this.lastCalcBlobSize;
+        long total = 0;
+        File blobFolder = getBlobFolder();
+        if (blobFolder != null && blobFolder.exists())
+        {
+            File[] files = blobFolder.listFiles();
+            if (files != null)
+            {
+                for (File f : files)
+                {
+                    total += f.length();
+                }
+            }
+        }
+        this.lastCalcBlobSize = total;
+        this.lastCalcBlobSizeAt = System.currentTimeMillis();
+        return total;
     }
 
     public JSONArray getBlobs()
@@ -1116,6 +1143,7 @@ public class RoutePutChannel implements RoutePutMessageListener
         jo.put("idle", this.getIdle());
         jo.put("members", this.membersAsJSONObject());
         //jo.put("blobs", this.getBlobs());
+        jo.put("totalBlobBytes", this.totalBlobStorageUseBytes());
         jo.put("memberCount", this.memberCount());
         jo.put("properties", this.getProperties());
         jo.put("msgTxPerSecond", this.msgTxPerSecond);
