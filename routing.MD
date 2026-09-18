@@ -8,6 +8,7 @@ This document explains how the Routeput Java server (`src/main/java/org/openstat
 | `srcId`    | `connectionId` of the originating session.                           |
 | `dstId`    | `connectionId` of a specific intended recipient. Absent ⇒ broadcast. |
 
+
 Everything below is grounded in:
 
 - [src/main/java/org/openstatic/routeput/RoutePutMessage.java](src/main/java/org/openstatic/routeput/RoutePutMessage.java)
@@ -32,7 +33,7 @@ Every Routeput message is a JSON object. Routing metadata is kept under the `__r
     "srcId":  "kLm9P0qRsT", // sender connectionId (auto-stamped if missing)
     "dstId":  "wXyZ1234aB", // OPTIONAL: target connectionId
     "type":   "chat",       // see RoutePutMessage.TYPE_* constants
-    "hops":   ["server-a"]  // appended per hop for tracing / loop visibility
+    "hops":   ["kLm9P0qRsT"] // masterConnectionId appended per server hop; loop guard + tracing
   }
 }
 ```
@@ -49,6 +50,7 @@ Relevant accessors on `RoutePutMessage`:
 | `setSourceIdIfNull(connId)`  | Only stamps if missing — this is what preserves `srcId` on relayed messages.        |
 | `getTargetId()` / `hasTargetId()` | Reads `__routeput.dstId`.                                                      |
 | `setTarget(session)` / `forTarget(session)` | `forTarget` returns a copy with `dstId` set to that session — used when fan-out wants per-recipient stamping. |
+| `getHops()` / `containsHop(id)` / `appendHop(id)` | Read / test / append the `__routeput.hops` array. Each server stamps its own `RoutePutChannel.getMasterConnectionId()`; see §5.3. |
 
 ---
 
@@ -117,7 +119,7 @@ sourceId != this.connectionId  → message belongs to a downstream RoutePutRemot
 | anything else **with** a channel    | Calls `handleMessage(jo)` → `channel.onMessage(this, jo)` (§4).   |
 | anything else **without** a channel | Logged as "Lost Message" (unless it's a blob — see below).        |
 
-8. **Blobs are special** ([line ~270](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L270)): if `type == "blob"`, `BLOBManager.handleBlobData` is invoked regardless of channel/source state.
+8. **Blobs are special** ([line ~270](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L270)): if `type == "blob"`, `BLOBManager.handleBlobData` is invoked regardless of channel/source state. Because blob chunks bypass `channel.onMessage`, `handleBlobData` performs the same `hops` stamp/check itself (via `masterConnectionId`) before relaying a chunk, so blob fan-out gets the same loop guard as normal traffic (§5.3).
 9. **Echo flag**: if `__routeput.echo == true`, the original packet is sent straight back to the sender with the `echo` flag stripped — this happens at the very end of `handleMessage(...)`.
 
 `handleMessage(jo)` itself ([line ~52](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L52)) hands off to **the channel** (`channel.onMessage(this, jo)`) and then notifies any per-session message listeners. The channel is where all of the interesting routing decisions live.
@@ -130,7 +132,7 @@ This method (around [line ~510](src/main/java/org/openstatic/routeput/RoutePutCh
 
 1. **Sanity check**: `j.getRoutePutChannel().equals(this)`. If a channel is asked to handle a packet that names a different channel, it's logged and dropped.
 2. **Logging**: write to `channel.log` if the channel has a log writer and the packet is `canBeLogged()` and not a `pulse`.
-3. **`hops` stamp**: if a server hostname is set, append it to `__routeput.hops`. This both aids tracing and lets relays see whether a message has already been through them.
+3. **`hops` stamp**: append this environment's `RoutePutChannel.getMasterConnectionId()` to `__routeput.hops` via `j.appendHop(...)`. This both aids tracing and lets relays detect a message that has already passed through them (see §5.3).
 4. **Trap meta `setChannelProperty`**: convert into a `RoutePutPropertyChangeMessage` and process; remove the meta field. This is the same pattern as `setSessionProperty` but applied at channel scope.
 5. **`TYPE_CONNECTION_STATUS`**: if `__routeput.connected == true/false` it triggers `addMember`/`removeMember` for the session named by `srcId`. If the channel can't identify a session locally, it just broadcasts the packet so other peers can react.
 6. **The main fork** — three modes:
@@ -180,7 +182,8 @@ channel.broadcast(jo);
 where = jo.__routeput.where     // a JSON object describing required key/values
 remove the where field from the message
 for each member m of the channel:
-    if JSONTools.matchesFilter(m.getProperties(), where):
+    if JSONTools.matchesFilter(m.getProperties(), where)
+       AND NOT jo.containsHop(m.getConnectionId()):
         m.send(jo.forTarget(m))   // stamps dstId per recipient
 ```
 
@@ -190,16 +193,24 @@ This delivers to the subset of members whose session properties match the filter
 
 ```
 for each member m of the channel:
-    if m.isRootConnection() AND NOT m.containsConnectionId(jo.srcId):
+    if m.isRootConnection()
+       AND NOT m.containsConnectionId(jo.srcId)
+       AND NOT jo.containsHop(m.getConnectionId()):
         m.send(jo)
 ```
 
-Two filters apply:
+Three filters apply:
 
 - **`isRootConnection()`** — only directly-connected sessions receive the broadcast. `RoutePutRemoteSession` instances (proxies for downstream clients reached via another socket) are skipped, because the parent socket already received the packet and will fan it out on its side.
 - **Anti-echo** — a member is skipped if its `connectionId` matches `jo.srcId`. This stops senders from receiving their own broadcasts. For root server-websockets it is exact-id equality; the `containsConnectionId` indirection lets composite sessions screen out any of their wrapped ids.
+- **Hop guard** — a member is skipped if its `connectionId` already appears in `jo.__routeput.hops`. Since every server stamps its own `masterConnectionId` on each pass (§4 step 3), a packet is never sent back into a peer that already relayed it.
 
-The `hops` array stamped in `onMessage` complements this for multi-server topologies: a relaying upstream can inspect `hops` to avoid sending a packet back into a server it already visited.
+### 5.3 Hop-based loop prevention
+
+`__routeput.hops` is an array of the `masterConnectionId` values of every Routeput environment a packet has passed through. `RoutePutChannel.getMasterConnectionId()` returns a per-environment id (a server, or a `RoutePutClient`) that is stable for the process and unique across a federation, so it — not the display `hostname` — is the identity used for loop detection.
+
+- **Stamping**: `RoutePutChannel.onMessage` calls `j.appendHop(getMasterConnectionId())` on every channel pass. Blob chunks bypass `onMessage`, so `BLOBManager.handleBlobData` performs the same stamp itself before relaying a chunk.
+- **Checking**: both `broadcast` filters above call `jo.containsHop(m.getConnectionId())` so a member that already relayed the packet is never sent it again. `handleBlobData` additionally drops a chunk outright (`if (jo.containsHop(masterConnectionId)) return;`) when it sees its own id, which stops a chunk from circulating a cyclic multi-server topology.
 
 ---
 
@@ -302,7 +313,7 @@ And at the broadcast layer:
 flowchart TD
     B[broadcast] --> W{where filter present?}
     W -- yes --> W1[for each member matching where:<br/>send forTarget(m) - stamps dstId]
-    W -- no --> W2[for each member that is<br/>isRootConnection() AND<br/>connectionId != srcId:<br/>send unchanged]
+    W -- no --> W2[for each member that is<br/>isRootConnection() AND<br/>connectionId != srcId AND<br/>connectionId not in hops:<br/>send unchanged]
 ```
 
 ---
@@ -314,6 +325,6 @@ flowchart TD
 - **`dstId`** = optional intended recipient's `connectionId`. Present ⇒ unicast within the channel (via `findMemberById`); absent ⇒ broadcast. Cross-server unicast is the same rule applied at each hop after `RoutePutRemoteSession.send` stamps the field.
 - **Collector mode** overrides the above rules: non-collector traffic always lands at the collector; collector traffic uses the normal `dstId` rules.
 - **`where`** meta filter on a broadcast restricts delivery to members whose session properties match, and stamps each recipient's `dstId` for them.
-- **`hops`** meta array gets a server hostname appended on every channel pass — useful for multi-server loop avoidance and tracing.
+- **`hops`** meta array gets this environment's `masterConnectionId` appended on every channel pass (and on every blob-chunk relay). Members already listed in `hops` are skipped on broadcast, which is the primary multi-server loop guard; also useful for tracing.
 - **`echo`** meta returns a copy of the packet to the sender after routing.
 - **PropertyChange / blob / request** messages are handled out-of-band and do not flow through the normal `channel.onMessage` fan-out.
