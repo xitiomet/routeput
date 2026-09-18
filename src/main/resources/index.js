@@ -6,6 +6,16 @@ function changeView(radio)
     }
 }
 
+function formatBytes(bytes)
+{
+    if (bytes === 0) return '0 Bytes';
+    var k = 1024;
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+
 function capitalize(s)
 {
     if (typeof s !== 'string')
@@ -141,7 +151,7 @@ routeput.onmessage = function (member, messageType, jsonObject) {
             } else {
                 pingColor = "#FFCFCF";
             }
-            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td><td>" + value.blobBytes + "</td><td style=\"background-color: " + pingColor + ";\">" + value.ping + " ms</td>";
+            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td><td>" + formatBytes(value.blobBytes) + "</td><td style=\"background-color: " + pingColor + ";\">" + value.ping + " ms</td>";
         }
     }
 };
