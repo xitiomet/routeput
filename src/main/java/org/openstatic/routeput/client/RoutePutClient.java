@@ -19,6 +19,9 @@ import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.IOException;
 import java.net.URI;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.jetty.client.HttpClient;
@@ -53,6 +56,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // Passwords keyed by channel name; used for the initial handshake and any
     // per-channel subscribe against a password-gated channel.
     private final java.util.HashMap<String, String> channelPasswords = new java.util.HashMap<String, String>();
+    // Serializes all outbound writes so async frames never overlap on the RemoteEndpoint.
+    private static final RoutePutMessage WRITE_POISON = new RoutePutMessage();
+    private final BlockingQueue<RoutePutMessage> writeQueue = new LinkedBlockingQueue<RoutePutMessage>();
+    private volatile Thread writeWorker;
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
     {
@@ -264,6 +271,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 {
                     //System.err.println("Got our WebSocketSession!");
                     this.session = (WebSocketSession) ses;
+                    this.ensureWriteWorkerRunning();
                 }
             } catch (Throwable t2) {
                 System.err.println("Error on connect() URI: " + this.websocketUri);
@@ -306,6 +314,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutChannel.removeFromAllChannels(this);
         // Fail any blob fetch/send waiting on this connection so callers don't hang.
         BLOBManager.failPendingTransfersForSession(this, new java.io.IOException("connection closed"));
+        this.stopWriteWorker();
         RoutePutClient.this.keepAliveThread = null;
     }
 
@@ -379,7 +388,59 @@ public class RoutePutClient implements RoutePutSession, Runnable
         {
             jo.setSourceIdIfNull(this.connectionId);
             jo.setChannelIfNull(this.getDefaultChannel());
-            this.session.getRemote().sendStringByFuture(jo.toString());
+            this.writeQueue.offer(jo);
+        }
+    }
+
+    private void ensureWriteWorkerRunning()
+    {
+        synchronized (this) {
+            if (this.writeWorker == null) {
+                Thread t = new Thread(this::writeLoop, "routeput-writer-" + this.connectionId);
+                t.setDaemon(true);
+                this.writeWorker = t;
+                t.start();
+            }
+        }
+    }
+
+    private void stopWriteWorker()
+    {
+        Thread w;
+        synchronized (this) {
+            w = this.writeWorker;
+            this.writeWorker = null;
+        }
+        this.writeQueue.offer(WRITE_POISON);
+        if (w != null) {
+            w.interrupt();
+        }
+    }
+
+    private void writeLoop()
+    {
+        while (true)
+        {
+            RoutePutMessage jo;
+            try {
+                jo = this.writeQueue.poll(1, TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                break;
+            }
+            if (jo == WRITE_POISON) {
+                break;
+            }
+            WebSocketSession s = this.session;
+            if (jo != null && s != null)
+            {
+                try
+                {
+                    // Block until this frame is flushed so the next write can't interleave.
+                    s.getRemote().sendStringByFuture(jo.toString()).get();
+                } catch (InterruptedException ie) {
+                    break;
+                } catch (Exception e) { e.printStackTrace(System.err); }
+            }
         }
     }
 
@@ -496,6 +557,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             if (session instanceof WebSocketSession) {
                 RoutePutClient.this.session = (WebSocketSession) session;
                 RoutePutClient.this.ensureKeepAliveRunning();
+                RoutePutClient.this.ensureWriteWorkerRunning();
                 // System.out.println(RoutePutClient.this.session.getRemoteAddress().getHostString()
                 // + " connected!");
                 RoutePutMessage connectionIdMessage = new RoutePutMessage();
