@@ -153,3 +153,10 @@ request/response messages should eventually pass through a RoutePutChannel. Usin
 
 RoutePutSession is the base interface for all connections to a RoutePutChannel, in order
 for an srcId to be valid in a channel the session must belong to the channel.
+
+RoutePutRemoteSession is meant to be a placeholder class representing a session
+that exists on another server downstream or upstream, every server should see all the members of a channel even if its distributed across multiple servers.
+
+RoutePutChannel.getMasterConnectionId() is a very important function this should represent
+this local environments connectionId (which becomes the srcId and dstId) this should be
+unique to each routeput environment.
