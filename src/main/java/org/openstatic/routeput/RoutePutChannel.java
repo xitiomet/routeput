@@ -652,6 +652,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                 int data2 = data.optInt(2, 0);
                 int command = data0 & 0xF0;
                 int midiChannel = data0 & 0x0F;
+                /*
                 if (command == javax.sound.midi.ShortMessage.PROGRAM_CHANGE)
                 {
                     JSONObject midiObject = this.getProperties().optJSONObject("midi");
@@ -672,7 +673,7 @@ public class RoutePutChannel implements RoutePutMessageListener
 
                     midiObject.put("channel", channelObject);
                     this.setProperty("midi", midiObject);
-                }
+                }*/
             }
 
             // Trap setChannelProperty directives in the meta field and convert them into seperate messages
