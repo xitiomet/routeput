@@ -649,10 +649,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                 }
             }
             bumpRx();
-            if (RoutePutChannel.hostname != null)
-            {
-                j.appendHop(RoutePutChannel.getMasterConnectionId());
-            }
+            j.appendHop(RoutePutChannel.getMasterConnectionId());
             JSONObject messageMeta = j.getRoutePutMeta();
             Iterator<String> messageMetaKeys = messageMeta.keys();
             while (messageMetaKeys.hasNext())
@@ -853,6 +850,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             jo.removeMetaField("where");
             this.members.values().parallelStream()
                         .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
+                        .filter((s) -> !jo.containsHop(s.getConnectionId())) // Never send the event to a member that has already seen it
                         .forEach((s) ->
             {
                 try
@@ -867,6 +865,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             this.members.values().parallelStream()
                         .filter((s) -> s.isRootConnection())
                         .filter((s) -> !s.containsConnectionId(jo.getSourceId())) // Never Send the event to the creator or its relay
+                        .filter((s) -> !jo.containsHop(s.getConnectionId()))
                         .forEach((s) ->
             {
                 try
