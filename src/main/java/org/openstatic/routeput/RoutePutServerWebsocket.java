@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 import java.util.Vector;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +50,10 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private long txPackets;
     private RoutePutMessage lastRxPacket;
     private RoutePutMessage lastTxPacket;
+    // Serializes all outbound writes so async frames never overlap on the RemoteEndpoint.
+    private static final RoutePutMessage WRITE_POISON = new RoutePutMessage();
+    private final BlockingQueue<RoutePutMessage> writeQueue = new LinkedBlockingQueue<RoutePutMessage>();
+    private Thread writeWorker;
 
     private void handleMessage(RoutePutMessage jo)
     {
@@ -58,7 +65,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
             });
             if (jo.optMetaField("echo", false) && this.websocketSession != null) {
                 jo.removeMetaField("echo");
-                this.websocketSession.getRemote().sendStringByFuture(jo.toString());
+                send(jo);
             }
     }
 
@@ -412,6 +419,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
         // System.out.println("path: " + this.path);
         if (session instanceof WebSocketSession) {
             this.websocketSession = (WebSocketSession) session;
+            this.startWriteWorker();
             // System.out.println(this.websocketSession.getRemoteAddress().getHostString() +
             // " connected!");
             // If the channel is password-gated we defer finishHandshake() until the
@@ -488,6 +496,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
         // same connectionId may have already replaced us, and blindly removing by key
         // would orphan the live replacement session in every channel it joined.
         RoutePutServer.instance.sessions.remove(this.connectionId, this);
+        this.stopWriteWorker();
     }
 
     @OnWebSocketClose
@@ -514,13 +523,56 @@ public class RoutePutServerWebsocket implements RoutePutSession
     {
         if (this.websocketSession != null && jo != null)
         {
-            try
+            jo.setSourceIdIfNull(this.connectionId);
+            this.writeQueue.offer(jo);
+        }
+    }
+
+    private void startWriteWorker()
+    {
+        if (this.writeWorker == null)
+        {
+            this.writeWorker = new Thread(this::writeLoop, "routeput-writer-" + this.connectionId);
+            this.writeWorker.setDaemon(true);
+            this.writeWorker.start();
+        }
+    }
+
+    private void stopWriteWorker()
+    {
+        this.writeQueue.offer(WRITE_POISON);
+        Thread w = this.writeWorker;
+        this.writeWorker = null;
+        if (w != null) {
+            w.interrupt();
+        }
+    }
+
+    private void writeLoop()
+    {
+        while (true)
+        {
+            RoutePutMessage jo;
+            try {
+                jo = this.writeQueue.poll(1, TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                break;
+            }
+            if (jo == WRITE_POISON) {
+                break;
+            }
+            if (jo != null && this.websocketSession != null)
             {
-                jo.setSourceIdIfNull(this.connectionId);
-                this.websocketSession.getRemote().sendStringByFuture(jo.toString());
-                this.txPackets++;
-                this.lastTxPacket = jo;
-            } catch (Exception e) { RoutePutServer.logError(e); }
+                try
+                {
+                    // Block until this frame is flushed so the next write can't interleave.
+                    this.websocketSession.getRemote().sendStringByFuture(jo.toString()).get();
+                    this.txPackets++;
+                    this.lastTxPacket = jo;
+                } catch (InterruptedException ie) {
+                    break;
+                } catch (Exception e) { RoutePutServer.logError(e); }
+            }
         }
     }
 
