@@ -326,6 +326,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 output.flush();
                                 inputStream.close();
                                 return;
+                            } else if ("blobs".equals(token)) {
+                                response.put("blobs", channel.getBlobs());
                             }
                         }
                     }
