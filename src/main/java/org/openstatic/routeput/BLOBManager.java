@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.jetty.http.MimeTypes;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class BLOBManager 
@@ -268,6 +269,11 @@ public class BLOBManager
             int i = rpm.optInt("i", 0);
             int of = rpm.optInt("of", 0);
             String name = rpm.optString("name", "");
+            // Blob chunks bypass RoutePutChannel.onMessage, so they miss its hops loop
+            // guard. Stamp/inspect hops here or a chunk circulates a cyclic federation.
+            String masterConnectionId = RoutePutChannel.getMasterConnectionId();
+            if (jo.containsHop(masterConnectionId)) return;
+            jo.appendMetaArray("hops", masterConnectionId);
             // Chunks with channel routing and no explicit target get relayed to the
             // other members in flight so we don't re-negotiate per recipient.
             if (jo.hasChannel() && !jo.hasTargetId())

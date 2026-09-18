@@ -305,6 +305,30 @@ public class RoutePutMessage extends JSONObject
             return false;
     }
 
+    public JSONArray getHops()
+    {
+        return this.getRoutePutMeta().optJSONArray("hops");
+    }
+
+    public boolean containsHop(String connectionId)
+    {
+        JSONArray hops = this.getHops();
+        if (hops != null)
+        {
+            for (int i = 0; i < hops.length(); i++)
+            {
+                if (connectionId.equals(hops.optString(i, null)))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    public void appendHop(String connectionId)
+    {
+        this.appendMetaArray("hops", connectionId);
+    }
+
     public String getType()
     {
         return this.getRoutePutMeta().optString("type", null);

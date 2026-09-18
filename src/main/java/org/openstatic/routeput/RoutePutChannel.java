@@ -651,7 +651,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             bumpRx();
             if (RoutePutChannel.hostname != null)
             {
-                j.appendMetaArray("hops", RoutePutChannel.hostname);
+                j.appendHop(RoutePutChannel.getMasterConnectionId());
             }
             JSONObject messageMeta = j.getRoutePutMeta();
             Iterator<String> messageMetaKeys = messageMeta.keys();
