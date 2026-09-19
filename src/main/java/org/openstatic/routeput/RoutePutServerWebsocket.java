@@ -46,6 +46,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
     private long pingTime;
     private long lastPingTx;
     private long lastPongRx;
+    // Guards read-modify-write of pingTime so concurrent pong/ping-timer updates keep old/new paired.
+    private final Object pingLock = new Object();
     private long rxPackets;
     private long txPackets;
     private RoutePutMessage lastRxPacket;
@@ -272,11 +274,13 @@ public class RoutePutServerWebsocket implements RoutePutSession
                             this.lastPongRx = cts;
                             JSONObject meta = jo.getRoutePutMeta();
                             if (meta.has("pingTimestamp")) {
-                                long oldPing = this.pingTime;
-                                this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
-                                if (this.pingTime != -1) {
-                                    RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
-                                    rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                                synchronized (this.pingLock) {
+                                    long oldPing = this.pingTime;
+                                    this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
+                                    if (this.pingTime != -1) {
+                                        RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                                        rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                                    }
                                 }
                             }
                         } else if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
@@ -647,12 +651,14 @@ public class RoutePutServerWebsocket implements RoutePutSession
             }
             long ppDelay = RoutePutServer.instance.settings.optLong("pingPongSecs", 20l) * 1000l;
             // Check to see if the time since the last ping went unresponded exceeds the known ping
-            if (delay > this.pingTime)
-            {
-                long oldPing = this.pingTime;
-                this.pingTime = delay;
-                RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
-                rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+            synchronized (this.pingLock) {
+                if (delay > this.pingTime)
+                {
+                    long oldPing = this.pingTime;
+                    this.pingTime = delay;
+                    RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
+                    rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                }
             }
             // If this is the second unresponded ping, lets kill the conneciton
             if (delay > (ppDelay * 2))
