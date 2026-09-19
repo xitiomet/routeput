@@ -277,9 +277,15 @@ public class RoutePutServerWebsocket implements RoutePutSession
                                 synchronized (this.pingLock) {
                                     long oldPing = this.pingTime;
                                     this.pingTime = (cts - meta.optLong("pingTimestamp", 0l));
-                                    if (this.pingTime != -1) {
+                                    // _ping jitters every cycle; only announce a change big enough to matter so
+                                    // we don't flood the channel. The stored value stays current either way.
+                                    long delta = Math.abs(this.pingTime - oldPing);
+                                    boolean worthAnnouncing = this.pingTime != -1 && (oldPing <= 0 || delta >= 10 || (delta * 4) >= oldPing);
+                                    if (worthAnnouncing) {
                                         RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
                                         rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
+                                    } else if (this.pingTime != -1) {
+                                        this.properties.put("_ping", this.pingTime);
                                     }
                                 }
                             }
@@ -650,16 +656,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 RoutePutServer.logIt("PING (" + this.connectionId + ") lastPingTx=" + String.valueOf(this.lastPingTx) + " lastPongRx=" + String.valueOf(this.lastPongRx) + " delay=" + String.valueOf(delay) + "ms");
             }
             long ppDelay = RoutePutServer.instance.settings.optLong("pingPongSecs", 20l) * 1000l;
-            // Check to see if the time since the last ping went unresponded exceeds the known ping
-            synchronized (this.pingLock) {
-                if (delay > this.pingTime)
-                {
-                    long oldPing = this.pingTime;
-                    this.pingTime = delay;
-                    RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage();
-                    rppcm.addUpdate(this, "_ping", oldPing, this.pingTime).processUpdates(this);
-                }
-            }
+            // A stall delay is not a real round-trip; only the pong handler publishes _ping.
+            // We still use delay below purely to decide whether to drop a dead connection.
             // If this is the second unresponded ping, lets kill the conneciton
             if (delay > (ppDelay * 2))
             {
