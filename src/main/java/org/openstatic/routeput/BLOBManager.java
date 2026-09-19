@@ -125,6 +125,20 @@ public class BLOBManager
             long timeoutSecs = getBlobStorageTimeout();
             sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
             provisional = false;
+        } else if (settings == null && !isInitialized()) {
+            try
+            {
+                java.nio.file.Path tempPath = java.nio.file.Files.createTempDirectory("routeput-blob-");
+                final File temp = tempPath.toFile();
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursive(temp)));
+                BLOBManager.blobRoot = temp;
+                BLOBManager.settings = new JSONObject();
+                BLOBManager.settings.put("blobStorageRoot", temp.getAbsolutePath());
+                BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
+                BLOBManager.provisional = true;
+            } catch (Exception e) {
+                RoutePutServer.logError(e);
+            }
         }
         if (BLOBManager.blobStorage == null)
         {
