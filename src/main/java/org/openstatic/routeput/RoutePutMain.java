@@ -20,6 +20,7 @@ import org.json.*;
 
 public class RoutePutMain
 {
+    public static final String VERSION = BuildInfo.VERSION;
     public static long startTime;
     public static boolean keep_running;
     public static String[] args;
@@ -83,6 +84,7 @@ public class RoutePutMain
                 System.err.println("                           |_|");
                 System.err.println("");
                 System.err.println("  Simple websocket server and message router");
+                System.err.println("           Version " + RoutePutMain.VERSION);
                 System.err.println("       https://openstatic.org/routeput/");
                 System.err.println("");
             }

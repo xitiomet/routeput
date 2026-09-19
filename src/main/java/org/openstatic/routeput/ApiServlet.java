@@ -343,6 +343,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 response.put("session", session.toJSONObject());
             } else if ("/status/".equals(target)) {
                 response.put("status", "ok");
+                response.put("version", RoutePutMain.VERSION);
                 response.put("uptime", RoutePutMain.getUptime());
             }
         } catch (Exception x) {

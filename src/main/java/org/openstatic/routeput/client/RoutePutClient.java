@@ -685,6 +685,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
     public JSONObject getProperties()
     {
         this.properties.put("_class", "RoutePutClient");
+        this.properties.put("_version", RoutePutMain.VERSION);
         this.properties.put("_listeners", this.listeners.size());
         this.properties.put("_remoteIP", this.remoteIP);
         this.properties.put("_hostname", RoutePutChannel.getHostname());
