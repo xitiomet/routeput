@@ -143,17 +143,28 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                                 // OK this update belongs to the session that sent the packet
                                 JSONObject rsProp = receivingSession.getProperties();
 
-                                if (!nullSafeCompare(newValue, rsProp.opt(key)))
+                                // Lock the store so read-of-old and write-of-new are atomic; this keeps the
+                                // old->new chain consistent no matter how many threads produce updates.
+                                synchronized (rsProp)
                                 {
-                                    // OK the new value is different then the current, lets fire that change...
-                                    receivingSession.firePropertyChange(key, oldValue, newValue);
-                                    // Find every channel this session is a member of and broadcast its update
-                                    Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(receivingSession);
-                                    rpcc.forEach((channel) -> {
-                                        if (!channelsInvolved.contains(channel))
-                                            channelsInvolved.add(channel);
-                                    });
-                                    handled = true;
+                                    Object currentValue = rsProp.opt(key);
+                                    if (!nullSafeCompare(newValue, currentValue))
+                                    {
+                                        // Trust our stored value for old, not whatever the sender guessed.
+                                        if (currentValue == null)
+                                            joUpdate.remove("old");
+                                        else
+                                            joUpdate.put("old", currentValue);
+                                        // OK the new value is different then the current, lets fire that change...
+                                        receivingSession.firePropertyChange(key, currentValue, newValue);
+                                        // Find every channel this session is a member of and broadcast its update
+                                        Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(receivingSession);
+                                        rpcc.forEach((channel) -> {
+                                            if (!channelsInvolved.contains(channel))
+                                                channelsInvolved.add(channel);
+                                        });
+                                        handled = true;
+                                    }
                                 }
                             }
                         }
@@ -165,15 +176,24 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                             if (rprs != null)
                             {
                                 JSONObject rsProp = rprs.getProperties();
-                                if (!nullSafeCompare(newValue, rsProp.opt(key)))
+                                synchronized (rsProp)
                                 {
-                                    // OK the new value is different then the current, lets fire that change...
-                                    rprs.firePropertyChange(key, oldValue, newValue);
-                                    Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(rprs);
-                                    rpcc.forEach((channel) -> {
-                                        if (!channelsInvolved.contains(channel))
-                                            channelsInvolved.add(channel);
-                                    });
+                                    Object currentValue = rsProp.opt(key);
+                                    if (!nullSafeCompare(newValue, currentValue))
+                                    {
+                                        // Trust our stored value for old, not whatever the sender guessed.
+                                        if (currentValue == null)
+                                            joUpdate.remove("old");
+                                        else
+                                            joUpdate.put("old", currentValue);
+                                        // OK the new value is different then the current, lets fire that change...
+                                        rprs.firePropertyChange(key, currentValue, newValue);
+                                        Collection<RoutePutChannel> rpcc = RoutePutChannel.channelsWithMember(rprs);
+                                        rpcc.forEach((channel) -> {
+                                            if (!channelsInvolved.contains(channel))
+                                                channelsInvolved.add(channel);
+                                        });
+                                    }
                                 }
                             }
                         }
