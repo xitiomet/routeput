@@ -76,6 +76,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.stayConnected = true;
         this.connectionId = RoutePutChannel.getMasterConnectionId();
         this.properties = new JSONObject();
+        this.properties.put("_version", RoutePutMain.VERSION);
         // Ensure blob storage is up so incoming chunks are actually kept; no-op if a
         // RoutePutServer in the same JVM already initialized with its own settings.
         BLOBManager.initClient();
