@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.openstatic.routeput.util.JSONTools;
 
@@ -30,6 +31,10 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         this.setType(RoutePutMessage.TYPE_PROPERTY_CHANGE);
         this.setSourceId(rpm.getSourceId());
         this.getRoutePutMeta().put("updates", rpm.getRoutePutMeta().optJSONArray("updates"));
+        // Carry hop history so this relay obeys the same loop guard as every other message.
+        JSONArray hops = rpm.getHops();
+        if (hops != null)
+            this.getRoutePutMeta().put("hops", hops);
     }
 
     public static List<RoutePutPropertyChangeMessage> buildSmallUpdatesFor(RoutePutChannel channel)
@@ -77,6 +82,18 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
         });
         rppcm.setSourceId(this.getSourceId());
         rppcm.setChannel(channel);
+        // Copy prior hops and stamp this host so peers stop relaying the change in circles.
+        JSONArray hops = this.getHops();
+        if (hops != null)
+        {
+            for (int i = 0; i < hops.length(); i++)
+            {
+                String hop = hops.optString(i, null);
+                if (hop != null)
+                    rppcm.appendHop(hop);
+            }
+        }
+        rppcm.appendHop(RoutePutChannel.getMasterConnectionId());
         return rppcm;
     }
 
