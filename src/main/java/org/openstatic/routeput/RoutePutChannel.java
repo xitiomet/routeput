@@ -896,6 +896,14 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    // special for broadcasting a message while also bumping the receive counter for this channel
+    // used by property change messages to ensure the receive counter is incremented before broadcasting
+    protected void broadcastWithRxBump(RoutePutMessage jo)
+    {
+        bumpRx();
+        this.broadcast(jo);
+    }
+
     /* transmit a message to all members of this channel, should be used internally only */
     protected void broadcast(RoutePutMessage jo)
     {
