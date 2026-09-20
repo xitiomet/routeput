@@ -673,10 +673,13 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void setProperty(String key, Object value)
     {
+        Object oldValue = this.properties.opt(key);
         if (this.isConnected()) {
+            this.firePropertyChange(key, oldValue, value);
+            // Send the change to the server; the channel broadcast path would filter us out as the source.
             RoutePutPropertyChangeMessage setPropertyMessage = new RoutePutPropertyChangeMessage();
-            setPropertyMessage.addUpdate(this, key, this.properties.opt(key), value);
-            setPropertyMessage.processUpdates(this);
+            setPropertyMessage.addUpdate(this, key, oldValue, value);
+            this.send(setPropertyMessage);
         } else {
             this.properties.put(key, value);
         }
@@ -692,8 +695,6 @@ public class RoutePutClient implements RoutePutSession, Runnable
         this.properties.put("_hostname", RoutePutChannel.getHostname());
         if (RoutePutMain.args != null)
             this.properties.put("_args", RoutePutMain.args);
-        if (this.connectionId != null && this.connectionId.equals(RoutePutChannel.getMasterConnectionId()))
-            this.properties.put("_master", true);
         return this.properties;
     }
 
