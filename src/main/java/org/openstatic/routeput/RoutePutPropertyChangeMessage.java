@@ -222,6 +222,10 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
             }
         });
         channelsInvolved.forEach((channel) -> {
+            // Bump the receive counter for this channel before broadcasting the update.
+            channel.bumpRx();
+
+            // broadcast the update to the channel
             channel.broadcast(this.forChannel(channel));
         });
     }
