@@ -512,20 +512,20 @@ public class RoutePutChannel implements RoutePutMessageListener
         return this.name;
     }
 
-    private synchronized void bumpTx()
+    private void bumpTx()
     {
         this.messagesTx++;
         this.touch();
     }
     
-    private synchronized void bumpRx()
+    private void bumpRx()
     {
         this.messagesRx++;
         this.touch();
     }
 
     // like unix touch command bumps the modified timestamp of a channel
-    public synchronized void touch()
+    public void touch()
     {
         this.lastAccess = System.currentTimeMillis();
     }
