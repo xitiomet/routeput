@@ -192,6 +192,7 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                             RoutePutRemoteSession rprs = RoutePutRemoteSession.findRemoteSession(objectId);
                             if (rprs != null)
                             {
+                                rprs.touch();
                                 JSONObject rsProp = rprs.getProperties();
                                 synchronized (rsProp)
                                 {

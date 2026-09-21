@@ -591,12 +591,6 @@ public class RoutePutChannel implements RoutePutMessageListener
                 l.onLeave(this, session);
             });
             this.touch();
-            // I know this is sloppy but i need to know when a remote session leaves its last channel
-            if (session instanceof RoutePutRemoteSession)
-            {
-                RoutePutRemoteSession rprs = (RoutePutRemoteSession) session;
-                rprs.maybeDestroy();
-            }
         }
         if (session == this.collector)
             this.collector = null;

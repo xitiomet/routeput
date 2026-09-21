@@ -20,6 +20,7 @@ import org.json.JSONObject;
 public class RoutePutRemoteSession implements RoutePutSession
 {
     private static HashMap<String, RoutePutRemoteSession> sessions;
+    private static Thread deadSessionSweeper;
 
     private PropertyChangeSupport propertyChangeSupport;
     private String connectionId;
@@ -32,13 +33,39 @@ public class RoutePutRemoteSession implements RoutePutSession
     private long txPackets;
     private long lastReceived;
 
-    public static void init() {
+    public static void init()
+    {
         if (RoutePutRemoteSession.sessions == null) {
             RoutePutRemoteSession.sessions = new HashMap<String, RoutePutRemoteSession>();
         }
+        if (RoutePutRemoteSession.deadSessionSweeper == null) {
+            RoutePutRemoteSession.deadSessionSweeper = new Thread(() -> {
+                while (RoutePutMain.keep_running) 
+                {
+                    try {
+                        Thread.sleep(15000); // Sweep every 15 seconds
+                        synchronized (RoutePutRemoteSession.class) {
+                            RoutePutRemoteSession.sessions.values().removeIf(session -> {
+                                long idleDestruct = session.getProperties().optLong("idleDestruct", 900000l);
+                                if (session.getIdle() > idleDestruct && idleDestruct > 0) {
+                                    RoutePutChannel.removeFromAllChannels(session);
+                                    return true;
+                                }
+                                return false;
+                            });
+                        }
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+            });
+            RoutePutRemoteSession.deadSessionSweeper.setDaemon(true);
+            RoutePutRemoteSession.deadSessionSweeper.start();
+        }
     }
 
-    public static boolean isInitialized() {
+    public static boolean isInitialized() 
+    {
         return RoutePutRemoteSession.sessions != null;
     }
 
@@ -95,20 +122,16 @@ public class RoutePutRemoteSession implements RoutePutSession
         this.lastReceived = System.currentTimeMillis();
     }
 
-    public void maybeDestroy() {
-        // Sync on the same monitor handleRoutedMessage uses so a concurrent inbound
-        // packet can't re-add this session to a channel between the check and remove.
-        synchronized (RoutePutRemoteSession.class) {
-            if (RoutePutChannel.channelsWithMember(this).size() == 0) {
-                RoutePutRemoteSession.sessions.remove(this.connectionId, this);
-            }
-        }
+    protected void touch()
+    {
+        this.lastReceived = System.currentTimeMillis();
     }
 
-    private void handleMessage(RoutePutMessage m) {
+    private void handleMessage(RoutePutMessage m) 
+    {
         if (this.connectionId.equals(m.getSourceId())) {
             this.rxPackets++;
-            this.lastReceived = System.currentTimeMillis();
+            this.touch();
             RoutePutChannel msgChannel = m.getRoutePutChannel();
             if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
                 boolean connected = m.getRoutePutMeta().optBoolean("connected", false);
@@ -176,7 +199,8 @@ public class RoutePutRemoteSession implements RoutePutSession
                 .collect(Collectors.toList());
     }
 
-    public static boolean isChild(RoutePutSession parent, String childConnectionId) {
+    public static boolean isChild(RoutePutSession parent, String childConnectionId)
+    {
         if (RoutePutRemoteSession.sessions != null)
         {
             if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) {
@@ -189,35 +213,42 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
     }
 
-    public static RoutePutRemoteSession findRemoteSession(String childConnectionId) {
+    public static RoutePutRemoteSession findRemoteSession(String childConnectionId)
+    {
         return RoutePutRemoteSession.sessions.get(childConnectionId);
     }
 
-    public Collection<RoutePutMessageListener> getMessageListeners() {
+    public Collection<RoutePutMessageListener> getMessageListeners()
+    {
         return this.listeners;
     }
 
-    public boolean hasMessageListener(RoutePutMessageListener r) {
+    public boolean hasMessageListener(RoutePutMessageListener r)
+    {
         return this.listeners.contains(r);
     }
 
-    public void send(RoutePutMessage jo) {
+    public void send(RoutePutMessage jo)
+    {
         RoutePutMessage msg = jo.forTarget(this);
         msg.setChannelIfNull(this.getDefaultChannel());
         this.getParent().send(jo);
         this.txPackets++;
     }
 
-    public String getRemoteIP() {
+    public String getRemoteIP()
+    {
         return this.remoteIP;
     }
 
-    public String getConnectionId() {
+    public String getConnectionId()
+    {
         return this.connectionId;
     }
 
     @Override
-    public RoutePutChannel getDefaultChannel() {
+    public RoutePutChannel getDefaultChannel()
+    {
         return this.defaultChannel;
     }
 
@@ -226,7 +257,8 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     @Override
-    public JSONObject toJSONObject() {
+    public JSONObject toJSONObject()
+    {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
         if (this.defaultChannel != null) {

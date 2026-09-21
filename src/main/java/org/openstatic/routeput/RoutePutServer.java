@@ -199,18 +199,7 @@ public class RoutePutServer implements Runnable
         {
             BLOBManager.sweepStaleBlobs();
         }
-        if (this.apiServlet != null)
-        {
-            RoutePutRemoteSession.children(this.apiServlet).stream().forEach((c) -> {
-                long idleDestruct = c.getProperties().optLong("idleDestruct", 0);
-                if (c.getIdle() > idleDestruct && idleDestruct > 0)
-                {
-                    logIt("Connection " + c.getConnectionId() + " destroyed due to idleDestruct, parent was " + c.getParent().getConnectionId());
-                    RoutePutChannel.removeFromAllChannels(c);
-                }
-            });
-            this.apiServlet.everySecond();
-        }
+
     }
     
     public void setState(boolean b)
