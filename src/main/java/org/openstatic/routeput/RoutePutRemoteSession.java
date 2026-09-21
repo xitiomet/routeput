@@ -56,7 +56,7 @@ public class RoutePutRemoteSession implements RoutePutSession
                                 RoutePutRemoteSession.sessions.remove(connectionId);
                             }
                         });
-                        RoutePutMain.log("Swept for dead remote sessions.");
+                        RoutePutMain.log("info", "Swept for dead remote sessions.");
                     } catch (InterruptedException e) {
                         break;
                     }

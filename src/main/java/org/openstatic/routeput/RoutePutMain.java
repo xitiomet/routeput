@@ -227,7 +227,7 @@ public class RoutePutMain
         }
         if (RoutePutServer.instance != null)
         {
-            RoutePutServer.instance.log(type, message);
+            RoutePutServer.instance.log(type.toLowerCase(), message);
         }
     }
 
