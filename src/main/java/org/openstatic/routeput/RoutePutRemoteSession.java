@@ -42,8 +42,19 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
         if (RoutePutRemoteSession.deadSessionSweeper == null) 
         {
-            RoutePutRemoteSession.deadSessionSweeper = new Thread(() -> {
-                while (RoutePutMain.keep_running) 
+            spawnDeadSessionSweeper();
+        } else if (!RoutePutRemoteSession.deadSessionSweeper.isAlive()) {
+            spawnDeadSessionSweeper();
+        }
+    }
+
+    private static void spawnDeadSessionSweeper()
+    {
+        RoutePutRemoteSession.deadSessionSweeper = new Thread() {
+            public void run() 
+            {
+                RoutePutMain.log("info", "Dead remote session sweeper started.");
+                while (RoutePutMain.keep_running && this == RoutePutRemoteSession.deadSessionSweeper) 
                 {
                     try 
                     {
@@ -61,10 +72,11 @@ public class RoutePutRemoteSession implements RoutePutSession
                         break;
                     }
                 }
-            });
-            RoutePutRemoteSession.deadSessionSweeper.setDaemon(true);
-            RoutePutRemoteSession.deadSessionSweeper.start();
-        }
+                RoutePutMain.log("info", "Dead remote session sweeper stopped.");
+            }
+        };
+        RoutePutRemoteSession.deadSessionSweeper.setDaemon(true);
+        RoutePutRemoteSession.deadSessionSweeper.start();
     }
 
     public static Collection<RoutePutRemoteSession> getAllRemoteSessions()

@@ -3,6 +3,8 @@ package org.openstatic.routeput;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
@@ -221,13 +223,14 @@ public class RoutePutMain
 
     public static void log(String type, String message)
     {
-        if (!RoutePutMain.quiet)
-        {
-            System.err.println("[" + type + "] " + message);
-        }
         if (RoutePutServer.instance != null)
         {
             RoutePutServer.instance.log(type.toLowerCase(), message);
+        } else {
+            if (!RoutePutMain.quiet)
+            {
+                System.err.println("<" + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) + "> " + type.toUpperCase() + " " + message);
+            }
         }
     }
 
