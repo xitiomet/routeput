@@ -64,6 +64,12 @@ public class RoutePutRemoteSession implements RoutePutSession
         }
     }
 
+    public static Collection<RoutePutRemoteSession> getAllRemoteSessions()
+    {
+        init();
+        return RoutePutRemoteSession.sessions.values();
+    }
+
     public static boolean isInitialized() 
     {
         return RoutePutRemoteSession.sessions != null;
