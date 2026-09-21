@@ -78,7 +78,8 @@ public class RoutePutRemoteSession implements RoutePutSession
         return RoutePutRemoteSession.sessions != null;
     }
 
-    public static synchronized RoutePutRemoteSession handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo) {
+    public static synchronized RoutePutRemoteSession handleRoutedMessage(RoutePutSession parent, RoutePutMessage jo)
+    {
         init();
         String sourceId = jo.getSourceId();
         if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
@@ -179,40 +180,48 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     @Override
-    public boolean isConnected() {
+    public boolean isConnected() 
+    {
         return this.parent.isConnected() && (RoutePutChannel.channelsWithMember(this).size() > 0);
     }
 
-    public void addMessageListener(RoutePutMessageListener r) {
+    public void addMessageListener(RoutePutMessageListener r) 
+    {
         if (!this.listeners.contains(r)) {
             this.listeners.add(r);
         }
     }
 
-    public void removeMessageListener(RoutePutMessageListener r) {
+    public void removeMessageListener(RoutePutMessageListener r) 
+    {
         if (this.listeners.contains(r)) {
             this.listeners.remove(r);
         }
     }
 
-    public RoutePutSession getParent() {
+    public RoutePutSession getParent() 
+    {
         return this.parent;
     }
 
-    public boolean hasParent(RoutePutSession session) {
+    public boolean hasParent(RoutePutSession session) 
+    {
         return this.parent == session;
     }
 
-    public static Collection<RoutePutRemoteSession> children(RoutePutSession parent) {
+    public static Collection<RoutePutRemoteSession> children(RoutePutSession parent) 
+    {
+        init();
         return RoutePutRemoteSession.sessions.values().stream().filter((c) -> (c.hasParent(parent)))
                 .collect(Collectors.toList());
     }
 
     public static boolean isChild(RoutePutSession parent, String childConnectionId)
     {
-        if (RoutePutRemoteSession.sessions != null)
+        if (RoutePutRemoteSession.sessions != null && parent != null && childConnectionId != null)
         {
-            if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) {
+            if (RoutePutRemoteSession.sessions.containsKey(childConnectionId)) 
+            {
                 return RoutePutRemoteSession.sessions.get(childConnectionId).hasParent(parent);
             } else {
                 return false;
