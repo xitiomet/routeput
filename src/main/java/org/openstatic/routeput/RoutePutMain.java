@@ -23,6 +23,7 @@ public class RoutePutMain
     public static final String VERSION = BuildInfo.VERSION;
     public static long startTime;
     public static boolean keep_running;
+    public static boolean quiet = false;
     public static String[] args;
 
     public static void main(String[] args)
@@ -70,6 +71,11 @@ public class RoutePutMain
             if (cmd.hasOption("n"))
             {
                 channel = RoutePutChannel.getChannel(cmd.getOptionValue('n',"lobby"));
+            }
+
+            if (cmd.hasOption("q"))
+            {
+                RoutePutMain.quiet = true;
             }
             
             if (!cmd.hasOption("q") && (cmd.hasOption("c") || cmd.hasOption("p")))
@@ -211,6 +217,12 @@ public class RoutePutMain
             e.printStackTrace(System.err);
         }
         
+    }
+
+    public static void log(String message)
+    {
+        if (!RoutePutMain.quiet)
+            System.err.println(message);
     }
 
     public static long getUptime()

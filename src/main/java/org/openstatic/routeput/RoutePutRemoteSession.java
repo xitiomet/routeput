@@ -4,6 +4,7 @@ import java.util.Vector;
 import java.util.stream.Collectors;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -19,7 +20,7 @@ import org.json.JSONObject;
 
 public class RoutePutRemoteSession implements RoutePutSession
 {
-    private static HashMap<String, RoutePutRemoteSession> sessions;
+    private static ConcurrentHashMap<String, RoutePutRemoteSession> sessions;
     private static Thread deadSessionSweeper;
 
     private PropertyChangeSupport propertyChangeSupport;
@@ -35,25 +36,27 @@ public class RoutePutRemoteSession implements RoutePutSession
 
     public static void init()
     {
-        if (RoutePutRemoteSession.sessions == null) {
-            RoutePutRemoteSession.sessions = new HashMap<String, RoutePutRemoteSession>();
+        if (RoutePutRemoteSession.sessions == null)
+        {
+            RoutePutRemoteSession.sessions = new ConcurrentHashMap<String, RoutePutRemoteSession>();
         }
-        if (RoutePutRemoteSession.deadSessionSweeper == null) {
+        if (RoutePutRemoteSession.deadSessionSweeper == null) 
+        {
             RoutePutRemoteSession.deadSessionSweeper = new Thread(() -> {
                 while (RoutePutMain.keep_running) 
                 {
-                    try {
-                        Thread.sleep(15000); // Sweep every 15 seconds
-                        synchronized (RoutePutRemoteSession.class) {
-                            RoutePutRemoteSession.sessions.values().removeIf(session -> {
-                                long idleDestruct = session.getProperties().optLong("idleDestruct", 900000l);
-                                if (session.getIdle() > idleDestruct && idleDestruct > 0) {
-                                    RoutePutChannel.removeFromAllChannels(session);
-                                    return true;
-                                }
-                                return false;
-                            });
-                        }
+                    try 
+                    {
+                        Thread.sleep(60000); // Sweep every 60 seconds
+                        RoutePutRemoteSession.sessions.forEach((connectionId, session) -> {
+                            long idleDestruct = session.getProperties().optLong("idleDestruct", 900000l);
+                            if (session.getIdle() > idleDestruct && idleDestruct > 0) 
+                            {
+                                RoutePutChannel.removeFromAllChannels(session);
+                                RoutePutRemoteSession.sessions.remove(connectionId);
+                            }
+                        });
+                        RoutePutMain.log("Swept for dead remote sessions.");
                     } catch (InterruptedException e) {
                         break;
                     }
