@@ -219,10 +219,16 @@ public class RoutePutMain
         
     }
 
-    public static void log(String message)
+    public static void log(String type, String message)
     {
         if (!RoutePutMain.quiet)
-            System.err.println(message);
+        {
+            System.err.println("[" + type + "] " + message);
+        }
+        if (RoutePutServer.instance != null)
+        {
+            RoutePutServer.instance.log(type, message);
+        }
     }
 
     public static long getUptime()
