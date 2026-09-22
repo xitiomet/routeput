@@ -668,28 +668,15 @@ public class BLOBManager
             return f;
         }
         String name = file.getName();
-        File target = new File(channel.getBlobFolder(), name); // Replace with the actual target path if 
-        try
-        {
-            Files.copy(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-        catch (IOException e)
-        {
-            CompletableFuture<Void> f = new CompletableFuture<Void>();
-            f.completeExceptionally(e);
-            return f;
-        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (FileInputStream fis = new FileInputStream(target))
+        try (FileInputStream fis = new FileInputStream(file))
         {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) != -1) {
                 baos.write(buffer, 0, bytesRead);
             }
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e){
             CompletableFuture<Void> f = new CompletableFuture<Void>();
             f.completeExceptionally(e);
             return f;
@@ -760,6 +747,7 @@ public class BLOBManager
     // won't answer by launching its own offer fan-out.
     private static CompletableFuture<Void> transmitBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final boolean offerProbe)
     {
+        ensureBlobLocally(channel, name, sb);
         CompletableFuture<Void> future = new CompletableFuture<Void>();
         byte[] raw = decodeDataUri(sb);
         String md5 = (raw != null) ? md5OfBytes(raw) : null;
@@ -820,10 +808,8 @@ public class BLOBManager
         if (pending.future != null)
             pending.future.completeExceptionally(new java.util.concurrent.TimeoutException("blobCheck timed out: " + name));
     }
-
-    // Actual chunk transmission — called after the remote replies state=need, or as a
-    // fallback when md5 can't be computed. Completes `future` when the last chunk is sent.
-    private static Thread sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final CompletableFuture<Void> future)
+    
+    private static void ensureBlobLocally(final RoutePutChannel channel, final String name, final StringBuffer sb)
     {
         try
         {
@@ -840,9 +826,15 @@ public class BLOBManager
                 }
             }
         } catch (Exception e) {
-            if (future != null) future.completeExceptionally(e);
-            return null;
+            e.printStackTrace(System.err);
         }
+    }
+
+    // Actual chunk transmission — called after the remote replies state=need, or as a
+    // fallback when md5 can't be computed. Completes `future` when the last chunk is sent.
+    private static Thread sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final CompletableFuture<Void> future)
+    {
+        ensureBlobLocally(channel, name, sb);
         Thread x = new Thread(() -> {
             try
             {
