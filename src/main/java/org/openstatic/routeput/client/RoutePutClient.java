@@ -5,6 +5,8 @@ import java.util.Vector;
 import java.util.concurrent.Future;
 import java.util.Collection;
 
+import java.io.File;
+
 import org.openstatic.routeput.BLOBManager;
 import org.openstatic.routeput.BLOBFile;
 import org.openstatic.routeput.RoutePutChannel;
@@ -23,6 +25,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
@@ -108,6 +111,39 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
 
         RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
+    }
+
+    public CompletableFuture<Void> forceSendBlob(File file)
+    {
+        return this.forceSendBlob(file, null);
+    }
+
+    public CompletableFuture<Void> forceSendBlob(File file, RoutePutMessage request)
+    {
+        return this.forceSendBlob(this.getDefaultChannel(), file, request);
+    }
+
+    public CompletableFuture<Void> forceSendBlob(RoutePutChannel channel, File file, RoutePutMessage request)
+    {
+        return BLOBManager.forceSendBlob(this, channel, file, request);
+    }
+
+    // Convenience method to send a blob using the default channel with no request.
+    public CompletableFuture<Void> sendBlob(File file)
+    {
+        return this.sendBlob(file, null);
+    }
+
+    // Convenience method to send a blob using the default channel.
+    public CompletableFuture<Void> sendBlob(File file, RoutePutMessage request)
+    {
+        return this.sendBlob(this.getDefaultChannel(), file, request);
+    }
+
+    // maps to BLOBManager.sendBlob(this, channel, file, request)
+    public CompletableFuture<Void> sendBlob(RoutePutChannel channel, File file, RoutePutMessage request)
+    {
+        return BLOBManager.sendBlob(this, channel, file, request);
     }
 
     public void setConnectionId(String connectionId)

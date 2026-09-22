@@ -5,6 +5,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Base64;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
@@ -664,8 +668,19 @@ public class BLOBManager
             return f;
         }
         String name = file.getName();
+        File target = new File(channel.getBlobFolder(), name); // Replace with the actual target path if 
+        try
+        {
+            Files.copy(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch (IOException e)
+        {
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(e);
+            return f;
+        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (FileInputStream fis = new FileInputStream(file))
+        try (FileInputStream fis = new FileInputStream(target))
         {
             byte[] buffer = new byte[8192];
             int bytesRead;
@@ -694,6 +709,60 @@ public class BLOBManager
         sb.append("data:" + contentType + ";base64,");
         sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
         return transmitBlobChunks(session, name, channel, sb, request, false);
+    }
+
+    public static CompletableFuture<Void> forceSendBlob(RoutePutSession session, RoutePutChannel channel, File file)
+    {
+        return forceSendBlob(session, channel, file, null);
+    }
+
+    public static CompletableFuture<Void> forceSendBlob(RoutePutSession session, RoutePutChannel channel, File file, RoutePutMessage request)
+    {
+        if (file == null || !file.exists())
+        {
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(new IllegalArgumentException("file is null or does not exist"));
+            return f;
+        }
+        String name = file.getName();
+        File target = new File(channel.getBlobFolder(), name); // Replace with the actual target path if needed
+        try
+        {
+            Files.copy(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch (IOException e)
+        {
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(e);
+            return f;
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (FileInputStream fis = new FileInputStream(target))
+        {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                baos.write(buffer, 0, bytesRead);
+            }
+        }
+        catch (IOException e)
+        {
+            CompletableFuture<Void> f = new CompletableFuture<Void>();
+            f.completeExceptionally(e);
+            return f;
+        }
+        return forceSendBlob(session, name, channel, getContentTypeFor(name), baos.toByteArray(), request);
+    }
+
+    // Transmit a blob to the session in chunks, handling offer probes and blob checks.
+    public static CompletableFuture<Void> forceSendBlob(RoutePutSession session, String name, RoutePutChannel channel, String contentType, byte[] bytes, RoutePutMessage request)
+    {
+        StringBuffer sb = new StringBuffer();
+        sb.append("data:" + contentType + ";base64,");
+        sb.append(java.util.Base64.getEncoder().encodeToString(bytes));
+        CompletableFuture<Void> future = new CompletableFuture<Void>();
+        sendBlobChunks(session, name, channel, sb, request, future);
+        return future;
     }
     
     // Transmit a blob to this session, first querying the remote to see if it already
