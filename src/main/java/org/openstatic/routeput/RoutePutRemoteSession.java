@@ -65,9 +65,10 @@ public class RoutePutRemoteSession implements RoutePutSession
                             {
                                 RoutePutChannel.removeFromAllChannels(session);
                                 RoutePutRemoteSession.sessions.remove(connectionId);
+                                RoutePutMain.log("info", "Removed idle remote session: " + connectionId);
                             }
                         });
-                        RoutePutMain.log("info", "Swept for dead remote sessions.");
+                        //RoutePutMain.log("info", "Swept for dead remote sessions.");
                     } catch (InterruptedException e) {
                         break;
                     }
