@@ -827,10 +827,17 @@ public class BLOBManager
     {
         try
         {
-            File localCopy = new File(channel.getBlobFolder(), name);
-            if (!localCopy.exists())
+            if (channel != null)
             {
-                saveBase64Blob(localCopy, sb);
+                File blobFolder = channel.getBlobFolder();
+                if (blobFolder != null)
+                {
+                    File localCopy = new File(channel.getBlobFolder(), name);
+                    if (!localCopy.exists())
+                    {
+                        saveBase64Blob(localCopy, sb);
+                    }
+                }
             }
         } catch (Exception e) {
             if (future != null) future.completeExceptionally(e);
