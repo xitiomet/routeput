@@ -725,19 +725,8 @@ public class BLOBManager
             return f;
         }
         String name = file.getName();
-        File target = new File(channel.getBlobFolder(), name); // Replace with the actual target path if needed
-        try
-        {
-            Files.copy(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-        catch (IOException e)
-        {
-            CompletableFuture<Void> f = new CompletableFuture<Void>();
-            f.completeExceptionally(e);
-            return f;
-        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (FileInputStream fis = new FileInputStream(target))
+        try (FileInputStream fis = new FileInputStream(file))
         {
             byte[] buffer = new byte[8192];
             int bytesRead;
@@ -836,6 +825,17 @@ public class BLOBManager
     // fallback when md5 can't be computed. Completes `future` when the last chunk is sent.
     private static Thread sendBlobChunks(final RoutePutSession session, final String name, final RoutePutChannel channel, final StringBuffer sb, final RoutePutMessage request, final CompletableFuture<Void> future)
     {
+        try
+        {
+            File localCopy = new File(channel.getBlobFolder(), name);
+            if (!localCopy.exists())
+            {
+                saveBase64Blob(localCopy, sb);
+            }
+        } catch (Exception e) {
+            if (future != null) future.completeExceptionally(e);
+            return null;
+        }
         Thread x = new Thread(() -> {
             try
             {
