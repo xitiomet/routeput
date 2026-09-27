@@ -31,7 +31,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     private long rxPackets;
     private long txPackets;
     private Map<RoutePutChannel, Date> lastChannelInteraction;
-    private Map<String, LinkedBlockingQueue<RoutePutMessage>> pendingOutbound;
+    private Map<String, Map<RoutePutChannel, LinkedBlockingQueue<RoutePutMessage>>> pendingOutbound;
 
     public ApiServlet() {
         this.properties = new JSONObject();
@@ -42,7 +42,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         RoutePutServer.instance.apiServlet = this;
         this.lastChannelInteraction = new HashMap<RoutePutChannel, Date>();
         this.lastChannelInteraction = Collections.synchronizedMap(this.lastChannelInteraction);
-        this.pendingOutbound = new HashMap<String, LinkedBlockingQueue<RoutePutMessage>>();
+        this.pendingOutbound = new HashMap<String, Map<RoutePutChannel, LinkedBlockingQueue<RoutePutMessage>>>();
         //this.pendingOutbound = Collections.synchronizedMap(this.pendingOutbound);
     }
 
@@ -102,12 +102,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             c.removeMember(this);
             this.lastChannelInteraction.remove(c);
         });
-        this.pendingOutbound.forEach((k,v) -> {
-            if (RoutePutRemoteSession.isChild(this, k) == false)
-            {
-                this.pendingOutbound.remove(k);
-            }
-        });
+        // removeIf mutates the backing map safely; forEach + remove throws CME
+        this.pendingOutbound.keySet().removeIf((k) -> RoutePutRemoteSession.isChild(this, k) == false);
     }
 
     private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg)
@@ -215,7 +211,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 handleAPIMessage(finalRemoteIP, post);
                 if (post.hasSourceId()) {
                     response.put("sourceId", post.getSourceId());
-                    response.put("messages", new JSONArray(this.pendingOutboundFor(post.getSourceId())));
+                    response.put("messages", new JSONArray(this.pendingOutboundFor(post.getSourceId(), chan)));
                 }
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
@@ -246,7 +242,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                         this.rxPackets++;
                         handleAPIMessage(finalRemoteIP, rMsg);
                         if (rMsg.hasSourceId()) {
-                            response.put(rMsg.getSourceId(), new JSONArray(this.pendingOutboundFor(rMsg.getSourceId())));
+                            response.put(rMsg.getSourceId(), new JSONArray(this.pendingOutboundFor(rMsg.getSourceId(), chan)));
                         }
                     }
                 });
@@ -364,7 +360,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 if (msg.hasSourceId()) 
                                 {
                                     String srcId = msg.getSourceId();
-                                    response.put("messages", new JSONArray(this.pendingOutboundFor(srcId)));
+                                    response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
                                 }
                                 msg.setSourceIdIfNull(this.getConnectionId());
                                 handleAPIMessage(finalRemoteIP, msg);
@@ -381,7 +377,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                         idleDestruct = Long.parseLong(request.getParameter("idleDestruct"));
                                     }
                                     startRemoteConnection(channel, srcId, remoteIP, idleDestruct);
-                                    response.put("messages", new JSONArray(this.pendingOutboundFor(srcId)));
+                                    response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
                                 }
                             } else if ("blob".equals(token)) {
                                 token = st.nextToken();
@@ -445,40 +441,47 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         }
     }
 
-    protected void addPendingOutbound(String targetId)
+    // Create a queue if needed for passing messages to GET/POST clients
+    protected void addPendingOutbound(String targetId, RoutePutChannel channel)
     {
         if (targetId != null && !this.pendingOutbound.containsKey(targetId))
         {
-            this.pendingOutbound.put(targetId, new LinkedBlockingQueue<RoutePutMessage>());
+            this.pendingOutbound.put(targetId, new HashMap<RoutePutChannel, LinkedBlockingQueue<RoutePutMessage>>());
+        }
+        if (targetId != null && !this.pendingOutbound.get(targetId).containsKey(channel))
+        {
+            this.pendingOutbound.get(targetId).put(channel, new LinkedBlockingQueue<RoutePutMessage>());
         }
     }
 
+    // Create a queue if needed for passing messages to GET/POST clients
+    // and send a message to that queue
     protected void addPendingOutbound(String targetId, RoutePutMessage jo)
     {
         if (targetId == null || targetId.isEmpty()) 
             return;
         if (targetId.equals(this.getConnectionId()))
             return;
-        addPendingOutbound(targetId);
+        addPendingOutbound(targetId, jo.getRoutePutChannel());
         if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
             !jo.isType(RoutePutMessage.TYPE_PING) && 
             !jo.isType(RoutePutMessage.TYPE_PONG) &&
             !targetId.equals(jo.getSourceId()))
         {
-            LinkedBlockingQueue<RoutePutMessage> queue = this.pendingOutbound.get(targetId);
+            LinkedBlockingQueue<RoutePutMessage> queue = this.pendingOutbound.get(targetId).get(jo.getRoutePutChannel());
             if (queue.size() > 10000) // Limit the queue size to 10000 messages
                 queue.poll();
             queue.add(jo);
         }
     }
 
-    protected Collection<RoutePutMessage> pendingOutboundFor(String targetId)
+    protected Collection<RoutePutMessage> pendingOutboundFor(String targetId, RoutePutChannel channel)
     {
-        if (!this.pendingOutbound.containsKey(targetId)) {
+        if (!this.pendingOutbound.containsKey(targetId) || !this.pendingOutbound.get(targetId).containsKey(channel)) {
             return Collections.emptyList();
         }
         List<RoutePutMessage> messages = new ArrayList<RoutePutMessage>();
-        this.pendingOutbound.get(targetId).drainTo(messages);
+        this.pendingOutbound.get(targetId).get(channel).drainTo(messages);
         return messages;
     }
 
@@ -505,7 +508,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
 
     public int pendingOutboundCount()
     {
-        return this.pendingOutbound.values().stream().mapToInt(Queue::size).sum();
+        return this.pendingOutbound.values().stream().mapToInt(m -> m.values().stream().mapToInt(Queue::size).sum()).sum();
     }
 
     @Override
@@ -521,7 +524,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
         jo.put("pendingTotal", this.pendingOutboundCount());
-        jo.put("pendingByTarget", new JSONObject(this.pendingOutbound.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()))));
+        jo.put("pendingByTarget", new JSONObject(this.pendingOutbound.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().values().stream().mapToInt(Queue::size).sum()))));
         List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
             return c.getName();
         }).collect(Collectors.toList());

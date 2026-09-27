@@ -200,6 +200,11 @@ public class RoutePutServer implements Runnable
             BLOBManager.sweepStaleBlobs();
         }
 
+        if (this.apiServlet != null)
+        {
+            this.apiServlet.everySecond();
+        }
+
     }
     
     public void setState(boolean b)
