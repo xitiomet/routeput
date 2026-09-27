@@ -529,7 +529,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.getConnectionId());
         jo.put("pendingTotal", this.pendingOutboundCount());
-        jo.put("pendingByTarget", new JSONObject(this.pendingOutbound.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().values().stream().mapToInt(Queue::size).sum()))));
+        jo.put("pendingByTargetAndChannel", new JSONObject(this.pendingOutbound.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, v -> v.getValue().size()))))));
         List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
             return c.getName();
         }).collect(Collectors.toList());
