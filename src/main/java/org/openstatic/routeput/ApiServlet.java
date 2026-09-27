@@ -111,6 +111,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         RoutePutChannel channel = msg.getRoutePutChannel();
         if (!channel.hasMember(this)) 
         {
+            this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
             channel.addMember(this);
         }
         String sourceId = msg.getSourceId();
