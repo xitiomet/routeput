@@ -109,6 +109,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg)
     {
         RoutePutChannel channel = msg.getRoutePutChannel();
+        if (!channel.hasMember(this)) 
+        {
+            channel.addMember(this);
+        }
         String sourceId = msg.getSourceId();
         if (sourceId != null)
         {
