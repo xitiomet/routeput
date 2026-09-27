@@ -140,6 +140,7 @@ public class RoutePutMain
                 serverMode = true;
                 int port = Integer.valueOf(cmd.getOptionValue('p',"6144")).intValue();
                 settings.put("port", port);
+                RoutePutMain.keep_running = true;
             }
 
             String inputChannel = null;
@@ -205,6 +206,9 @@ public class RoutePutMain
                 RoutePutServer rps = new RoutePutServer(settings);
                 rps.setState(true);
             }
+
+            // keep_running is settled by now; ensure the dead session sweeper is running
+            RoutePutRemoteSession.init();
 
             while(RoutePutMain.keep_running)
             {

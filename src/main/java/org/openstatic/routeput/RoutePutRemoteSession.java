@@ -34,17 +34,21 @@ public class RoutePutRemoteSession implements RoutePutSession
     private long txPackets;
     private long lastReceived;
 
-    public static void init()
+    public static synchronized void init()
     {
         if (RoutePutRemoteSession.sessions == null)
         {
             RoutePutRemoteSession.sessions = new ConcurrentHashMap<String, RoutePutRemoteSession>();
         }
-        if (RoutePutRemoteSession.deadSessionSweeper == null) 
+        // Only run the sweeper while the process is meant to keep running; otherwise
+        // client-library callers (keep_running=false) would respawn a thread that
+        // exits immediately on every routed message.
+        if (RoutePutMain.keep_running)
         {
-            spawnDeadSessionSweeper();
-        } else if (!RoutePutRemoteSession.deadSessionSweeper.isAlive()) {
-            spawnDeadSessionSweeper();
+            if (RoutePutRemoteSession.deadSessionSweeper == null || !RoutePutRemoteSession.deadSessionSweeper.isAlive())
+            {
+                spawnDeadSessionSweeper();
+            }
         }
     }
 

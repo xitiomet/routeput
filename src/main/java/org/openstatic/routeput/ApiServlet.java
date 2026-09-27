@@ -135,32 +135,41 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             {
                 channel.onMessage(this, msg);
             } else {
-                boolean sendConnect = false;
-                RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
-                if (remoteSession == null)
-                {
-                    // This connection doesnt even exist lets create it
-                    sendConnect = true;
-                } else if (remoteSession.hasParent(this) && !channel.hasMember(remoteSession)) {
-                    // This connection exists, and belongs to the api, lets join the channel
-                    sendConnect = true;
-                }
-                if (sendConnect)
-                {
-                    RoutePutMessage cMsg = new RoutePutMessage();
-                    cMsg.setSourceId(sourceId);
-                    cMsg.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
-                    cMsg.setMetaField("connected", true);
-                    cMsg.setMetaField("remoteIP", remoteIP);
-                    JSONObject props = new JSONObject();
-                    props.put("idleDestruct", msg.getRoutePutMeta().optLong("idleDestruct", 900000));
-                    props.put("description", "Virtual Connection for API messages");
-                    cMsg.setMetaField("properties", props);
-                    cMsg.setChannel(channel);
-                    RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, cMsg);
-                }
+                startRemoteConnection(channel, sourceId, remoteIP, msg.getRoutePutMeta().optLong("idleDestruct", 900000));
                 RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, msg);
             }
+        }
+    }
+
+    // for initiating an api only connection, this ill create a virtual connection if it doesn't already exist
+    private void startRemoteConnection(RoutePutChannel channel, String sourceId, String remoteIP, long idleDestruct)
+    {
+        if (channel == null || sourceId == null)
+            return;
+        this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
+        boolean sendConnect = false;
+        RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
+        if (remoteSession == null)
+        {
+            // This connection doesnt even exist lets create it
+            sendConnect = true;
+        } else if (remoteSession.hasParent(this) && !channel.hasMember(remoteSession)) {
+            // This connection exists, and belongs to the api, lets join the channel
+            sendConnect = true;
+        }
+        if (sendConnect)
+        {
+            RoutePutMessage cMsg = new RoutePutMessage();
+            cMsg.setSourceId(sourceId);
+            cMsg.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+            cMsg.setMetaField("connected", true);
+            cMsg.setMetaField("remoteIP", remoteIP);
+            JSONObject props = new JSONObject();
+            props.put("idleDestruct", idleDestruct);
+            props.put("description", "Virtual Connection for API messages");
+            cMsg.setMetaField("properties", props);
+            cMsg.setChannel(channel);
+            RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, cMsg);
         }
     }
 
@@ -170,7 +179,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
-        httpServletResponse.addHeader("Server", "Routeput 1.0");
+        httpServletResponse.addHeader("Server", "Routeput " + RoutePutMain.VERSION);
         String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
         if (request.getHeader("X-Real-IP") != null) {
@@ -267,7 +276,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         httpServletResponse.setContentType("text/javascript");
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
         httpServletResponse.setCharacterEncoding("iso-8859-1");
-        httpServletResponse.addHeader("Server", "Routeput 1.0");
+        httpServletResponse.addHeader("Server", "Routeput " + RoutePutMain.VERSION);
         String target = request.getPathInfo().replace("+", " ");
         String remoteIP = request.getRemoteAddr();
         if (request.getHeader("X-Real-IP") != null) {
@@ -364,8 +373,15 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 if (response.has("members")) {
                                     response.remove("members");
                                 }
-                                if (st.hasMoreTokens()) {
+                                if (st.hasMoreTokens()) 
+                                {
                                     String srcId = st.nextToken();
+                                    this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
+                                    long idleDestruct = 900000;
+                                    if (request.getParameter("idleDestruct") != null) {
+                                        idleDestruct = Long.parseLong(request.getParameter("idleDestruct"));
+                                    }
+                                    startRemoteConnection(channel, srcId, remoteIP, idleDestruct);
                                     response.put("messages", new JSONArray(this.pendingOutboundFor(srcId)));
                                 }
                             } else if ("blob".equals(token)) {
