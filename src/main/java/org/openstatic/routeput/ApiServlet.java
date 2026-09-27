@@ -113,11 +113,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     private synchronized void handleAPIMessage(String remoteIP, RoutePutMessage msg)
     {
         RoutePutChannel channel = msg.getRoutePutChannel();
-        this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
-        if (!channel.hasMember(this)) 
-        {
-            channel.addMember(this);
-        }
         String sourceId = msg.getSourceId();
         if (sourceId != null)
         {
@@ -146,6 +141,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     {
         if (channel == null || sourceId == null)
             return;
+        if (!channel.hasMember(this)) 
+        {
+            channel.addMember(this);
+        }
         this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
         boolean sendConnect = false;
         RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
