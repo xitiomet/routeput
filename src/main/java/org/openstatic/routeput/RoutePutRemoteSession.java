@@ -152,11 +152,13 @@ public class RoutePutRemoteSession implements RoutePutSession
 
     private void handleMessage(RoutePutMessage m) 
     {
-        if (this.connectionId.equals(m.getSourceId())) {
+        if (this.connectionId.equals(m.getSourceId()))
+        {
             this.rxPackets++;
             this.touch();
             RoutePutChannel msgChannel = m.getRoutePutChannel();
-            if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
+            if (m.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) 
+            {
                 boolean connected = m.getRoutePutMeta().optBoolean("connected", false);
                 if (m.hasMetaField("properties"))
                 {
@@ -200,7 +202,8 @@ public class RoutePutRemoteSession implements RoutePutSession
 
     public void addMessageListener(RoutePutMessageListener r) 
     {
-        if (!this.listeners.contains(r)) {
+        if (!this.listeners.contains(r)) 
+        {
             this.listeners.add(r);
         }
     }
