@@ -457,6 +457,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
     {
         if (targetId == null || targetId.isEmpty()) 
             return;
+        if (targetId.equals(this.getConnectionId()))
+            return;
         addPendingOutbound(targetId);
         if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
             !jo.isType(RoutePutMessage.TYPE_PING) && 
