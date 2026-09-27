@@ -467,16 +467,20 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             return;
         if (targetId.equals(this.getConnectionId()))
             return;
-        addPendingOutbound(targetId, jo.getRoutePutChannel());
-        if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
-            !jo.isType(RoutePutMessage.TYPE_PING) && 
-            !jo.isType(RoutePutMessage.TYPE_PONG) &&
-            !targetId.equals(jo.getSourceId()))
+        RoutePutChannel chan = jo.getRoutePutChannel();
+        if (chan.hasMember(targetId))
         {
-            LinkedBlockingQueue<RoutePutMessage> queue = this.pendingOutbound.get(targetId).get(jo.getRoutePutChannel());
-            if (queue.size() > 10000) // Limit the queue size to 10000 messages
-                queue.poll();
-            queue.add(jo);
+            addPendingOutbound(targetId, jo.getRoutePutChannel());
+            if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
+                !jo.isType(RoutePutMessage.TYPE_PING) && 
+                !jo.isType(RoutePutMessage.TYPE_PONG) &&
+                !targetId.equals(jo.getSourceId()))
+            {
+                LinkedBlockingQueue<RoutePutMessage> queue = this.pendingOutbound.get(targetId).get(jo.getRoutePutChannel());
+                if (queue.size() > 10000) // Limit the queue size to 10000 messages
+                    queue.poll();
+                queue.add(jo);
+            }
         }
     }
 
