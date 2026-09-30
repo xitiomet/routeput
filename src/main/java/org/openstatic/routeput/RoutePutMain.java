@@ -30,6 +30,9 @@ public class RoutePutMain
 
     public static void main(String[] args)
     {
+        // Must run before any InetAddress lookup (initTracker resolves the local host);
+        // disables negative DNS caching so a brief outage doesn't poison reconnects.
+        java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0");
         RoutePutMain.args = args;
         RoutePutMain.startTime = System.currentTimeMillis();
         Runtime.getRuntime().addShutdownHook(new Thread() 

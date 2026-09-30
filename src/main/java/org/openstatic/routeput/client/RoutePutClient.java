@@ -41,6 +41,13 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class RoutePutClient implements RoutePutSession, Runnable
 {
+    static {
+        // Never let the JVM cache a failed DNS lookup: otherwise a brief outage poisons
+        // InetAddress' negative cache and every reconnect keeps throwing UnknownHostException
+        // even after the network recovers. 0 = re-resolve on every attempt.
+        java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0");
+    }
+
     private PropertyChangeSupport propertyChangeSupport;
     private RoutePutChannel channel;
     private String websocketUri;
@@ -98,19 +105,38 @@ public class RoutePutClient implements RoutePutSession, Runnable
           } 
         }); 
 
+        this.ensureWebSocketClientStarted();
+
+        RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
+    }
+
+    // Guarantees a started WebSocketClient before a connect attempt. A stopped Jetty
+    // client (after shutdown() or an internal lifecycle stop) throws "is not started"
+    // on connect, so rebuild it from scratch rather than reusing torn-down internals.
+    private synchronized void ensureWebSocketClientStarted()
+    {
+        if (this.webSocketClient != null && this.webSocketClient.isStarted())
+            return;
+        if (this.webSocketClient != null)
+        {
+            try {
+                this.webSocketClient.stop();
+            } catch (Exception e) {
+                // ignore
+            }
+        }
         SslContextFactory sec = new SslContextFactory.Client();
         sec.setValidateCerts(false);
         HttpClient httpClient = new HttpClient(sec);
-        RoutePutClient.this.webSocketClient = new WebSocketClient(httpClient);
-        RoutePutClient.this.webSocketClient.setMaxIdleTimeout(120000);
+        WebSocketClient client = new WebSocketClient(httpClient);
+        client.setMaxIdleTimeout(120000);
         try
         {
-            this.webSocketClient.start();
+            client.start();
+            this.webSocketClient = client;
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
-
-        RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
     }
 
     public CompletableFuture<Void> forceSendBlob(File file)
@@ -301,8 +327,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
         Thread t = new Thread(() -> {
             try
             {
+                RoutePutClient.this.ensureWebSocketClientStarted();
                 URI upstreamUri = new URI(this.websocketUri);
-                RoutePutClient.this.eventsWebSocket = new EventsWebSocket();
                 Session ses = RoutePutClient.this.webSocketClient.connect(eventsWebSocket, upstreamUri, new ClientUpgradeRequest()).get();
                 if (ses instanceof WebSocketSession)
                 {
