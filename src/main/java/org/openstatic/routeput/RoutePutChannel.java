@@ -804,7 +804,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                     if (j.hasTargetId())
                     {
                         RoutePutSession target = this.findMemberById(j.getTargetId());
-                        if (target != null)
+                        if (target != null && !j.containsHop(target.getConnectionId()))
                         {
                             j.setMetaField("collectorTargeted", true);
                             bumpTx();
@@ -828,8 +828,14 @@ public class RoutePutChannel implements RoutePutMessageListener
                     RoutePutSession target = this.findMemberById(j.getTargetId());
                     if (target != null)
                     {
-                        bumpTx();
-                        target.send(j);
+                        // Skip a member that has already seen this packet (e.g. the local
+                        // client whose connectionId is the master hop) so targeted messages
+                        // are not bounced back upstream and looped.
+                        if (!j.containsHop(target.getConnectionId()))
+                        {
+                            bumpTx();
+                            target.send(j);
+                        }
                     } else {
                         RoutePutServer.logWarning("PACKET LOST (Target wasn't found): " + j.toString());
                     }
