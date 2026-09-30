@@ -307,7 +307,21 @@ public class RoutePutServerWebsocket implements RoutePutSession
                     }
                 } else if (jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
                     JSONObject rpm = jo.getRoutePutMeta();
-                    this.connectionId = rpm.optString("connectionId", null);
+                    String suppliedId = rpm.optString("connectionId", null);
+                    if (suppliedId != null && !suppliedId.isEmpty() && !suppliedId.equals(this.connectionId))
+                    {
+                        // Client is claiming a specific id (resuming a dropped session, or an
+                        // embedded device that always reuses the same id). Drop the temporary
+                        // server-assigned registration so finishHandshake re-registers under the
+                        // claimed id and its collision path can take over a stale session with it.
+                        if (this.handshakeComplete)
+                        {
+                            RoutePutServer.instance.sessions.remove(this.connectionId, this);
+                            RoutePutChannel.removeFromAllChannels(this);
+                            this.handshakeComplete = false;
+                        }
+                        this.connectionId = suppliedId;
+                    }
                     this.defaultChannel = RoutePutChannel.getChannel(rpm.optString("channel", "*"));
                     String suppliedPw = rpm.optString("password", null);
                     this.defaultChannel.claimPassword(suppliedPw);
@@ -432,8 +446,9 @@ public class RoutePutServerWebsocket implements RoutePutSession
             this.startWriteWorker();
             // System.out.println(this.websocketSession.getRemoteAddress().getHostString() +
             // " connected!");
-            // If the channel is password-gated we defer finishHandshake() until the
-            // client's CONNECTION_ID message arrives with a password we can check.
+            // Assign an id and register now so a client that never sends a connectionId
+            // message (e.g. wscat) still works. A later connectionId message can re-key to a
+            // client-chosen id. Password channels defer so the password is checked first.
             if (this.defaultChannel != null && !this.defaultChannel.hasPassword()) {
                 finishHandshake();
             }
