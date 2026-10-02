@@ -143,6 +143,16 @@ public class BLOBFile extends File
         return sb;
     }
 
+    public boolean touch()
+    {
+        if (this.exists())
+        {
+            this.setLastModified(System.currentTimeMillis());
+            return true;
+        }
+        return false;
+    }
+
     public long getExpires()
     {
         if (!this.exists())

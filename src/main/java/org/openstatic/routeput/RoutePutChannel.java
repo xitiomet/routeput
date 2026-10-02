@@ -171,6 +171,11 @@ public class RoutePutChannel implements RoutePutMessageListener
             BLOBFile bf = new BLOBFile(blobFolder, this.name, name);
             if (bf.exists())
             {
+                // If the BLOB is nearing expiration (less than 1 day left), update its last modified time to extend its validity.
+                if (bf.timeTillExpiration() < 86400000)
+                {
+                    bf.touch();
+                }
                 result.complete(bf);
                 return result;
             }

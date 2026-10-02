@@ -516,6 +516,11 @@ public class BLOBManager
         {
             if (blobFile.exists())
             {
+                // If the BLOB is nearing expiration (less than 1 day left), update its last modified time to extend its validity.
+                if (blobFile.timeTillExpiration() < 86400000)
+                {
+                    blobFile.touch();
+                }
                 future.complete(blobFile);
                 return future;
             } else {
@@ -634,6 +639,11 @@ public class BLOBManager
         {
             if (blobFile.exists())
             {
+                // Explicit data request: push expiration out if the blob is nearly expired.
+                if (blobFile.timeTillExpiration() < 86400000)
+                {
+                    blobFile.touch();
+                }
                 StringBuffer sb = blobFile.getBase64StringBuffer();
                 transmitBlobChunks(session, name, channel, sb, request, false);
             } else {
