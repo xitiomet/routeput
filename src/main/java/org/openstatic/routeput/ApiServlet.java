@@ -380,7 +380,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 if (msg.hasSourceId()) 
                                 {
                                     String srcId = msg.getSourceId();
-                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(post.getSourceId());
+                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(srcId);
                                     if (remoteSession != null)
                                     {
                                         if (remoteSession.getProperties().optBoolean("receiveManaged", false))
