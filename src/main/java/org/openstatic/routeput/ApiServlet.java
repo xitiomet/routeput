@@ -168,6 +168,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             JSONObject props = new JSONObject();
             props.put("idleDestruct", idleDestruct);
             props.put("description", "Virtual Connection for API messages");
+            props.put("receiveManaged", false);
             cMsg.setMetaField("properties", props);
             cMsg.setChannel(channel);
             RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, cMsg);
