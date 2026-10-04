@@ -389,7 +389,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                             blind.set(true);
                                         }
                                     }
-                                    if (!blind)
+                                    if (!blind.get())
                                         response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
                                 }
                                 msg.setSourceIdIfNull(this.getConnectionId());
