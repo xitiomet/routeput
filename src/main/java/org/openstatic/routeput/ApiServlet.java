@@ -199,6 +199,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             if (target.startsWith("/post/")) {
                 RoutePutMessage post = readRoutePutMessagePOST(request);
                 StringTokenizer st = new StringTokenizer(target, "/");
+                boolean blind = false;
                 while (st.hasMoreTokens()) {
                     String token = st.nextToken();
                     if (token.equals("channel") && st.hasMoreTokens()) {
@@ -206,6 +207,9 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                     }
                     if (token.equals("id") && st.hasMoreTokens()) {
                         sourceId = st.nextToken();
+                    }
+                    if (token.equals("blind")) {
+                        blind = true;
                     }
                 }
                 post.setSourceIdIfNull(sourceId);
@@ -216,6 +220,15 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 handleAPIMessage(finalRemoteIP, post);
                 if (post.hasSourceId()) {
                     response.put("sourceId", post.getSourceId());
+                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(post.getSourceId());
+                    if (remoteSession != null) {
+                        if (remoteSession.getProperties().optBoolean("receiveManaged", false)) {
+                            blind = true;
+                        }
+                    }
+                    if (!blind) {
+                        response.put("messages", new JSONArray(this.pendingOutboundFor(post.getSourceId(), chan)));
+                    }
                 }
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
@@ -326,6 +339,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 });
                                 rppcm.processUpdates(this);
                             } else if ("transmit".equals(token)) {
+                                boolean blind = false;
                                 if (response.has("members")) {
                                     response.remove("members");
                                 }
@@ -350,6 +364,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                         msg.setTargetId(value[0]);
                                     } else if ("type".equals(key)) {
                                         msg.setType(value[0]);
+                                    } else if ("blind".equals(key)) {
+                                        blind = true;
                                     } else if ("idleDestruct".equals(key)) {
                                         msg.getRoutePutMeta().put("idleDestruct", Long.valueOf(value[0]).longValue());
                                     } else if (key.startsWith("where_")) {
@@ -364,7 +380,16 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 if (msg.hasSourceId()) 
                                 {
                                     String srcId = msg.getSourceId();
-                                    response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
+                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(post.getSourceId());
+                                    if (remoteSession != null)
+                                    {
+                                        if (remoteSession.getProperties().optBoolean("receiveManaged", false))
+                                        {
+                                            blind = true;
+                                        }
+                                    }
+                                    if (!blind)
+                                        response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
                                 }
                                 msg.setSourceIdIfNull(this.getConnectionId());
                                 handleAPIMessage(finalRemoteIP, msg);
@@ -382,6 +407,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     }
                                     startRemoteConnection(channel, srcId, remoteIP, idleDestruct);
                                     response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
+                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(srcId);
+                                    if (remoteSession != null) {
+                                        remoteSession.getProperties().put("receiveManaged", true);
+                                    }
                                 }
                             } else if ("blob".equals(token)) {
                                 token = st.nextToken();
