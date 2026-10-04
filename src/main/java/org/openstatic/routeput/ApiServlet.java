@@ -25,6 +25,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ApiServlet extends HttpServlet implements RoutePutSession {
     private JSONObject properties;
@@ -339,7 +340,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                 });
                                 rppcm.processUpdates(this);
                             } else if ("transmit".equals(token)) {
-                                boolean blind = false;
+                                AtomicBoolean blind = new AtomicBoolean(false);
                                 if (response.has("members")) {
                                     response.remove("members");
                                 }
@@ -365,7 +366,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     } else if ("type".equals(key)) {
                                         msg.setType(value[0]);
                                     } else if ("blind".equals(key)) {
-                                        blind = true;
+                                        blind.set(true);
                                     } else if ("idleDestruct".equals(key)) {
                                         msg.getRoutePutMeta().put("idleDestruct", Long.valueOf(value[0]).longValue());
                                     } else if (key.startsWith("where_")) {
@@ -385,7 +386,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     {
                                         if (remoteSession.getProperties().optBoolean("receiveManaged", false))
                                         {
-                                            blind = true;
+                                            blind.set(true);
                                         }
                                     }
                                     if (!blind)
