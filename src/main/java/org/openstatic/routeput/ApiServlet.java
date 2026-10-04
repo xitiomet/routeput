@@ -216,7 +216,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 handleAPIMessage(finalRemoteIP, post);
                 if (post.hasSourceId()) {
                     response.put("sourceId", post.getSourceId());
-                    response.put("messages", new JSONArray(this.pendingOutboundFor(post.getSourceId(), chan)));
                 }
             } else if (target.startsWith("/batch/")) {
                 RoutePutChannel channel = null;
