@@ -169,7 +169,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             cMsg.setMetaField("connected", true);
             cMsg.setMetaField("remoteIP", remoteIP);
             JSONObject props = new JSONObject();
-            props.put("idleDestruct", options.optLong("idleDestruct", 900000));
+            props.put("_idleDestruct", options.optLong("idleDestruct", 900000));
             if (options.has("receiveUrl"))
                 props.put("_receiveUrl", options.getString("receiveUrl"));
             props.put("description", "Virtual Connection for API messages");
