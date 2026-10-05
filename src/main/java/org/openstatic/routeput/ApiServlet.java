@@ -475,10 +475,15 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             if (props.has("_receiveUrl")) 
             {
                 String receiveUrl = props.getString("_receiveUrl");
-                CompletableFuture<POSTManager.Response> future = POSTManager.queuePost(receiveUrl, jo);
+                JSONObject jsonObject = new JSONObject();
+                jsonObject.put("messages", new JSONArray().put(jo));
+                jsonObject.put("timestamp", System.currentTimeMillis());
+                jsonObject.put("session", remoteSession.toJSONObject());
+                CompletableFuture<POSTManager.Response> future = POSTManager.queuePost(receiveUrl, jsonObject);
                 future.thenAccept((response) -> {
                     if (response != null && response.isSuccessful()) 
                     {
+                        RoutePutMain.log("info", "Posted to URL: " + receiveUrl + " for session: " + remoteSession.getConnectionId());
                         // Handle successful response if needed
                         String contentType = response.getContentType();
                         String body = response.getBody();
