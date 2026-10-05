@@ -1,6 +1,7 @@
 package org.openstatic.routeput;
 
 import org.json.*;
+import org.openstatic.routeput.util.POSTManager;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -26,6 +27,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
 
 public class ApiServlet extends HttpServlet implements RoutePutSession {
     private JSONObject properties;
@@ -132,14 +134,14 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             {
                 channel.onMessage(this, msg);
             } else {
-                startRemoteConnection(channel, sourceId, remoteIP, msg.getRoutePutMeta().optLong("idleDestruct", 900000));
+                startRemoteConnection(channel, sourceId, remoteIP, msg.getRoutePutMeta());
                 RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, msg);
             }
         }
     }
 
     // for initiating an api only connection, this ill create a virtual connection if it doesn't already exist
-    private void startRemoteConnection(RoutePutChannel channel, String sourceId, String remoteIP, long idleDestruct)
+    private void startRemoteConnection(RoutePutChannel channel, String sourceId, String remoteIP, JSONObject options)
     {
         if (channel == null || sourceId == null)
             return;
@@ -149,6 +151,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         }
         this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
         boolean sendConnect = false;
+
         RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(sourceId);
         if (remoteSession == null)
         {
@@ -166,9 +169,11 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             cMsg.setMetaField("connected", true);
             cMsg.setMetaField("remoteIP", remoteIP);
             JSONObject props = new JSONObject();
-            props.put("idleDestruct", idleDestruct);
+            props.put("idleDestruct", options.optLong("idleDestruct", 900000));
+            if (options.has("receiveUrl"))
+                props.put("_receiveUrl", options.getString("receiveUrl"));
             props.put("description", "Virtual Connection for API messages");
-            props.put("receiveManaged", false);
+            props.put("_receiveManaged", false);
             cMsg.setMetaField("properties", props);
             cMsg.setChannel(channel);
             RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, cMsg);
@@ -220,11 +225,14 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                 RoutePutChannel chan = post.getRoutePutChannel();
                 this.rxPackets++;
                 handleAPIMessage(finalRemoteIP, post);
-                if (post.hasSourceId()) {
+                if (post.hasSourceId()) 
+                {
                     response.put("sourceId", post.getSourceId());
                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(post.getSourceId());
-                    if (remoteSession != null) {
-                        if (remoteSession.getProperties().optBoolean("receiveManaged", false)) {
+                    if (remoteSession != null) 
+                    {
+                        if (remoteSession.getProperties().optBoolean("_receiveManaged", false)) 
+                        {
                             blind = true;
                         }
                     }
@@ -385,7 +393,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(srcId);
                                     if (remoteSession != null)
                                     {
-                                        if (remoteSession.getProperties().optBoolean("receiveManaged", false))
+                                        if (remoteSession.getProperties().optBoolean("_receiveManaged", false))
                                         {
                                             blind.set(true);
                                         }
@@ -407,7 +415,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
                                     if (request.getParameter("idleDestruct") != null) {
                                         idleDestruct = Long.parseLong(request.getParameter("idleDestruct"));
                                     }
-                                    startRemoteConnection(channel, srcId, remoteIP, idleDestruct);
+                                    startRemoteConnection(channel, srcId, remoteIP, (new JSONObject().put("idleDestruct", idleDestruct)));
                                     response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
                                     RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(srcId);
                                     if (remoteSession != null) {
@@ -458,6 +466,50 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         // request.setHandled(true);
     }
 
+    private boolean handleReceiveUrl(final RoutePutRemoteSession remoteSession, final RoutePutMessage jo)
+    {
+        boolean handled = false;
+        if (remoteSession != null) 
+        {
+            JSONObject props = remoteSession.getProperties();
+            if (props.has("_receiveUrl")) 
+            {
+                String receiveUrl = props.getString("_receiveUrl");
+                CompletableFuture<POSTManager.Response> future = POSTManager.queuePost(receiveUrl, jo);
+                future.thenAccept((response) -> {
+                    if (response != null && response.isSuccessful()) 
+                    {
+                        // Handle successful response if needed
+                        String contentType = response.getContentType();
+                        String body = response.getBody();
+                        if (contentType != null && (contentType.equals("text/json") || contentType.equals("application/json") || contentType.equals("text/javascript") || contentType.equals("application/javascript"))) 
+                        {
+                            try
+                            {
+                                JSONObject jsonResponse = new JSONObject(body);
+                                if (jsonResponse.has("messages")) 
+                                {
+                                    JSONArray messages = jsonResponse.getJSONArray("messages");
+                                    for (int i = 0; i < messages.length(); i++) 
+                                    {
+                                        JSONObject message = messages.getJSONObject(i);
+                                        RoutePutMessage routeputMessage = new RoutePutMessage(message);
+                                        routeputMessage.setChannelIfNull(jo.getRoutePutChannel());
+                                        routeputMessage.setSourceIdIfNull(jo.getSourceId());
+                                        RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, routeputMessage);
+                                    }
+                                }
+                            } catch (Exception e) {}
+                        }
+                    }
+                });
+                
+                handled = true;
+            }
+        }
+        return handled;
+    }
+
     @Override
     public void send(RoutePutMessage jo) 
     {
@@ -466,12 +518,17 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
         if (jo.hasTargetId()) 
         {
             String targetId = jo.getTargetId();
-            this.addPendingOutbound(targetId, jo);
+            RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(targetId);
+            boolean handled = handleReceiveUrl(remoteSession, jo);
+            if (!handled)
+                this.addPendingOutbound(targetId, jo);
         } else {
             Collection<RoutePutRemoteSession> apiChidren = RoutePutRemoteSession.children(this);
             for (RoutePutSession s : apiChidren) 
             {
-                this.addPendingOutbound(s.getConnectionId(), jo);
+                boolean handled = handleReceiveUrl((RoutePutRemoteSession) s, jo);
+                if (!handled)
+                    this.addPendingOutbound(s.getConnectionId(), jo);
             }
         }
     }
