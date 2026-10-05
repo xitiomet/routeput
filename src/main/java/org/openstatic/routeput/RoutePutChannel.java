@@ -471,12 +471,22 @@ public class RoutePutChannel implements RoutePutMessageListener
         if (RoutePutServer.instance != null)
         {
             RoutePutChannel.channels.values().forEach((channel) -> {
-                channel.members.values().forEach((member) -> {
+                // Snapshot first: removeFromAllChannels mutates this channel's member map.
+                java.util.ArrayList<RoutePutSession> memberSnapshot = new java.util.ArrayList<RoutePutSession>(channel.members.values());
+                memberSnapshot.forEach((member) -> {
                     if (member instanceof RoutePutServerWebsocket)
                     {
                         if (!RoutePutServer.instance.sessions.containsValue(member))
                         {
                             RoutePutServer.logWarning("Found a RoutePutServerWebsocket in channel " + channel.getName() + " without belonging to RouteputServer..?");
+                            removeFromAllChannels(member);
+                        }
+                    } else if (member instanceof RoutePutRemoteSession) {
+                        // A remote session whose relay link is gone would otherwise linger here
+                        // until the idle sweeper, so members never learn it disconnected.
+                        if (!((RoutePutRemoteSession) member).getParent().isConnected())
+                        {
+                            RoutePutServer.logWarning("Found a RoutePutRemoteSession in channel " + channel.getName() + " whose parent link is disconnected; removing.");
                             removeFromAllChannels(member);
                         }
                     }

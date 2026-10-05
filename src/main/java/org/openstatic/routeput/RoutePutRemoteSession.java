@@ -107,6 +107,9 @@ public class RoutePutRemoteSession implements RoutePutSession
                 RoutePutRemoteSession remoteSession = null;
                 if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
                     remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
+                    // The session may now be reachable through a different link; keep the
+                    // parent current so a later drop of that link cleans this session up.
+                    remoteSession.reparent(parent);
                 } else {
                     final RoutePutRemoteSession finalRemoteSession = new RoutePutRemoteSession(parent, sourceId);
                     remoteSession = finalRemoteSession;
@@ -152,6 +155,15 @@ public class RoutePutRemoteSession implements RoutePutSession
     protected void touch()
     {
         this.lastReceived = System.currentTimeMillis();
+    }
+
+    // Point this session at the link it is currently reachable through so parent-drop cleanup finds it.
+    protected void reparent(RoutePutSession newParent)
+    {
+        if (newParent != null && this.parent != newParent)
+        {
+            this.parent = newParent;
+        }
     }
 
     private void handleMessage(RoutePutMessage m) 
@@ -234,6 +246,16 @@ public class RoutePutRemoteSession implements RoutePutSession
         init();
         return RoutePutRemoteSession.sessions.values().stream().filter((c) -> (c.hasParent(parent)))
                 .collect(Collectors.toList());
+    }
+
+    // Move every child of oldParent onto newParent after a same-id reconnect takes over the link.
+    public static void reparentChildren(RoutePutSession oldParent, RoutePutSession newParent)
+    {
+        if (RoutePutRemoteSession.sessions == null || oldParent == null || newParent == null || oldParent == newParent)
+            return;
+        RoutePutRemoteSession.sessions.values().stream()
+            .filter((c) -> c.hasParent(oldParent))
+            .forEach((c) -> c.reparent(newParent));
     }
 
     public static boolean isChild(RoutePutSession parent, String childConnectionId)

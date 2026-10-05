@@ -478,6 +478,12 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 RoutePutChannel.channelsWithMember(oldRoutePutSession).forEach((c) -> {
                     c.replaceMember(this.connectionId, oldRoutePutSession, this);
                 });
+                // Remote sessions were relayed through the old link; move them onto this one
+                // so a later drop here still cleans them up and notifies the channel.
+                if (RoutePutRemoteSession.isInitialized())
+                {
+                    RoutePutRemoteSession.reparentChildren(oldRoutePutSession, this);
+                }
             }
             
 
