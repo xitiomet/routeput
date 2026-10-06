@@ -229,7 +229,8 @@ public class RoutePutRemoteSession implements RoutePutSession
 
     public void removeMessageListener(RoutePutMessageListener r) 
     {
-        if (this.listeners.contains(r)) {
+        if (this.listeners.contains(r))
+        {
             this.listeners.remove(r);
         }
     }
@@ -324,7 +325,8 @@ public class RoutePutRemoteSession implements RoutePutSession
     {
         JSONObject jo = new JSONObject();
         jo.put("connectionId", this.connectionId);
-        if (this.defaultChannel != null) {
+        if (this.defaultChannel != null)
+        {
             jo.put("defaultChannel", this.defaultChannel.getName());
         }
         List<String> channels = RoutePutChannel.channelsWithMember(this).stream().map((c) -> {
@@ -344,12 +346,14 @@ public class RoutePutRemoteSession implements RoutePutSession
     }
 
     @Override
-    public boolean isRootConnection() {
+    public boolean isRootConnection()
+    {
         return false;
     }
 
     @Override
-    public boolean containsConnectionId(String connectionId) {
+    public boolean containsConnectionId(String connectionId)
+    {
         return this.connectionId.equals(connectionId);
     }
 
