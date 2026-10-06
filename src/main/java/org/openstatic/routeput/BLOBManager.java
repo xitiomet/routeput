@@ -335,6 +335,7 @@ public class BLOBManager
                     BLOBManager.saveBase64Blob(blobFile, sb);
                     // Acknowledge blob sent
                     RoutePutMessage resp = new RoutePutMessage();
+                    resp.setSourceId(RoutePutChannel.getMasterConnectionId());
                     resp.setType(RoutePutMessage.TYPE_BLOB);
                     resp.mergeRouteputMeta(blobFile.toJSONObject());
                     resp.setRef(jo);
@@ -376,6 +377,7 @@ public class BLOBManager
         if (!BLOBManager.isInitialized())
         {
             RoutePutMessage resp = new RoutePutMessage();
+            resp.setSourceId(RoutePutChannel.getMasterConnectionId());
             resp.setChannel(request.getChannel());
             resp.setResponse("blobCheck", request);
             resp.setMetaField("name", name);
@@ -404,6 +406,7 @@ public class BLOBManager
         // Always answer — a missing response would strand the sender's pendingSends entry
         // and, in turn, the fetcher waiting on those chunks.
         RoutePutMessage resp = new RoutePutMessage();
+        resp.setSourceId(RoutePutChannel.getMasterConnectionId());
         resp.setResponse("blobCheck", request);
         resp.setMetaField("name", name);
         resp.setMetaField("md5", remoteMd5);
@@ -461,6 +464,7 @@ public class BLOBManager
             if (pending.request != null)
             {
                 RoutePutMessage ack = new RoutePutMessage();
+                ack.setSourceId(RoutePutChannel.getMasterConnectionId());
                 ack.setType(RoutePutMessage.TYPE_BLOB);
                 ack.setRef(pending.request);
                 ack.setMetaField("name", pending.name);
@@ -550,6 +554,7 @@ public class BLOBManager
             return future;
         }
         RoutePutMessage req = new RoutePutMessage();
+        req.setSourceId(RoutePutChannel.getMasterConnectionId());
         req.setRequest("blob");
         req.setMetaField("name", name);
         if (channel != null) req.setChannel(channel);
@@ -648,6 +653,7 @@ public class BLOBManager
                 transmitBlobChunks(session, name, channel, sb, request, false);
             } else {
                 RoutePutMessage resp = new RoutePutMessage();
+                resp.setSourceId(RoutePutChannel.getMasterConnectionId());
                 resp.setType(RoutePutMessage.TYPE_BLOB);
                 resp.setRef(request);
                 resp.setMetaField("name", name);
@@ -658,6 +664,7 @@ public class BLOBManager
             }
         } else {
             RoutePutMessage resp = new RoutePutMessage();
+            resp.setSourceId(RoutePutChannel.getMasterConnectionId());
             resp.setType(RoutePutMessage.TYPE_BLOB);
             resp.setRef(request);
             resp.setMetaField("name", name);
@@ -771,6 +778,7 @@ public class BLOBManager
         }
 
         RoutePutMessage query = new RoutePutMessage();
+        query.setSourceId(RoutePutChannel.getMasterConnectionId());
         query.setRequest("blobCheck");
         query.setMetaField("name", name);
         query.setMetaField("md5", md5);
@@ -854,6 +862,7 @@ public class BLOBManager
                 for (int i = 0; i < numChunks; i++)
                 {
                     RoutePutMessage mm = new RoutePutMessage();
+                    mm.setSourceId(RoutePutChannel.getMasterConnectionId());
                     mm.setType("blob");
                     mm.setMetaField("name", name);
                     mm.setChannel(channel);

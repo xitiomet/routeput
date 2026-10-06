@@ -23,8 +23,11 @@ import java.util.Collection;
 import java.util.Queue;
 import java.beans.PropertyChangeListener;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.security.MessageDigest;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
@@ -92,6 +95,86 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         } catch (JSONException e) {
             RoutePutServer.logError(e);
             return new JSONArray();
+        }
+    }
+
+    // Read the raw POST body as bytes (used for file uploads to /blob/).
+    public byte[] readBytesPOST(HttpServletRequest request)
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (InputStream in = request.getInputStream())
+        {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1)
+            {
+                baos.write(buffer, 0, read);
+            }
+        } catch (Exception e) {
+            RoutePutServer.logError(e);
+        }
+        return baos.toByteArray();
+    }
+
+    private static final char[] HEX = "0123456789abcdef".toCharArray();
+
+    private static String md5Hex(byte[] bytes)
+    {
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("MD5").digest(bytes);
+            char[] out = new char[digest.length * 2];
+            for (int i = 0; i < digest.length; i++)
+            {
+                int v = digest[i] & 0xFF;
+                out[i * 2] = HEX[v >>> 4];
+                out[i * 2 + 1] = HEX[v & 0x0F];
+            }
+            return new String(out);
+        } catch (Exception e) {
+            return Long.toHexString(System.currentTimeMillis());
+        }
+    }
+
+    // Pull filename="..." out of a Content-Disposition header, or null if absent.
+    private static String filenameFromContentDisposition(String header)
+    {
+        if (header == null) return null;
+        int idx = header.toLowerCase().indexOf("filename=");
+        if (idx < 0) return null;
+        String value = header.substring(idx + "filename=".length()).trim();
+        if (value.startsWith("\""))
+        {
+            int end = value.indexOf('"', 1);
+            if (end > 0) value = value.substring(1, end);
+        } else {
+            int semi = value.indexOf(';');
+            if (semi > 0) value = value.substring(0, semi).trim();
+        }
+        return value.isEmpty() ? null : value;
+    }
+
+    // Chunk a locally stored blob out to every channel member as if sent by srcId.
+    private void transmitBlobToChannel(RoutePutChannel channel, String name, String srcId, StringBuffer sb)
+    {
+        int size = sb.length();
+        int chunkSize = 4096;
+        int numChunks = (size + chunkSize - 1) / chunkSize;
+        String masterConnectionId = RoutePutChannel.getMasterConnectionId();
+        for (int i = 0; i < numChunks; i++)
+        {
+            RoutePutMessage mm = new RoutePutMessage();
+            mm.setType(RoutePutMessage.TYPE_BLOB);
+            mm.setSourceId(srcId);
+            mm.setChannel(channel);
+            mm.setMetaField("name", name);
+            mm.setMetaField("i", i + 1);
+            mm.setMetaField("of", numChunks);
+            mm.appendHop(masterConnectionId);
+            int start = i * chunkSize;
+            int end = Math.min(start + chunkSize, size);
+            mm.setMetaField("data", sb.substring(start, end));
+            channel.broadcast(mm);
         }
     }
 
@@ -282,6 +365,62 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                         }
                     }
                 });
+            } else if (target.startsWith("/blob/")) {
+                RoutePutChannel channel = null;
+                String blobName = null;
+                // Blobs carry the server's master connectionId as srcId unless /id/ overrides it.
+                String blobSrcId = RoutePutChannel.getMasterConnectionId();
+                StringTokenizer st = new StringTokenizer(target, "/");
+                while (st.hasMoreTokens())
+                {
+                    String token = st.nextToken();
+                    if (token.equals("channel") && st.hasMoreTokens()) {
+                        channel = RoutePutChannel.getChannel(st.nextToken());
+                    } else if (token.equals("id") && st.hasMoreTokens()) {
+                        blobSrcId = st.nextToken();
+                    } else if (token.equals("name") && st.hasMoreTokens()) {
+                        blobName = st.nextToken();
+                    }
+                }
+                byte[] bytes = readBytesPOST(request);
+                String contentType = request.getContentType();
+                if (contentType != null && contentType.indexOf(';') > -1) {
+                    contentType = contentType.substring(0, contentType.indexOf(';')).trim();
+                }
+                if (blobName == null) {
+                    blobName = request.getParameter("name");
+                }
+                if (blobName == null) {
+                    blobName = filenameFromContentDisposition(request.getHeader("Content-Disposition"));
+                }
+                if (blobName == null) {
+                    String ext = "bin";
+                    if (contentType != null && contentType.indexOf('/') > -1) {
+                        String sub = contentType.substring(contentType.indexOf('/') + 1).replaceAll("[^A-Za-z0-9]", "");
+                        if (!sub.isEmpty()) ext = sub;
+                    }
+                    blobName = md5Hex(bytes) + "." + ext;
+                }
+                // Strip any path components so a crafted name can't escape the blob folder.
+                blobName = new File(blobName).getName();
+                if (channel == null) {
+                    response.put("error", "a channel is required, e.g. /blob/channel/<name>/");
+                } else if (bytes.length == 0) {
+                    response.put("error", "request body was empty");
+                } else if (!BLOBManager.isInitialized()) {
+                    response.put("error", "blob storage is not enabled on this server");
+                } else {
+                    File blobFolder = channel.getBlobFolder();
+                    BLOBFile blobFile = new BLOBFile(blobFolder, channel.getName(), blobName);
+                    try (FileOutputStream fos = new FileOutputStream(blobFile)) {
+                        fos.write(bytes);
+                    }
+                    this.rxPackets++;
+                    // /id/ sets the srcId the blob appears to come from; defaults to this api session.
+                    transmitBlobToChannel(channel, blobFile.getName(), sourceId, blobFile.getBase64StringBuffer());
+                    response.put("srcId", sourceId);
+                    response.put("blob", blobFile.toJSONObject());
+                }
             }
         } catch (Exception e) {
             RoutePutServer.logError("doPOST API", e);
