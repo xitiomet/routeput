@@ -282,10 +282,10 @@ public class RoutePutRemoteSession implements RoutePutSession
         return RoutePutRemoteSession.sessions.get(childConnectionId);
     }
 
-    public static RoutePutRemoteSession findRemoteSessionFor(RoutePutRemoteSession remoteSession, String connectionId)
+    public static RoutePutRemoteSession findRemoteSessionFor(RoutePutSession parent, String connectionId)
     {
         RoutePutRemoteSession candidate = RoutePutRemoteSession.sessions.get(connectionId);
-        if (candidate != null && candidate.hasParent(remoteSession.getParent()))
+        if (candidate != null && candidate.hasParent(parent))
         {
             return candidate;
         }

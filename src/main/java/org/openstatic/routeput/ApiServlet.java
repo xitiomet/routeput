@@ -421,7 +421,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                     String srcId = st.nextToken();
                                     this.lastChannelInteraction.put(channel, new Date(System.currentTimeMillis()));
                                     long idleDestruct = 900000;
-                                    if (request.getParameter("idleDestruct") != null) {
+                                    if (request.getParameter("idleDestruct") != null)
+                                    {
                                         idleDestruct = Long.parseLong(request.getParameter("idleDestruct"));
                                     }
                                     startRemoteConnection(channel, srcId, remoteIP, (new JSONObject().put("idleDestruct", idleDestruct)));
