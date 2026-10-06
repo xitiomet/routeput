@@ -674,9 +674,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                 !jo.isType(RoutePutMessage.TYPE_PING) && 
                 !jo.isType(RoutePutMessage.TYPE_PONG) && 
                 !jo.isType(RoutePutMessage.TYPE_MIDI) && 
-                !jo.isType(RoutePutMessage.TYPE_PULSE) && 
+                !jo.isType(RoutePutMessage.TYPE_PULSE) &&
                 !jo.isType(RoutePutMessage.TYPE_BLOB))
-)
         {
             if (jo.hasTargetId()) 
             {
