@@ -952,6 +952,17 @@ public class RoutePutChannel implements RoutePutMessageListener
         return ja;
     }
 
+    // Just the member connectionIds; used as an authoritative roster in the handshake.
+    public JSONArray memberConnectionIdsAsJSONArray()
+    {
+        JSONArray ja = new JSONArray();
+        for(RoutePutSession s: this.getMembers())
+        {
+            ja.put(s.getConnectionId());
+        }
+        return ja;
+    }
+
     public void mergeProperties(JSONObject props)
     {
         if (props != null)

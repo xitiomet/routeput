@@ -398,6 +398,20 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 rpm.setRequest("becomeCollector");
                 this.send(rpm);
             }
+            // Reconcile against the server's authoritative roster so remote sessions whose
+            // leave we missed while disconnected don't linger as duplicates.
+            if (j.hasMetaField("channelMembers")) {
+                JSONArray roster = j.getRoutePutMeta().optJSONArray("channelMembers");
+                java.util.HashSet<String> rosterIds = new java.util.HashSet<String>();
+                if (roster != null) {
+                    for (int i = 0; i < roster.length(); i++) {
+                        String mid = roster.optString(i, null);
+                        if (mid != null) rosterIds.add(mid);
+                    }
+                }
+                rosterIds.add(this.connectionId);
+                RoutePutRemoteSession.reconcileChannelMembers(this, this.getDefaultChannel(), rosterIds);
+            }
             this.getDefaultChannel().addMember(this);
         } else if (j.isType(RoutePutMessage.TYPE_RESPONSE)) {
             if ("subscribe".equals(j.getResponse()))

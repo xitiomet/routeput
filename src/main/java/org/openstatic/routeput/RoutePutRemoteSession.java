@@ -262,6 +262,26 @@ public class RoutePutRemoteSession implements RoutePutSession
             .forEach((c) -> c.reparent(newParent));
     }
 
+    // Drop remote sessions reachable through parent in channel that are absent from the
+    // authoritative roster; lets a client clear members whose leave it missed on (re)connect.
+    public static void reconcileChannelMembers(RoutePutSession parent, RoutePutChannel channel, java.util.Set<String> rosterIds)
+    {
+        if (RoutePutRemoteSession.sessions == null || parent == null || channel == null || rosterIds == null)
+            return;
+        for (RoutePutSession m : new java.util.ArrayList<RoutePutSession>(channel.getMembers()))
+        {
+            if (m instanceof RoutePutRemoteSession && ((RoutePutRemoteSession) m).hasParent(parent)
+                && !rosterIds.contains(m.getConnectionId()))
+            {
+                channel.removeMember(m);
+                if (RoutePutChannel.channelsWithMember(m).size() == 0)
+                {
+                    RoutePutRemoteSession.sessions.remove(m.getConnectionId());
+                }
+            }
+        }
+    }
+
     public static boolean isChild(RoutePutSession parent, String childConnectionId)
     {
         if (RoutePutRemoteSession.sessions != null && parent != null && childConnectionId != null)

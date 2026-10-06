@@ -184,6 +184,16 @@ class RouteputConnection(Thread):
             self.properties = routeput_meta['properties']
             self.default_channel = self.getChannel(routeput_meta['channel'])
             self.default_channel.properties = routeput_meta['channelProperties']
+            # Reconcile against the server's authoritative roster so members whose
+            # leave we missed while disconnected don't linger as duplicates.
+            if 'channelMembers' in routeput_meta:
+                roster = set(routeput_meta['channelMembers'])
+                roster.add(self.connection_id)
+                for member_id in list(self.default_channel.members.keys()):
+                    if member_id not in roster:
+                        member = self.default_channel.members.pop(member_id)
+                        member.connected = False
+                        self.default_channel.trigger('leave', member)
         elif (msg_type == 'ping'):
             self.transmit({'__routeput': {'type': 'pong', 'pingTimestamp': routeput_meta['timestamp']}})
         elif (msg_type == 'ConnectionStatus'):

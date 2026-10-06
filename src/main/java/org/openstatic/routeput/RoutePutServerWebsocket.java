@@ -501,6 +501,8 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 jo2.setMetaField("channelProperties", new JSONObject());
             jo2.setMetaField("remoteIP", this.remoteIP);
             jo2.setMetaField("serverHostname", RoutePutChannel.getHostname());
+            // Authoritative member roster so the client can prune sessions whose leave it missed.
+            jo2.setMetaField("channelMembers", this.defaultChannel.memberConnectionIdsAsJSONArray());
             this.send(jo2);
 
             if (propertiesOversized)

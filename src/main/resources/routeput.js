@@ -643,6 +643,24 @@ class RouteputConnection
                         this.properties = routePutMeta.properties;
                         channel.properties = routePutMeta.channelProperties;
                         this.serverHostname = routePutMeta.serverHostname;
+                        // Reconcile against the server's authoritative roster so members whose
+                        // leave we missed while disconnected don't linger as duplicates.
+                        if (Array.isArray(routePutMeta.channelMembers))
+                        {
+                            var roster = new Set(routePutMeta.channelMembers);
+                            roster.add(this.connectionId);
+                            for (const [memberId, member] of [...channel.members])
+                            {
+                                if (!roster.has(memberId))
+                                {
+                                    channel.members.delete(memberId);
+                                    if (channel.onleave != undefined)
+                                    {
+                                        channel.onleave(member);
+                                    }
+                                }
+                            }
+                        }
                         this._hideDefaultAuthPrompt();
                         if (this.onconnect != undefined)
                         {

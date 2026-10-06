@@ -445,6 +445,21 @@ class RouteputConnection
             this.properties = meta.properties || {};
             ch.properties = meta.channelProperties || {};
             this.serverHostname = meta.serverHostname;
+            // Reconcile against the server's authoritative roster so members whose
+            // leave we missed while disconnected don't linger as duplicates.
+            if (Array.isArray(meta.channelMembers))
+            {
+                const roster = new Set(meta.channelMembers);
+                roster.add(this.connectionId);
+                for (const [memberId, member] of [...ch.members])
+                {
+                    if (!roster.has(memberId))
+                    {
+                        ch.members.delete(memberId);
+                        if (typeof ch.onleave === 'function') ch.onleave(member);
+                    }
+                }
+            }
             if (typeof this.onconnect === 'function')
             {
                 try { this.onconnect(); }

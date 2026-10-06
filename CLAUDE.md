@@ -48,6 +48,20 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 - Message types used today: `connectionId`, `ping`/`pong`, `request`/`response`,
     `propertyChange`, `ConnectionStatus`, `blob`, `error`/`info`/`warning`.
 
+## Member roster reconciliation
+
+- Member tracking is incremental (`ConnectionStatus` join/leave deltas). A client that
+    is disconnected when a member leaves never sees that leave, leaving a stale duplicate.
+- To self-heal, the server includes an authoritative `channelMembers` roster (array of
+    member connectionIds) in the `type:connectionId` handshake, shipped the same way as
+    `channelProperties`. On receiving it the client prunes any local member of that channel
+    not in the roster (never itself) before the server's `transmitMembers` re-adds the live
+    set. `transmitMembers` and `ConnectionStatus` are unchanged, so old clients that ignore
+    `channelMembers` stay compatible. Java: `RoutePutRemoteSession.reconcileChannelMembers`;
+    the browser (`routeput.js`), Node (`routeput-node.js`), and Python (`__init__.py`) clients
+    each run the same prune loop in their `connectionId` handler. Keep all ends in lockstep.
+
+
 ## Channel authentication
 
 - Channels can require a password. It's stored as `channelPassword` on
