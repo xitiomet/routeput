@@ -37,7 +37,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     private Map<RoutePutChannel, Date> lastChannelInteraction;
     private Map<String, Map<RoutePutChannel, LinkedBlockingQueue<RoutePutMessage>>> pendingOutbound;
 
-    public ApiServlet() {
+    public ApiServlet() 
+    {
         this.properties = new JSONObject();
         this.properties.put("description", "Virtual Session for API GET/POST messages");
         this.rxPackets = 0;
@@ -50,7 +51,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         //this.pendingOutbound = Collections.synchronizedMap(this.pendingOutbound);
     }
 
-    public RoutePutMessage readRoutePutMessagePOST(HttpServletRequest request) {
+    public RoutePutMessage readRoutePutMessagePOST(HttpServletRequest request)
+    {
         StringBuffer jb = new StringBuffer();
         String line = null;
         try {
@@ -71,7 +73,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         }
     }
 
-    public JSONArray readJSONArrayPOST(HttpServletRequest request) {
+    public JSONArray readJSONArrayPOST(HttpServletRequest request)
+    {
         StringBuffer jb = new StringBuffer();
         String line = null;
         try {
@@ -178,8 +181,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             props.put("_idleDestruct", options.optLong("idleDestruct", 900000));
             if (options.has("receiveUrl"))
                 props.put("_receiveUrl", options.getString("receiveUrl"));
-            props.put("description", "Virtual Connection for API messages");
-            props.put("_receiveManaged", false);
             cMsg.setMetaField("properties", props);
             cMsg.setChannel(channel);
             RoutePutRemoteSession.handleRoutedMessage(ApiServlet.this, cMsg);
@@ -209,11 +210,13 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         JSONObject response = new JSONObject();
         try {
             String sourceId = ApiServlet.this.getConnectionId();
-            if (target.startsWith("/post/")) {
+            if (target.startsWith("/post/"))
+            {
                 RoutePutMessage post = readRoutePutMessagePOST(request);
                 StringTokenizer st = new StringTokenizer(target, "/");
                 boolean blind = false;
-                while (st.hasMoreTokens()) {
+                while (st.hasMoreTokens())
+                {
                     String token = st.nextToken();
                     if (token.equals("channel") && st.hasMoreTokens()) {
                         post.setChannel(RoutePutChannel.getChannel(st.nextToken()));
@@ -423,9 +426,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                     }
                                     startRemoteConnection(channel, srcId, remoteIP, (new JSONObject().put("idleDestruct", idleDestruct)));
                                     response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
-                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(srcId);
-                                    if (remoteSession != null) {
-                                        remoteSession.getProperties().put("receiveManaged", true);
+                                    RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, srcId);
+                                    if (remoteSession != null)
+                                    {
+                                        remoteSession.getProperties().put("_receiveManaged", true);
                                     }
                                 }
                             } else if ("blob".equals(token)) {
@@ -529,7 +533,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         if (jo.hasTargetId()) 
         {
             String targetId = jo.getTargetId();
-            RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSession(targetId);
+            RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
             boolean handled = handleReceiveUrl(remoteSession, jo);
             if (!handled)
                 this.addPendingOutbound(targetId, jo);
