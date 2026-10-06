@@ -261,7 +261,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             cMsg.setMetaField("connected", true);
             cMsg.setMetaField("remoteIP", remoteIP);
             JSONObject props = new JSONObject();
-            props.put("_idleDestruct", options.optLong("idleDestruct", 900000));
+            long idleDestruct = options.optLong("idleDestruct", 900000);
+            if (idleDestruct < 30000)
+                idleDestruct = 30000;
+            props.put("_idleDestruct", idleDestruct);
             if (options.has("receiveUrl"))
                 props.put("_receiveUrl", options.getString("receiveUrl"));
             cMsg.setMetaField("properties", props);
