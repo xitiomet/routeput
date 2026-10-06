@@ -531,22 +531,28 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     {
         // TODO Auto-generated method stub
         this.txPackets++;
-        if (jo.hasTargetId()) 
+        if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
+                !jo.isType(RoutePutMessage.TYPE_PING) && 
+                !jo.isType(RoutePutMessage.TYPE_PONG))
         {
-            String targetId = jo.getTargetId();
-            RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
-            boolean handled = handleReceiveUrl(remoteSession, jo);
-            if (!handled)
-                this.addPendingOutbound(targetId, jo);
-        } else {
-            Collection<RoutePutRemoteSession> apiChidren = RoutePutRemoteSession.children(this);
-            for (RoutePutSession s : apiChidren) 
+            if (jo.hasTargetId()) 
             {
-                boolean handled = handleReceiveUrl((RoutePutRemoteSession) s, jo);
+                String targetId = jo.getTargetId();
+                RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
+                boolean handled = handleReceiveUrl(remoteSession, jo);
                 if (!handled)
-                    this.addPendingOutbound(s.getConnectionId(), jo);
+                    this.addPendingOutbound(targetId, jo);
+            } else {
+                Collection<RoutePutRemoteSession> apiChidren = RoutePutRemoteSession.children(this);
+                for (RoutePutSession s : apiChidren) 
+                {
+                    boolean handled = handleReceiveUrl((RoutePutRemoteSession) s, jo);
+                    if (!handled)
+                        this.addPendingOutbound(s.getConnectionId(), jo);
+                }
             }
         }
+        
     }
 
     // Create a queue if needed for passing messages to GET/POST clients
@@ -574,10 +580,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         if (chan.hasMember(targetId))
         {
             addPendingOutbound(targetId, jo.getRoutePutChannel());
-            if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
-                !jo.isType(RoutePutMessage.TYPE_PING) && 
-                !jo.isType(RoutePutMessage.TYPE_PONG) &&
-                !targetId.equals(jo.getSourceId()))
+            if (!targetId.equals(jo.getSourceId()))
             {
                 LinkedBlockingQueue<RoutePutMessage> queue = this.pendingOutbound.get(targetId).get(jo.getRoutePutChannel());
                 if (queue.size() > 10000) // Limit the queue size to 10000 messages
