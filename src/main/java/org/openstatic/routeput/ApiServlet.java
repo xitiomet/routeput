@@ -29,7 +29,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 
-public class ApiServlet extends HttpServlet implements RoutePutSession {
+public class ApiServlet extends HttpServlet implements RoutePutSession 
+{
     private JSONObject properties;
     private long rxPackets;
     private long txPackets;
@@ -102,8 +103,13 @@ public class ApiServlet extends HttpServlet implements RoutePutSession {
             }
         });
         idleChannels.forEach((c) -> {
-            c.removeMember(this);
-            this.lastChannelInteraction.remove(c);
+            boolean hasChildInChannel = RoutePutRemoteSession.children(this).stream()
+                .anyMatch((child) -> c.hasMember(child));
+            if (!hasChildInChannel)
+            {
+                c.removeMember(this);
+                this.lastChannelInteraction.remove(c);
+            }
         });
         // removeIf mutates the backing map safely; forEach + remove throws CME
         this.pendingOutbound.keySet().removeIf((k) -> RoutePutRemoteSession.isChild(this, k) == false);

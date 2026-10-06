@@ -64,12 +64,15 @@ public class RoutePutRemoteSession implements RoutePutSession
                     {
                         Thread.sleep(60000); // Sweep every 60 seconds
                         RoutePutRemoteSession.sessions.forEach((connectionId, session) -> {
-                            long idleDestruct = session.getProperties().optLong("_idleDestruct", 900000l);
-                            if (session.getIdle() > idleDestruct && idleDestruct > 0) 
+                            if (session.hasParent(RoutePutServer.instance.apiServlet))
                             {
-                                RoutePutChannel.removeFromAllChannels(session);
-                                RoutePutRemoteSession.sessions.remove(connectionId);
-                                RoutePutMain.log("info", "Removed idle remote session: " + connectionId);
+                                long idleDestruct = session.getProperties().optLong("_idleDestruct", 900000l);
+                                if (session.getIdle() > idleDestruct && idleDestruct > 0) 
+                                {
+                                    RoutePutChannel.removeFromAllChannels(session);
+                                    RoutePutRemoteSession.sessions.remove(connectionId);
+                                    RoutePutMain.log("info", "Removed idle remote session: " + connectionId);
+                                }
                             }
                         });
                         //RoutePutMain.log("info", "Swept for dead remote sessions.");
