@@ -529,6 +529,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
         // same connectionId may have already replaced us, and blindly removing by key
         // would orphan the live replacement session in every channel it joined.
         RoutePutServer.instance.sessions.remove(this.connectionId, this);
+        // A ping/pong-timeout drop can leave the socket half-open and still delivering
+        // frames; clearing this stops those from being routed as a live member (sending
+        // doesn't require membership) so a dropped client can't broadcast while off-roster.
+        // A later connectionId message on the same socket re-runs the handshake.
+        this.handshakeComplete = false;
         this.stopWriteWorker();
     }
 

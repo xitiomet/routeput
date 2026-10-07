@@ -63,6 +63,13 @@ public class RoutePutClient implements RoutePutSession, Runnable
     private boolean collector;
     private volatile Thread keepAliveThread;
     private final AtomicBoolean connecting = new AtomicBoolean(false);
+    // Last time any frame arrived from the server. The keep-alive treats a socket that still
+    // claims open but has gone silent past serverSilenceTimeoutMs as dead and forces a
+    // reconnect. Recovers from a hiccup where TCP survives (so session.isOpen() keeps lying)
+    // but the server already ping/pong-dropped us, which would otherwise leave us able to
+    // send yet absent from the channel roster. 0 disables the check.
+    private volatile long lastServerContactAt;
+    private volatile long serverSilenceTimeoutMs = 45000l;
     // Passwords keyed by channel name; used for the initial handshake and any
     // per-channel subscribe against a password-gated channel.
     private final java.util.HashMap<String, String> channelPasswords = new java.util.HashMap<String, String>();
@@ -244,6 +251,18 @@ public class RoutePutClient implements RoutePutSession, Runnable
         return this.stayConnected;
     }
 
+    // How long the server may go silent on an otherwise-open socket before the keep-alive
+    // forces a reconnect. Set <= 0 to disable. Keep it above 2x the server's pingPongSecs.
+    public void setServerSilenceTimeout(long ms)
+    {
+        this.serverSilenceTimeoutMs = ms;
+    }
+
+    public long getServerSilenceTimeout()
+    {
+        return this.serverSilenceTimeoutMs;
+    }
+
     @Override
     public String getConnectionId()
     {
@@ -337,6 +356,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 {
                     //System.err.println("Got our WebSocketSession!");
                     this.session = (WebSocketSession) ses;
+                    this.lastServerContactAt = System.currentTimeMillis();
                     this.ensureWriteWorkerRunning();
                 }
             } catch (Throwable t2) {
@@ -386,6 +406,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void handleWebSocketEvent(RoutePutMessage j)
     {
+        this.lastServerContactAt = System.currentTimeMillis();
         if (j.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
             this.connectionId = j.getRoutePutMeta().optString("connectionId", null);
             //System.err.println("Server Handed connectionId: " + this.connectionId);
@@ -732,9 +753,21 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 if (this.isConnected())
                 {
                     this.ping();
-                    backoffMs = minBackoffMs;
-                    this.keepAliveThread.setName(this.getName());
-                    Thread.sleep(pingIntervalMs);
+                    // isOpen() can stay true through a network hiccup that the server already
+                    // ping/pong-dropped; if the server has gone silent too long, drop the stale
+                    // socket so the loop reconnects and re-handshakes back onto the roster.
+                    long silence = System.currentTimeMillis() - this.lastServerContactAt;
+                    if (this.serverSilenceTimeoutMs > 0 && silence > this.serverSilenceTimeoutMs)
+                    {
+                        System.err.println("Server silent " + silence + "ms despite open socket; forcing reconnect to " + this.websocketUri);
+                        this.close();
+                    }
+                    else
+                    {
+                        backoffMs = minBackoffMs;
+                        this.keepAliveThread.setName(this.getName());
+                        Thread.sleep(pingIntervalMs);
+                    }
                 }
                 else if (this.connecting.get())
                 {
