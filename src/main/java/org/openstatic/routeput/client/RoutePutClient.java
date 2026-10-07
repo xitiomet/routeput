@@ -66,6 +66,9 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // Passwords keyed by channel name; used for the initial handshake and any
     // per-channel subscribe against a password-gated channel.
     private final java.util.HashMap<String, String> channelPasswords = new java.util.HashMap<String, String>();
+    // Extra channels joined via subscribe() (beyond the default channel). Replayed on
+    // reconnect so a dropped-and-resumed link rejoins every channel, not just the default.
+    private final java.util.Set<String> subscribedChannels = java.util.concurrent.ConcurrentHashMap.newKeySet();
     // Serializes all outbound writes so async frames never overlap on the RemoteEndpoint.
     private static final RoutePutMessage WRITE_POISON = new RoutePutMessage();
     private final BlockingQueue<RoutePutMessage> writeQueue = new LinkedBlockingQueue<RoutePutMessage>();
@@ -532,6 +535,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         {
             this.channelPasswords.put(channel.getName(), password);
         }
+        this.subscribedChannels.add(channel.getName());
         RoutePutMessage subscribeMessage = new RoutePutMessage();
         subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
         subscribeMessage.setChannel(channel);
@@ -544,6 +548,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
 
     public void unsubscribe(RoutePutChannel channel)
     {
+        this.subscribedChannels.remove(channel.getName());
         RoutePutMessage subscribeMessage = new RoutePutMessage();
         subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
         subscribeMessage.setChannel(channel);
@@ -646,6 +651,16 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 String pw = RoutePutClient.this.channelPasswords.get(RoutePutClient.this.channel.getName());
                 if (pw != null) connectionIdMessage.setMetaField("password", pw);
                 RoutePutClient.this.send(connectionIdMessage);
+                // Rejoin any extra channels subscribed before the drop; the handshake above
+                // only restores the default channel, so without this they'd stay off-roster.
+                String defaultChannelName = RoutePutClient.this.channel.getName();
+                for (String channelName : RoutePutClient.this.subscribedChannels)
+                {
+                    if (!channelName.equals(defaultChannelName))
+                    {
+                        RoutePutClient.this.subscribe(RoutePutChannel.getChannel(channelName));
+                    }
+                }
             } else {
                 // System.err.println("Not an instance of WebSocketSession");
             }

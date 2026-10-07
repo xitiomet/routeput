@@ -671,7 +671,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     @Override
     public void send(RoutePutMessage jo) 
     {
-        // TODO Auto-generated method stub
         this.txPackets++;
         if (!jo.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE) && 
                 !jo.isType(RoutePutMessage.TYPE_PING) && 
@@ -755,14 +754,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     @Override
     public RoutePutChannel getDefaultChannel() 
     {
-        // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public String getRemoteIP() 
     {
-        // TODO Auto-generated method stub
         return null;
     }
 

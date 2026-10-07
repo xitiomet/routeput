@@ -234,7 +234,7 @@ public class RoutePutServerWebsocket implements RoutePutSession
                 {
                     RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(jo);
                     rppcm.processUpdates(this);
-                } else if (this.handshakeComplete) {
+                } else if (this.handshakeComplete && !jo.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
                     // this message has no sourceID, must be from the client directly connected
                     jo.setSourceIdIfNull(this.connectionId);
                     String sourceId = jo.getSourceId();
