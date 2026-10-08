@@ -355,6 +355,24 @@ public class RoutePutMessage extends JSONObject
         this.getRoutePutMeta().put("request", requestType);
     }
 
+    public void addTimestampIfAbsent()
+    {
+        if (!this.getRoutePutMeta().has("timestamp"))
+        {
+            this.touchTimestamp();
+        }
+    }
+
+    public long getTimestamp()
+    {
+        return this.getRoutePutMeta().optLong("timestamp", 0);
+    }
+
+    public void touchTimestamp()
+    {
+        this.getRoutePutMeta().put("timestamp", System.currentTimeMillis());
+    }
+
     public void setResponse(String responseType, RoutePutMessage request)
     {
         this.setType(TYPE_RESPONSE);

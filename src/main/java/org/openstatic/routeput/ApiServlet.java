@@ -712,6 +712,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
     // and send a message to that queue
     protected void addPendingOutbound(String targetId, RoutePutMessage jo)
     {
+        jo.addTimestampIfAbsent();
         if (targetId == null || targetId.isEmpty()) 
             return;
         if (targetId.equals(this.getConnectionId()))
