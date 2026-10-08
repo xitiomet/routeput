@@ -683,16 +683,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
             {
                 String targetId = jo.getTargetId();
                 RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
-                boolean handled = handleReceiveUrl(remoteSession, jo);
-                if (!handled)
-                    this.addPendingOutbound(targetId, jo);
+                this.addPendingOutbound(targetId, jo);
             } else {
                 Collection<RoutePutRemoteSession> apiChidren = RoutePutRemoteSession.children(this);
                 for (RoutePutSession s : apiChidren) 
                 {
-                    boolean handled = handleReceiveUrl((RoutePutRemoteSession) s, jo);
-                    if (!handled)
-                        this.addPendingOutbound(s.getConnectionId(), jo);
+                    this.addPendingOutbound(s.getConnectionId(), jo);
                 }
             }
         }
@@ -719,6 +715,10 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         if (targetId == null || targetId.isEmpty()) 
             return;
         if (targetId.equals(this.getConnectionId()))
+            return;
+        RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
+        boolean handled = handleReceiveUrl(remoteSession, jo);
+        if (handled)
             return;
         RoutePutChannel chan = jo.getRoutePutChannel();
         if (chan.hasMember(targetId))
