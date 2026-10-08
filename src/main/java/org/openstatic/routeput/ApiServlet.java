@@ -466,7 +466,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         // RoutePutServer.logIt("API Request: " + target);
         JSONObject response = new JSONObject();
         try {
-            if (target.startsWith("/channel/")) {
+            if (target.startsWith("/channel/")) 
+            {
                 StringTokenizer st = new StringTokenizer(target, "/");
                 while (st.hasMoreTokens()) {
                     String token = st.nextToken();
@@ -474,7 +475,12 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                         String channelName = st.nextToken();
                         RoutePutChannel channel = RoutePutChannel.getChannel(channelName);
                         response = channel.toJSONObject();
-                        if (st.hasMoreTokens()) {
+                        
+                        if (st.hasMoreTokens()) 
+                        {
+                            if (response.has("members")) {
+                                response.remove("members");
+                            }
                             token = st.nextToken();
                             if ("removeProperty".equals(token) && st.hasMoreTokens()) {
                                 token = st.nextToken();
@@ -501,9 +507,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 rppcm.processUpdates(this);
                             } else if ("transmit".equals(token)) {
                                 AtomicBoolean blind = new AtomicBoolean(false);
-                                if (response.has("members")) {
-                                    response.remove("members");
-                                }
                                 this.rxPackets++;
                                 RoutePutMessage msg = new RoutePutMessage();
                                 msg.setChannel(channel);
@@ -555,9 +558,6 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 msg.setSourceIdIfNull(this.getConnectionId());
                                 handleAPIMessage(finalRemoteIP, msg);
                             } else if ("receive".equals(token)) {
-                                if (response.has("members")) {
-                                    response.remove("members");
-                                }
                                 if (st.hasMoreTokens()) 
                                 {
                                     String srcId = st.nextToken();

@@ -184,7 +184,8 @@ public class RoutePutRemoteSession implements RoutePutSession
                     this.properties = m.getRoutePutMeta().optJSONObject("properties");
                 }
                 this.remoteIP = m.getRoutePutMeta().optString("remoteIP", "?.?.?.?");
-                if (this.defaultChannel == null) {
+                if (this.defaultChannel == null) 
+                {
                     this.defaultChannel = msgChannel;
                 }
                 if (connected) {
