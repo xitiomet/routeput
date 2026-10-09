@@ -60,6 +60,18 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     `channelMembers` stay compatible. Java: `RoutePutRemoteSession.reconcileChannelMembers`;
     the browser (`routeput.js`), Node (`routeput-node.js`), and Python (`__init__.py`) clients
     each run the same prune loop in their `connectionId` handler. Keep all ends in lockstep.
+- The handshake roster only reaches the client that (re)connects, so an observer that stays
+    connected never re-syncs. To self-heal that case the server also *periodically* re-sends
+    each channel's roster (every `memberSyncSecs`, default 300, `0` disables) as an unsolicited
+    `type:memberSync` (`TYPE_MEMBER_SYNC`) carrying `channelMembers`. `RoutePutChannel.syncMembers`
+    sends it to every direct (`isRootConnection`) member; `syncAllChannelMembers` sweeps all
+    channels from `RoutePutServer.everySecond` (timestamp-gated, so the interval may exceed the
+    60s tick cycle). Each client runs the same reconcile/prune as the handshake path
+    (`RoutePutClient.reconcileRoster` -> `reconcileChannelMembers`; the browser, Node, and Python
+    clients handle `type:memberSync` the same way). A client that predates the type ignores it
+    (unknown type), so it stays backward compatible. Federation-safe: a client only prunes remote
+    sessions reachable through the link that sent the roster (never itself), so chained/star
+    servers never drop members they still reach another way.
 
 
 ## Channel authentication

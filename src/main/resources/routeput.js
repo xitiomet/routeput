@@ -731,6 +731,25 @@ class RouteputConnection
                                 this.requests.delete(routePutMeta.ref);
                             }
                         }
+                    } else if (messageType == "memberSync") {
+                        // Periodic authoritative roster; prune members whose leave we missed.
+                        if (Array.isArray(routePutMeta.channelMembers))
+                        {
+                            var rosterChannel = this.getChannel(routePutMeta.channel);
+                            var rosterSet = new Set(routePutMeta.channelMembers);
+                            rosterSet.add(this.connectionId);
+                            for (const [memberId, member] of [...rosterChannel.members])
+                            {
+                                if (!rosterSet.has(memberId))
+                                {
+                                    rosterChannel.members.delete(memberId);
+                                    if (rosterChannel.onleave != undefined)
+                                    {
+                                        rosterChannel.onleave(member);
+                                    }
+                                }
+                            }
+                        }
                     } else if (messageType == "propertyChange") {
                         var updates = routePutMeta.updates;
                         updates.forEach(update => {

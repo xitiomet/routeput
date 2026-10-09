@@ -511,6 +511,25 @@ class RouteputConnection
             }
             return;
         }
+        if (messageType === 'memberSync')
+        {
+            // Periodic authoritative roster; prune members whose leave we missed.
+            if (Array.isArray(meta.channelMembers))
+            {
+                const rosterChannel = this.getChannel(meta.channel);
+                const rosterSet = new Set(meta.channelMembers);
+                rosterSet.add(this.connectionId);
+                for (const [memberId, member] of [...rosterChannel.members])
+                {
+                    if (!rosterSet.has(memberId))
+                    {
+                        rosterChannel.members.delete(memberId);
+                        if (typeof rosterChannel.onleave === 'function') rosterChannel.onleave(member);
+                    }
+                }
+            }
+            return;
+        }
         if (messageType === 'propertyChange')
         {
             const updates = meta.updates || [];

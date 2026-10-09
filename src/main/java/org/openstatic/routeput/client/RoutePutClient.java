@@ -404,6 +404,23 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutClient.this.keepAliveThread = null;
     }
 
+    // Prune remote sessions on this link that the server's authoritative roster no longer
+    // lists; never prunes self. Shared by the handshake and the periodic roster response.
+    private void reconcileRoster(RoutePutChannel channel, JSONArray roster)
+    {
+        if (channel == null)
+            return;
+        java.util.HashSet<String> rosterIds = new java.util.HashSet<String>();
+        if (roster != null) {
+            for (int i = 0; i < roster.length(); i++) {
+                String mid = roster.optString(i, null);
+                if (mid != null) rosterIds.add(mid);
+            }
+        }
+        rosterIds.add(this.connectionId);
+        RoutePutRemoteSession.reconcileChannelMembers(this, channel, rosterIds);
+    }
+
     public void handleWebSocketEvent(RoutePutMessage j)
     {
         this.lastServerContactAt = System.currentTimeMillis();
@@ -425,16 +442,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             // Reconcile against the server's authoritative roster so remote sessions whose
             // leave we missed while disconnected don't linger as duplicates.
             if (j.hasMetaField("channelMembers")) {
-                JSONArray roster = j.getRoutePutMeta().optJSONArray("channelMembers");
-                java.util.HashSet<String> rosterIds = new java.util.HashSet<String>();
-                if (roster != null) {
-                    for (int i = 0; i < roster.length(); i++) {
-                        String mid = roster.optString(i, null);
-                        if (mid != null) rosterIds.add(mid);
-                    }
-                }
-                rosterIds.add(this.connectionId);
-                RoutePutRemoteSession.reconcileChannelMembers(this, this.getDefaultChannel(), rosterIds);
+                this.reconcileRoster(this.getDefaultChannel(), j.getRoutePutMeta().optJSONArray("channelMembers"));
             }
             this.getDefaultChannel().addMember(this);
         } else if (j.isType(RoutePutMessage.TYPE_RESPONSE)) {
@@ -446,6 +454,9 @@ public class RoutePutClient implements RoutePutSession, Runnable
             {
                 BLOBManager.handleBlobCheckResponse(this, j);
             }
+        } else if (j.isType(RoutePutMessage.TYPE_MEMBER_SYNC)) {
+            // Periodic authoritative roster; prune members whose leave we missed.
+            this.reconcileRoster(j.getRoutePutChannel(), j.getRoutePutMeta().optJSONArray("channelMembers"));
         } else if (j.isType(RoutePutMessage.TYPE_PROPERTY_CHANGE)) {
             RoutePutPropertyChangeMessage rppcm = new RoutePutPropertyChangeMessage(j);
             rppcm.processUpdates(this);

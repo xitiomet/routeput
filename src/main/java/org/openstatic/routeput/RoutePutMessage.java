@@ -13,8 +13,12 @@ public class RoutePutMessage extends JSONObject
     public static final String TYPE_CONNECTION_ID = "connectionId";
 
     // This message is for letting a channel know you've joined or left a channel this message should always travel the network
-    // to let all servers know that a user has joined a channel
+    // to let all servers know that a user has joined a channel or left a channel
     public static final String TYPE_CONNECTION_STATUS = "ConnectionStatus";
+
+    // Unsolicited authoritative member roster a server periodically pushes to each direct
+    // member so observers can prune members whose leave they missed. Carries meta.channelMembers.
+    public static final String TYPE_MEMBER_SYNC = "memberSync";
 
     // For Big large object, images, data to transfer from server to server. Think of it as files everyone wants to share
     // This message type is used for transferring large binary objects in chunks. Note that the actual data is base64-encoded within the message.

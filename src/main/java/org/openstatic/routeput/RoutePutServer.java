@@ -43,6 +43,8 @@ public class RoutePutServer implements Runnable
     public File channelRoot;
     private SimpleDateFormat dateFormat;
     protected ApiServlet apiServlet;
+    // Timestamp-based so the sync interval can exceed the 60s tick cycle.
+    private long lastMemberSyncAt;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -181,7 +183,7 @@ public class RoutePutServer implements Runnable
         } else {
             System.err.println("routeputDebug is null");
         }
-        if (tick % settings.optInt("pingPongSecs", 20) == 0)
+        if (tick % 20 == 0)
         {
             if (settings.optBoolean("logPings", false))
             {
@@ -194,6 +196,14 @@ public class RoutePutServer implements Runnable
                     sws.ping();
                 }
             });
+        }
+        int memberSyncSecs = settings.optInt("memberSyncSecs", 300);
+        if (memberSyncSecs > 0 && (System.currentTimeMillis() - this.lastMemberSyncAt) >= (memberSyncSecs * 1000L))
+        {
+            // Re-advertise channel rosters so an observer whose peer reconnected under a new
+            // id (or whose leave it missed) prunes the stale member without reconnecting.
+            this.lastMemberSyncAt = System.currentTimeMillis();
+            RoutePutChannel.syncAllChannelMembers();
         }
         if (tick == 0)
         {

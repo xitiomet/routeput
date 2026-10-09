@@ -963,6 +963,46 @@ public class RoutePutChannel implements RoutePutMessageListener
         return ja;
     }
 
+    // Push the authoritative member roster to each directly-connected member so an observer
+    // can prune a member whose leave it missed (e.g. a peer that reconnected under a new id
+    // while the observer stayed connected). Sent as an unsolicited TYPE_MEMBER_SYNC; clients
+    // predating it ignore an unknown type. The receiver only prunes remote sessions reachable
+    // through this same link, so chained/star servers never drop members they still reach
+    // another way.
+    public void syncMembers()
+    {
+        if (this.members.isEmpty())
+            return;
+        JSONArray roster = this.memberConnectionIdsAsJSONArray();
+        for(RoutePutSession m : new ArrayList<RoutePutSession>(this.getMembers()))
+        {
+            if (m.isRootConnection() && m.isConnected())
+            {
+                RoutePutMessage jo = new RoutePutMessage();
+                jo.setType(RoutePutMessage.TYPE_MEMBER_SYNC);
+                jo.setChannel(this);
+                jo.setMetaField("channelMembers", roster);
+                m.send(jo);
+            }
+        }
+    }
+
+    // Periodically re-advertise every channel's roster so stale members self-heal without
+    // waiting for the observing client to reconnect.
+    public static void syncAllChannelMembers()
+    {
+        initTracker();
+        ArrayList<RoutePutChannel> snapshot;
+        synchronized (RoutePutChannel.class)
+        {
+            snapshot = new ArrayList<RoutePutChannel>(RoutePutChannel.channels.values());
+        }
+        for (RoutePutChannel c : snapshot)
+        {
+            c.syncMembers();
+        }
+    }
+
     public void mergeProperties(JSONObject props)
     {
         if (props != null)

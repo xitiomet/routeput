@@ -196,6 +196,16 @@ class RouteputConnection(Thread):
                         self.default_channel.trigger('leave', member)
         elif (msg_type == 'ping'):
             self.transmit({'__routeput': {'type': 'pong', 'pingTimestamp': routeput_meta['timestamp']}})
+        elif (msg_type == 'memberSync'):
+            # Periodic authoritative roster; prune members whose leave we missed.
+            if channel is not None and 'channelMembers' in routeput_meta:
+                roster = set(routeput_meta['channelMembers'])
+                roster.add(self.connection_id)
+                for member_id in list(channel.members.keys()):
+                    if member_id not in roster:
+                        member = channel.members.pop(member_id)
+                        member.connected = False
+                        channel.trigger('leave', member)
         elif (msg_type == 'ConnectionStatus'):
             if channel:
                 channel.handle_message(msg)
