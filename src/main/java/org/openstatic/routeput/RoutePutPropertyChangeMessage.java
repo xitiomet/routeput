@@ -101,6 +101,13 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         if (obj1 != null && obj2 != null)
         {
+            // org.json's JSONObject/JSONArray don't override equals(), so identical-content
+            // objects would otherwise compare unequal and defeat no-op suppression; use their
+            // deep structural similar() instead.
+            if (obj1 instanceof JSONObject && obj2 instanceof JSONObject)
+                return ((JSONObject) obj1).similar(obj2);
+            if (obj1 instanceof JSONArray && obj2 instanceof JSONArray)
+                return ((JSONArray) obj1).similar(obj2);
             // neither is null!
             return obj1.equals(obj2);
         } else {
