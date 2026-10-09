@@ -498,6 +498,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     {
         if (jo != null && this.session != null) 
         {
+            // Never transmit a propertyChange that carries no updates (e.g. a setProperty
+            // that didn't actually change anything).
+            if (RoutePutMessage.TYPE_PROPERTY_CHANGE.equals(jo.getType()) && !RoutePutPropertyChangeMessage.hasUpdates(jo))
+                return;
             jo.setSourceIdIfNull(this.connectionId);
             jo.setChannelIfNull(this.getDefaultChannel());
             this.writeQueue.offer(jo);

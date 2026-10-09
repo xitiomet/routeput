@@ -223,13 +223,18 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
             }
         });
         channelsInvolved.forEach((channel) -> {
-            // broadcast the update to the channel
-            channel.broadcastWithRxBump(this.forChannel(channel));
+            // broadcast the update to the channel, but never an empty propertyChange
+            RoutePutPropertyChangeMessage forChannel = this.forChannel(channel);
+            if (forChannel.hasUpdates())
+                channel.broadcastWithRxBump(forChannel);
         });
     }
 
     public RoutePutPropertyChangeMessage addUpdate(RoutePutChannel channel, String key, Object oldValue, Object newValue)
     {
+        // Skip no-op updates; an unchanged value would only create relay/echo noise.
+        if (nullSafeCompare(oldValue, newValue))
+            return this;
         JSONObject update = new JSONObject();
         update.put("type", TYPE_CHANNEL);
         //update.put("ts", System.currentTimeMillis());
@@ -243,6 +248,9 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
 
     public RoutePutPropertyChangeMessage addUpdate(RoutePutSession session, String key, Object oldValue, Object newValue)
     {
+        // Skip no-op updates; an unchanged value would only create relay/echo noise.
+        if (nullSafeCompare(oldValue, newValue))
+            return this;
         JSONObject update = new JSONObject();
         update.put("type", TYPE_SESSION);
         //update.put("ts", System.currentTimeMillis());
@@ -258,5 +266,17 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
     {
         this.appendMetaArray("updates", update);
         return this;
+    }
+
+    public boolean hasUpdates()
+    {
+        return hasUpdates(this);
+    }
+
+    // True only if this property-change message actually carries at least one update.
+    public static boolean hasUpdates(RoutePutMessage rpm)
+    {
+        JSONArray updates = rpm.getRoutePutMeta().optJSONArray("updates");
+        return updates != null && updates.length() > 0;
     }
 }
