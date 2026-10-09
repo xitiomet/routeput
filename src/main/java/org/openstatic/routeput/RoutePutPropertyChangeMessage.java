@@ -67,11 +67,19 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
                     {
                         if (channel.getName().equals(objectId))
                         {
+                            // Skip no-op updates; an unchanged value would only create relay/echo noise.
+                            if (joUpdate.has("oldValue") && joUpdate.has("newValue"))
+                                if (nullSafeCompare(joUpdate.opt("oldValue"), joUpdate.opt("newValue")))
+                                    return;
                             rppcm.addUpdate((JSONObject) update);
                         }
                     } else if (TYPE_SESSION.equals(objectType)) {
                         if (channel.hasMember(objectId))
                         {
+                            // Skip no-op updates; an unchanged value would only create relay/echo noise.
+                            if (joUpdate.has("oldValue") && joUpdate.has("newValue"))
+                                if (nullSafeCompare(joUpdate.opt("oldValue"), joUpdate.opt("newValue")))
+                                    return;
                             rppcm.addUpdate((JSONObject) update);
                         }
                     }
