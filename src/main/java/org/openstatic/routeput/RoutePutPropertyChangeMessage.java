@@ -279,6 +279,10 @@ public class RoutePutPropertyChangeMessage extends RoutePutMessage
 
     public RoutePutPropertyChangeMessage addUpdate(JSONObject update)
     {
+        // Single choke point for every update: drop no-ops (old similar to new) no matter
+        // which overload or raw/relayed path built them.
+        if (update != null && update.has("new") && nullSafeCompare(update.opt("old"), update.opt("new")))
+            return this;
         this.appendMetaArray("updates", update);
         return this;
     }
