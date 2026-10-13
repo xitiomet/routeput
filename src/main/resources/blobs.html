@@ -6,7 +6,7 @@
 
         // Create a URLSearchParams object
         const urlParams = new URLSearchParams(queryString);
-        var channelId = urlParams.get('channelId');
+        var channelId = urlParams.get('channel');
 
         function formatMillis(millis) 
         {
@@ -39,9 +39,9 @@
 
         function updateBlobs() 
         {
-            var blobUrl = '/api/channel/' + encodeURIComponent(channelId) + '/blobs/';
-
-            fetch(blobUrl).then(response => response.json()).then(data => {
+            var blobLookupUrl = '/api/channel/' + encodeURIComponent(channelId) + '/blobs/';
+            var blobDataUrl = '/api/channel/' + encodeURIComponent(channelId) + '/blob/';
+            fetch(blobLookupUrl).then(response => response.json()).then(data => {
                     //  console.log('Blobs data:', data);
                     blobsData = data.blobs;
                     const blobsDiv = document.getElementById('blobs');
@@ -61,26 +61,53 @@
                                 row.style.backgroundColor = '#f0f0f0';
                             }
                             otherRow = !otherRow;
-                            row.innerHTML = '<td><a target="_blank" href="' + blobUrl + blob.name + '">' + blob.name + '</a></td><td>' + formatSize(blob.size || 0) + '</td><td>' + formatMillis(blob.expires || '') + ' (' + formatMillisCountdown(blob.timeTillExpiration) + ')</td><td style="font-family: monospace; font-size: 8px; text-align: center;">' + (blob.md5 || '') + '</td>';
+                            row.innerHTML = '<td><a target="_blank" href="' + blobDataUrl + blob.name + '">' + blob.name + '</a></td><td>' + formatSize(blob.size || 0) + '</td><td>' + formatMillis(blob.expires || '') + ' (' + formatMillisCountdown(blob.timeTillExpiration) + ')</td><td style="font-family: monospace; font-size: 10px; text-align: center;">' + (blob.md5 || '') + '</td>';
                             blobsDiv.appendChild(row);
                         }
                     }
             });
         }
 
-        function blobUploadFinished() {
-            document.getElementById('fileField').value = null;
-            updateBlobs();
+        function uploadBlob() {
+            var fileField = document.getElementById('fileField');
+            var file = fileField.files[0];
+            if (!file) return;
+            // POST the raw file bytes so the server stores the file itself, not a multipart envelope.
+            var url = '/api/blob/channel/' + encodeURIComponent(channelId) + '/?name=' + encodeURIComponent(file.name);
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                body: file
+            }).then(function() {
+                fileField.value = null;
+                updateBlobs();
+            });
         }
 
         window.onload = function() {
+            serverStatus = fetch('/api/status/').then(function(response) {
+                return response.json();
+            });
+            serverStatus.then(function(status) {
+                document.getElementById('pageTitle').innerText = status.hostname + ' - #' + channelId;
+                document.getElementById('channelLink').href = '/channel.html?channel=' + encodeURIComponent(channelId);
+            });
             updateBlobs();
             setInterval(updateBlobs, 15000); // Refresh blobs every 5 seconds
         };
     </script>
 </head>
-<body>
-    <table id="blobs" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px dotted black;" border="1">
+<body style="background: white; background-size: 100% 100%; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;">
+<div style="padding: 2px 2px 2px 2px; margin: 0px 0px 0px 0px; background: black; border: solid 1px black; color: white; position: fixed; top: 0; width: 100%; height: 42px;">
+    <table width="100%"><tbody>
+        <tr><td width="32px"><img src="icon-256.png" height="32" width="32"></td>
+        <td id="pageTitle" style="color: white; font-size: 20px;" align="left">Routeput Server</td>
+        <td align="right" style="padding-right: 5px;"><a href="/channel.html" id="channelLink" style="color: white;"><img src="/icon-256.png" height="32" width="32"></a></td>
+        </tr>
+    </tbody></table>
+</div>
+<div id="console-area" style="width:99%; padding: 50px 5px 5px 5px; font-family: monospace; font-size: 10px; overflow-wrap: anywhere;">
+     <table id="blobs" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px dotted black;" border="1">
         <tr style="background-color:bisque;">
             <th>Name</th>
             <th>Size</th>
@@ -89,7 +116,7 @@
             <th>Actions</th>
         </tr>
     </table><br />
-    <form method="post" action="/blob/upload/" enctype="multipart/form-data" target="uploadTarget">
+    <form id="uploadTargetForm" onsubmit="uploadBlob(); return false;">
         <table style="width: 100%;margin: 4px 4px 4px 4px; border: 1px dotted black;">
             <tr>
                 <td style="font-weight: bold;">Upload File</td>
@@ -102,6 +129,6 @@
             </tr>
         </table>
     </form>
-    <iframe src="" onload="blobUploadFinished();" id="uploadTarget" name="uploadTarget" style="display:none;"></iframe>
+</div>
 </body>
 </html>

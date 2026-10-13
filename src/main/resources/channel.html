@@ -368,6 +368,7 @@
     routeput.onconnect = function()
     {
         document.getElementById('pageTitle').innerHTML = routeput.serverHostname + " - #" + channel;
+        document.getElementById('blobsLink').href = '/blobs.html?channel=' + encodeURIComponent(channel);
         if (routeput.defaultChannel.properties.hasOwnProperty('plotFields'))
         {
             fields = routeput.defaultChannel.properties.plotFields;
@@ -421,7 +422,7 @@
     <table width="100%"><tbody>
         <tr><td width="32px"><img src="icon-256.png" height="32" width="32"></td>
         <td id="pageTitle" style="color: white; font-size: 20px;" align="left">Routeput Server</td>
-        <td align="right"></td>
+        <td align="right" style="padding-right: 5px;"><a href="/blobs.html" id="blobsLink" style="color: white;"><img src="/folder.png" height="32" width="32"></a></td>
         </tr>
     </tbody></table>
 </div>
