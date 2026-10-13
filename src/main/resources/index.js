@@ -151,7 +151,7 @@ routeput.onmessage = function (member, messageType, jsonObject) {
             } else {
                 pingColor = "#FFCFCF";
             }
-            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td><td>" + formatBytes(value.blobBytes) + "</td><td style=\"background-color: " + pingColor + ";\">" + value.ping + " ms</td>";
+            channelTR.innerHTML = "<td><a href=\"channel.html?channel=" + key + "\">" + key + "</a></td><td>" + icons + "</td><td>" + value.members + "</td><td>" + value.rx + "</td><td>" + value.tx + "</td><td><a href=\"blobs.html?channel=" + key + "\">" + formatBytes(value.blobBytes) + "</a></td><td style=\"background-color: " + pingColor + ";\">" + value.ping + " ms</td>";
         }
     }
 };
