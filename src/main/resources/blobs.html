@@ -1,0 +1,107 @@
+<html>
+<head>
+    <title>OpenStaticAgent - BLOB storage</title>
+    <script type="text/javascript">
+        const queryString = window.location.search;
+
+        // Create a URLSearchParams object
+        const urlParams = new URLSearchParams(queryString);
+        var channelId = urlParams.get('channelId');
+
+        function formatMillis(millis) 
+        {
+            if (!millis) return '';
+            if (millis == 0) return 'Never';
+            const date = new Date(millis);
+            return date.toLocaleString();
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatMillisCountdown(millis) {
+            if (!millis) return '';
+            if (millis == 0) return 'Expired';
+            const seconds = Math.floor(millis / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            if (days > 0) return days + 'd ' + (hours % 24) + 'h';
+            if (hours > 0) return hours + 'h ' + (minutes % 60) + 'm';
+            if (minutes > 0) return minutes + 'm ' + (seconds % 60) + 's';
+            return seconds + 's';
+        }
+
+        function updateBlobs() 
+        {
+            var blobUrl = '/api/channel/' + encodeURIComponent(channelId) + '/blobs/';
+
+            fetch(blobUrl).then(response => response.json()).then(data => {
+                    //  console.log('Blobs data:', data);
+                    blobsData = data.blobs;
+                    const blobsDiv = document.getElementById('blobs');
+                    blobsDiv.innerHTML = '<tr style="background-color:bisque;">' +
+                        '<th>Name</th>' +
+                        '<th>Size</th>' +
+                        '<th>Expires</th>' +
+                        '<th>MD5</th>' +
+                    '</tr>';
+                    var otherRow = false;
+                    for (const key in blobsData) {
+                        if (blobsData.hasOwnProperty(key)) {
+                            const blob = blobsData[key];
+                            const blobDiv = document.createElement('div');
+                            const row = document.createElement('tr');
+                            if (otherRow) {
+                                row.style.backgroundColor = '#f0f0f0';
+                            }
+                            otherRow = !otherRow;
+                            row.innerHTML = '<td><a target="_blank" href="' + blobUrl + blob.name + '">' + blob.name + '</a></td><td>' + formatSize(blob.size || 0) + '</td><td>' + formatMillis(blob.expires || '') + ' (' + formatMillisCountdown(blob.timeTillExpiration) + ')</td><td style="font-family: monospace; font-size: 8px; text-align: center;">' + (blob.md5 || '') + '</td>';
+                            blobsDiv.appendChild(row);
+                        }
+                    }
+            });
+        }
+
+        function blobUploadFinished() {
+            document.getElementById('fileField').value = null;
+            updateBlobs();
+        }
+
+        window.onload = function() {
+            updateBlobs();
+            setInterval(updateBlobs, 15000); // Refresh blobs every 5 seconds
+        };
+    </script>
+</head>
+<body>
+    <table id="blobs" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px dotted black;" border="1">
+        <tr style="background-color:bisque;">
+            <th>Name</th>
+            <th>Size</th>
+            <th>Expires</th>
+            <th>MD5</th>
+            <th>Actions</th>
+        </tr>
+    </table><br />
+    <form method="post" action="/blob/upload/" enctype="multipart/form-data" target="uploadTarget">
+        <table style="width: 100%;margin: 4px 4px 4px 4px; border: 1px dotted black;">
+            <tr>
+                <td style="font-weight: bold;">Upload File</td>
+                <td>
+                    <input type="file" id="fileField" name="file" />
+                </td>
+                <td>
+                    <input style="width: 100%;" type="submit" value="Push BLOB" />
+                </td>
+            </tr>
+        </table>
+    </form>
+    <iframe src="" onload="blobUploadFinished();" id="uploadTarget" name="uploadTarget" style="display:none;"></iframe>
+</body>
+</html>
