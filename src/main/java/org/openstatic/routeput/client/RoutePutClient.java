@@ -87,6 +87,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // (before System.exit) or by this client's own JVM shutdown hook; both can race under
     // native-image shutdown.
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    // Application callbacks run ONCE inside disconnectGracefully() just before the queue is
+    // flushed and the socket is closed. Lets an app enqueue final frames (e.g. leave/goodbye)
+    // on whichever thread wins the shutdown race, instead of racing its own shutdown hook
+    // against ours (native image: the lost-leave_chat-on-Ctrl-C bug).
+    private final java.util.List<Runnable> preShutdownTasks = new java.util.concurrent.CopyOnWriteArrayList<Runnable>();
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
     {
@@ -535,6 +540,16 @@ public class RoutePutClient implements RoutePutSession, Runnable
             return;
         this.stayConnected = false;
         long deadline = System.currentTimeMillis() + timeoutMs;
+        // 0) Let the application enqueue its final frames (leave/goodbye) while the socket is
+        //    still up. Runs exactly once, regardless of which thread triggered shutdown.
+        for (Runnable task : this.preShutdownTasks)
+        {
+            try {
+                task.run();
+            } catch (Exception e) {
+                e.printStackTrace(System.err);
+            }
+        }
         // 1) Drain queued frames (leave/goodbye) onto the live socket.
         this.flush(Math.max(0, deadline - System.currentTimeMillis()));
         // 2) Send a normal close frame; the server flushes prior frames, then echoes Close.
@@ -564,6 +579,15 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } catch (Exception e) {
             // ignore
         }
+    }
+
+    // Register work to run once, just before the queue is flushed and the socket is closed by
+    // disconnectGracefully() (called from both the app and this client's own shutdown hook).
+    // Use it to enqueue final frames so delivery never depends on shutdown-hook ordering.
+    public void addPreShutdownTask(Runnable task)
+    {
+        if (task != null)
+            this.preShutdownTasks.add(task);
     }
 
     private void ensureWriteWorkerRunning()
