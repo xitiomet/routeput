@@ -25,6 +25,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.jetty.client.HttpClient;
@@ -79,6 +80,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // Serializes all outbound writes so async frames never overlap on the RemoteEndpoint.
     private static final RoutePutMessage WRITE_POISON = new RoutePutMessage();
     private final BlockingQueue<RoutePutMessage> writeQueue = new LinkedBlockingQueue<RoutePutMessage>();
+    // Enqueued-but-not-yet-flushed frame count, so flush() can wait for an actual drain.
+    private final AtomicInteger pendingWrites = new AtomicInteger(0);
     private volatile Thread writeWorker;
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
@@ -489,6 +492,24 @@ public class RoutePutClient implements RoutePutSession, Runnable
             jo.setSourceIdIfNull(this.connectionId);
             jo.setChannelIfNull(this.getDefaultChannel());
             this.writeQueue.offer(jo);
+            this.pendingWrites.incrementAndGet();
+        }
+    }
+
+    // Block until every queued outbound frame has been flushed to the socket, or the timeout
+    // elapses. Lets a caller (e.g. a shutdown hook) guarantee final messages are delivered
+    // instead of racing the daemon writer thread with a blind sleep.
+    public void flush(long timeoutMs)
+    {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (this.pendingWrites.get() > 0 && this.session != null && System.currentTimeMillis() < deadline)
+        {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
@@ -530,16 +551,26 @@ public class RoutePutClient implements RoutePutSession, Runnable
             if (jo == WRITE_POISON) {
                 break;
             }
-            WebSocketSession s = this.session;
-            if (jo != null && s != null)
+            if (jo == null) {
+                continue;
+            }
+            boolean interrupted = false;
+            try
             {
-                try
+                WebSocketSession s = this.session;
+                if (s != null)
                 {
                     // Block until this frame is flushed so the next write can't interleave.
                     s.getRemote().sendStringByFuture(jo.toString()).get();
-                } catch (InterruptedException ie) {
-                    break;
-                } catch (Exception e) { e.printStackTrace(System.err); }
+                }
+            } catch (InterruptedException ie) {
+                interrupted = true;
+            } catch (Exception e) { e.printStackTrace(System.err); }
+            finally {
+                this.pendingWrites.decrementAndGet();
+            }
+            if (interrupted) {
+                break;
             }
         }
     }
