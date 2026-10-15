@@ -83,6 +83,10 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // Enqueued-but-not-yet-flushed frame count, so flush() can wait for an actual drain.
     private final AtomicInteger pendingWrites = new AtomicInteger(0);
     private volatile Thread writeWorker;
+    // Ensures the graceful close handshake runs once, whether triggered by the application
+    // (before System.exit) or by this client's own JVM shutdown hook; both can race under
+    // native-image shutdown.
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     public RoutePutClient(RoutePutChannel channel, String websocketUri)
     {
@@ -114,12 +118,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
           {
             RoutePutClient.this.stayConnected = false;
             //System.err.println("Routeput client received shutdown hook!");
-            // Let any queued frames (e.g. a final leave/goodbye enqueued by the application's
-            // own shutdown hook) drain to the live socket before we stop the writer and tear
-            // the connection down. Shutdown hooks run concurrently, so stopping the writer
-            // first would strand those frames (native image: ClosedChannelException on flush).
-            RoutePutClient.this.flush(3000);
-            RoutePutClient.this.cleanUp();
+            // Drain any queued frames (e.g. a final leave/goodbye enqueued by the application's
+            // own shutdown hook) AND complete the WebSocket close handshake before the JVM tears
+            // the TCP socket down. An abrupt System.exit() can reset the connection before the
+            // server reads buffered frames (native image: lost leave_chat / ClosedChannelException).
+            RoutePutClient.this.disconnectGracefully(3000);
           } 
         }); 
 
@@ -515,6 +518,51 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 Thread.currentThread().interrupt();
                 return;
             }
+        }
+    }
+
+    // Deliver every queued frame and then close the connection with a proper WebSocket close
+    // handshake, blocking until the server acknowledges (or the timeout elapses) before
+    // returning. flush() alone only hands frames to the OS socket buffer; a following
+    // System.exit() tears the TCP socket down abruptly, which under native-image can reset the
+    // connection before the server reads those frames (lost leave/goodbye). The close handshake
+    // guarantees the peer has read everything we sent, since WebSocket frames are ordered and
+    // the server only echoes Close after processing prior frames. Idempotent and safe to call
+    // from both the application (before System.exit) and this client's own shutdown hook.
+    public void disconnectGracefully(long timeoutMs)
+    {
+        if (!this.shuttingDown.compareAndSet(false, true))
+            return;
+        this.stayConnected = false;
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        // 1) Drain queued frames (leave/goodbye) onto the live socket.
+        this.flush(Math.max(0, deadline - System.currentTimeMillis()));
+        // 2) Send a normal close frame; the server flushes prior frames, then echoes Close.
+        WebSocketSession s = this.session;
+        if (s != null)
+        {
+            try {
+                s.close(org.eclipse.jetty.websocket.api.StatusCode.NORMAL, "client shutdown");
+            } catch (Exception e) {
+                // ignore; we'll fall through to teardown
+            }
+        }
+        // 3) Wait for onClose to null the session, proving the server read our frames.
+        while (this.session != null && System.currentTimeMillis() < deadline)
+        {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        this.cleanUp();
+        try {
+            if (this.webSocketClient != null)
+                this.webSocketClient.stop();
+        } catch (Exception e) {
+            // ignore
         }
     }
 
