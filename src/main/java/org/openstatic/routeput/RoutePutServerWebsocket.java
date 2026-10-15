@@ -292,6 +292,11 @@ public class RoutePutServerWebsocket implements RoutePutSession
                         } else if (jo.isType(RoutePutMessage.TYPE_BLOB)) {
                             // Blob chunks are absorbed by BLOBManager (below) which relays
                             // channel-scoped chunks to other members in flight.
+                        } else if (jo.isType(RoutePutMessage.TYPE_MEMBER_SYNC)) {
+                            // The directly-connected client resyncs the children it owns; prune
+                            // the remote sessions it reaches through this link that its roster no
+                            // longer lists (srcId == this.connectionId is enforced above).
+                            RoutePutRemoteSession.reconcileChildren(this, jo.getSourceId(), jo.getRoutePutChannel(), jo.getRoutePutMeta().optJSONArray("channelMembers"));
                         } else if (jo.hasChannel()) {
                             this.handleMessage(jo);
                         } else {

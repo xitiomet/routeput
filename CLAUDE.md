@@ -57,21 +57,31 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     `channelProperties`. On receiving it the client prunes any local member of that channel
     not in the roster (never itself) before the server's `transmitMembers` re-adds the live
     set. `transmitMembers` and `ConnectionStatus` are unchanged, so old clients that ignore
-    `channelMembers` stay compatible. Java: `RoutePutRemoteSession.reconcileChannelMembers`;
+    `channelMembers` stay compatible. Java: `RoutePutRemoteSession.reconcileChildren`;
     the browser (`routeput.js`), Node (`routeput-node.js`), and Python (`__init__.py`) clients
     each run the same prune loop in their `connectionId` handler. Keep all ends in lockstep.
 - The handshake roster only reaches the client that (re)connects, so an observer that stays
-    connected never re-syncs. To self-heal that case the server also *periodically* re-sends
-    each channel's roster (every `memberSyncSecs`, default 300, `0` disables) as an unsolicited
-    `type:memberSync` (`TYPE_MEMBER_SYNC`) carrying `channelMembers`. `RoutePutChannel.syncMembers`
-    sends it to every direct (`isRootConnection`) member; `syncAllChannelMembers` sweeps all
-    channels from `RoutePutServer.everySecond` (timestamp-gated, so the interval may exceed the
-    60s tick cycle). Each client runs the same reconcile/prune as the handshake path
-    (`RoutePutClient.reconcileRoster` -> `reconcileChannelMembers`; the browser, Node, and Python
-    clients handle `type:memberSync` the same way). A client that predates the type ignores it
-    (unknown type), so it stays backward compatible. Federation-safe: a client only prunes remote
-    sessions reachable through the link that sent the roster (never itself), so chained/star
-    servers never drop members they still reach another way.
+    connected never re-syncs. To self-heal that case each environment *periodically* resyncs
+    its children as an unsolicited `type:memberSync` (`TYPE_MEMBER_SYNC`) carrying `channelMembers`.
+    The sync is bidirectional and symmetric: a parent only resyncs *its own* children. For each
+    direct (`isRootConnection`) member `m`, `RoutePutChannel.syncMembers` sends the subset of
+    members reachable through us but **not** through `m` itself (`!m.containsConnectionId(id)`),
+    i.e. exactly the children `m` holds on that link. The server drives `syncAllChannelMembers`
+    from `RoutePutServer.everySecond` (every `memberSyncSecs`, default 300, `0` disables,
+    timestamp-gated so the interval may exceed the 60s tick); a standalone client drives it from
+    the `RoutePutRemoteSession` dead-session sweeper (when `RoutePutServer.instance == null`), so
+    a sub-server client resyncs its downstream *up* to its upstream too. A client sending to its
+    own link routes the sync up to the server.
+- On receipt (either end), `RoutePutRemoteSession.reconcileChildren(link, srcId, channel, roster)`
+    acts only when the sender (`srcId`) reaches us through `link` rather than being one of our own
+    children echoed back (`isChild(link, srcId)`), and only after confirming every listed member
+    we already hold is parented to that same `link`; otherwise it makes no change. It then prunes
+    any remote session on `link` the roster no longer lists. `RoutePutServerWebsocket` only handles
+    a `memberSync` from the directly-connected client (the `srcId == connectionId` dispatch branch),
+    and `RoutePutClient` handles it from its upstream. A peer that predates the type ignores it
+    (unknown type), so it stays backward compatible. Federation-safe: a parent only prunes the
+    children it itself reaches through that link (never itself or members reached another way), so
+    chained/star servers never drop members they still reach another way.
 
 
 ## Channel authentication

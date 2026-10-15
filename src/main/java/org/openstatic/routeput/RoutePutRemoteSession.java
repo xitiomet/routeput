@@ -63,8 +63,9 @@ public class RoutePutRemoteSession implements RoutePutSession
                     try 
                     {
                         Thread.sleep(60000); // Sweep every 60 seconds
+                        RoutePutServer server = RoutePutServer.instance;
                         RoutePutRemoteSession.sessions.forEach((connectionId, session) -> {
-                            if (session.hasParent(RoutePutServer.instance.apiServlet))
+                            if (server != null && session.hasParent(server.apiServlet))
                             {
                                 long idleDestruct = session.getProperties().optLong("_idleDestruct", 900000l);
                                 if (session.getIdle() > idleDestruct && idleDestruct > 0) 
@@ -75,6 +76,12 @@ public class RoutePutRemoteSession implements RoutePutSession
                                 }
                             }
                         });
+                        // A client has no RoutePutServer.everySecond loop, so resync our own
+                        // children to each peer from here; the server drives the same sweep there.
+                        if (server == null)
+                        {
+                            RoutePutChannel.syncAllChannelMembers();
+                        }
                         //RoutePutMain.log("info", "Swept for dead remote sessions.");
                     } catch (InterruptedException e) {
                         break;
@@ -263,16 +270,41 @@ public class RoutePutRemoteSession implements RoutePutSession
             .forEach((c) -> c.reparent(newParent));
     }
 
-    // Drop remote sessions reachable through parent in channel that are absent from the
-    // authoritative roster; lets a client clear members whose leave it missed on (re)connect.
-    public static void reconcileChannelMembers(RoutePutSession parent, RoutePutChannel channel, java.util.Set<String> rosterIds)
+    // Reconcile the children reachable through `link` against the roster its peer advertised
+    // (a TYPE_MEMBER_SYNC, or the handshake channelMembers). A peer only resyncs its own
+    // children, so we act only when the sender (srcId) reaches us through `link` rather than
+    // being one of our own children echoed back, and only after confirming every listed member
+    // we already hold is parented to that same link. Prunes any remote session on `link` in
+    // `channel` the roster no longer lists; never touches members reached another way or self.
+    public static void reconcileChildren(RoutePutSession link, String srcId, RoutePutChannel channel, JSONArray roster)
     {
-        if (RoutePutRemoteSession.sessions == null || parent == null || channel == null || rosterIds == null)
+        if (RoutePutRemoteSession.sessions == null || link == null || srcId == null || channel == null)
             return;
+        // The sender must be the parent on this link, not one of our own children echoed back.
+        if (isChild(link, srcId))
+            return;
+        java.util.HashSet<String> childIds = new java.util.HashSet<String>();
+        if (roster != null)
+        {
+            for (int i = 0; i < roster.length(); i++)
+            {
+                String mid = roster.optString(i, null);
+                if (mid != null) childIds.add(mid);
+            }
+        }
+        childIds.add(link.getConnectionId());
+        // Every claimed child we already hold must be reachable through this same link,
+        // otherwise the roster does not describe this sender's children; make no change.
+        for (String id : childIds)
+        {
+            RoutePutRemoteSession known = RoutePutRemoteSession.sessions.get(id);
+            if (known != null && !known.hasParent(link))
+                return;
+        }
         for (RoutePutSession m : new java.util.ArrayList<RoutePutSession>(channel.getMembers()))
         {
-            if (m instanceof RoutePutRemoteSession && ((RoutePutRemoteSession) m).hasParent(parent)
-                && !rosterIds.contains(m.getConnectionId()))
+            if (m instanceof RoutePutRemoteSession && ((RoutePutRemoteSession) m).hasParent(link)
+                && !childIds.contains(m.getConnectionId()))
             {
                 channel.removeMember(m);
                 if (RoutePutChannel.channelsWithMember(m).size() == 0)

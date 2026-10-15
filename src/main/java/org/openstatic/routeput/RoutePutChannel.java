@@ -963,21 +963,28 @@ public class RoutePutChannel implements RoutePutMessageListener
         return ja;
     }
 
-    // Push the authoritative member roster to each directly-connected member so an observer
-    // can prune a member whose leave it missed (e.g. a peer that reconnected under a new id
-    // while the observer stayed connected). Sent as an unsolicited TYPE_MEMBER_SYNC; clients
-    // predating it ignore an unknown type. The receiver only prunes remote sessions reachable
-    // through this same link, so chained/star servers never drop members they still reach
-    // another way.
+    // Resync each directly-connected member's own children so an observer can prune a member
+    // whose leave it missed (e.g. a peer that reconnected under a new id while the observer
+    // stayed connected). Each recipient m is told only the members reachable through us and
+    // not through m itself - i.e. exactly the children m holds on this link - so it prunes any
+    // of those the roster no longer lists. Sent as an unsolicited TYPE_MEMBER_SYNC; peers
+    // predating it ignore an unknown type. Scoping to m's own children keeps chained/star
+    // servers from ever dropping members they still reach another way.
     public void syncMembers()
     {
         if (this.members.isEmpty())
             return;
-        JSONArray roster = this.memberConnectionIdsAsJSONArray();
-        for(RoutePutSession m : new ArrayList<RoutePutSession>(this.getMembers()))
+        ArrayList<RoutePutSession> snapshot = new ArrayList<RoutePutSession>(this.getMembers());
+        for(RoutePutSession m : snapshot)
         {
             if (m.isRootConnection() && m.isConnected())
             {
+                JSONArray roster = new JSONArray();
+                for (RoutePutSession s : snapshot)
+                {
+                    if (!m.containsConnectionId(s.getConnectionId()))
+                        roster.put(s.getConnectionId());
+                }
                 RoutePutMessage jo = new RoutePutMessage();
                 jo.setType(RoutePutMessage.TYPE_MEMBER_SYNC);
                 jo.setChannel(this);
