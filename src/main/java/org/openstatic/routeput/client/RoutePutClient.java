@@ -114,6 +114,11 @@ public class RoutePutClient implements RoutePutSession, Runnable
           {
             RoutePutClient.this.stayConnected = false;
             //System.err.println("Routeput client received shutdown hook!");
+            // Let any queued frames (e.g. a final leave/goodbye enqueued by the application's
+            // own shutdown hook) drain to the live socket before we stop the writer and tear
+            // the connection down. Shutdown hooks run concurrently, so stopping the writer
+            // first would strand those frames (native image: ClosedChannelException on flush).
+            RoutePutClient.this.flush(3000);
             RoutePutClient.this.cleanUp();
           } 
         }); 
