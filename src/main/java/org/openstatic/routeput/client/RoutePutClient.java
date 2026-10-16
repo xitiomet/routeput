@@ -77,6 +77,13 @@ public class RoutePutClient implements RoutePutSession, Runnable
     // Extra channels joined via subscribe() (beyond the default channel). Replayed on
     // reconnect so a dropped-and-resumed link rejoins every channel, not just the default.
     private final java.util.Set<String> subscribedChannels = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // In-flight subscribe requests keyed by the request's msgId; completed when the server's
+    // correlated subscribe response (success) or authRequired error (failure) arrives, and
+    // failed on timeout or disconnect so a blocking subscribe() can never hang forever.
+    private final java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<RoutePutChannel>> pendingSubscribes = new java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<RoutePutChannel>>();
+    // Same, for in-flight unsubscribe requests.
+    private final java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<RoutePutChannel>> pendingUnsubscribes = new java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<RoutePutChannel>>();
+    private volatile long subscribeTimeoutMs = 15000l;
     // Serializes all outbound writes so async frames never overlap on the RemoteEndpoint.
     private static final RoutePutMessage WRITE_POISON = new RoutePutMessage();
     private final BlockingQueue<RoutePutMessage> writeQueue = new LinkedBlockingQueue<RoutePutMessage>();
@@ -416,6 +423,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         RoutePutChannel.removeFromAllChannels(this);
         // Fail any blob fetch/send waiting on this connection so callers don't hang.
         BLOBManager.failPendingTransfersForSession(this, new java.io.IOException("connection closed"));
+        this.failPendingRequests(new java.io.IOException("connection closed"));
         this.stopWriteWorker();
         RoutePutClient.this.keepAliveThread = null;
     }
@@ -423,6 +431,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
     public void handleWebSocketEvent(RoutePutMessage j)
     {
         this.lastServerContactAt = System.currentTimeMillis();
+        this.resolvePendingRequest(j);
         if (j.isType(RoutePutMessage.TYPE_CONNECTION_ID)) {
             this.connectionId = j.getRoutePutMeta().optString("connectionId", null);
             //System.err.println("Server Handed connectionId: " + this.connectionId);
@@ -652,12 +661,27 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
-    public void subscribe(RoutePutChannel channel)
+    // Block until the server confirms the subscribe, rejects it (bad password), or the
+    // subscribeTimeoutMs elapses. Returns true only when the server acknowledged the join.
+    public boolean subscribe(RoutePutChannel channel)
     {
-        this.subscribe(channel, null);
+        return this.subscribe(channel, null);
     }
 
-    public void subscribe(RoutePutChannel channel, String password)
+    public boolean subscribe(RoutePutChannel channel, String password)
+    {
+        try {
+            this.subscribeAsync(channel, password).get(this.subscribeTimeoutMs + 1000l, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Fire the subscribe request without blocking; the returned future completes with the
+    // channel on success or exceptionally on rejection/timeout/disconnect. Used by the
+    // reconnect replay (which must not block the websocket thread) and by subscribe() above.
+    public CompletableFuture<RoutePutChannel> subscribeAsync(RoutePutChannel channel, String password)
     {
         if (password != null && !password.isEmpty())
         {
@@ -665,24 +689,98 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
         this.subscribedChannels.add(channel.getName());
         RoutePutMessage subscribeMessage = new RoutePutMessage();
-        subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+        subscribeMessage.setRequest("subscribe");
         subscribeMessage.setChannel(channel);
-        subscribeMessage.setMetaField("connected",true);
         subscribeMessage.setMetaField("properties", this.getProperties());
         String pw = this.channelPasswords.get(channel.getName());
         if (pw != null) subscribeMessage.setMetaField("password", pw);
+        String msgId = subscribeMessage.getMessageId();
+        CompletableFuture<RoutePutChannel> future = new CompletableFuture<RoutePutChannel>();
+        this.pendingSubscribes.put(msgId, future);
+        if (this.session == null)
+        {
+            this.pendingSubscribes.remove(msgId, future);
+            future.completeExceptionally(new IOException("not connected"));
+            return future;
+        }
+        future.orTimeout(this.subscribeTimeoutMs, TimeUnit.MILLISECONDS)
+              .whenComplete((ch, ex) -> this.pendingSubscribes.remove(msgId, future));
         this.transmit(subscribeMessage);
+        return future;
     }
 
-    public void unsubscribe(RoutePutChannel channel)
+    // Complete a blocking subscribe()/unsubscribe() when the server's correlated response
+    // (or authRequired error for a subscribe) arrives; unrelated messages are ignored.
+    private void resolvePendingRequest(RoutePutMessage j)
+    {
+        String ref = j.getRoutePutMeta().optString("ref", null);
+        if (ref == null)
+            return;
+        if (j.isType(RoutePutMessage.TYPE_RESPONSE) && "subscribe".equals(j.getResponse()))
+        {
+            CompletableFuture<RoutePutChannel> f = this.pendingSubscribes.remove(ref);
+            if (f != null) f.complete(j.getRoutePutChannel());
+        }
+        else if (j.isType(RoutePutMessage.TYPE_RESPONSE) && "unsubscribe".equals(j.getResponse()))
+        {
+            CompletableFuture<RoutePutChannel> f = this.pendingUnsubscribes.remove(ref);
+            if (f != null) f.complete(j.getRoutePutChannel());
+        }
+        else if (j.isType(RoutePutMessage.TYPE_LOG_ERROR) && j.getRoutePutMeta().optBoolean("authRequired", false))
+        {
+            CompletableFuture<RoutePutChannel> f = this.pendingSubscribes.remove(ref);
+            if (f != null) f.completeExceptionally(new IOException(j.optString("text", "subscribe rejected")));
+        }
+    }
+
+    // Fail any in-flight subscribe/unsubscribe so a blocking caller unblocks immediately on a
+    // drop instead of waiting out the full subscribeTimeoutMs.
+    private void failPendingRequests(Throwable cause)
+    {
+        for (String key : new java.util.ArrayList<String>(this.pendingSubscribes.keySet()))
+        {
+            CompletableFuture<RoutePutChannel> f = this.pendingSubscribes.remove(key);
+            if (f != null) f.completeExceptionally(cause);
+        }
+        for (String key : new java.util.ArrayList<String>(this.pendingUnsubscribes.keySet()))
+        {
+            CompletableFuture<RoutePutChannel> f = this.pendingUnsubscribes.remove(key);
+            if (f != null) f.completeExceptionally(cause);
+        }
+    }
+
+    // Block until the server confirms the unsubscribe or the subscribeTimeoutMs elapses.
+    // Returns true only when the server acknowledged the leave.
+    public boolean unsubscribe(RoutePutChannel channel)
+    {
+        try {
+            this.unsubscribeAsync(channel).get(this.subscribeTimeoutMs + 1000l, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public CompletableFuture<RoutePutChannel> unsubscribeAsync(RoutePutChannel channel)
     {
         this.subscribedChannels.remove(channel.getName());
-        RoutePutMessage subscribeMessage = new RoutePutMessage();
-        subscribeMessage.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
-        subscribeMessage.setChannel(channel);
-        subscribeMessage.setMetaField("connected", false);
-        subscribeMessage.setMetaField("properties", this.getProperties());
-        this.transmit(subscribeMessage);
+        RoutePutMessage unsubscribeMessage = new RoutePutMessage();
+        unsubscribeMessage.setRequest("unsubscribe");
+        unsubscribeMessage.setChannel(channel);
+        unsubscribeMessage.setMetaField("properties", this.getProperties());
+        String msgId = unsubscribeMessage.getMessageId();
+        CompletableFuture<RoutePutChannel> future = new CompletableFuture<RoutePutChannel>();
+        this.pendingUnsubscribes.put(msgId, future);
+        if (this.session == null)
+        {
+            this.pendingUnsubscribes.remove(msgId, future);
+            future.completeExceptionally(new IOException("not connected"));
+            return future;
+        }
+        future.orTimeout(this.subscribeTimeoutMs, TimeUnit.MILLISECONDS)
+              .whenComplete((ch, ex) -> this.pendingUnsubscribes.remove(msgId, future));
+        this.transmit(unsubscribeMessage);
+        return future;
     }
 
     // will request the blob from the given channel.
@@ -786,7 +884,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 {
                     if (!channelName.equals(defaultChannelName))
                     {
-                        RoutePutClient.this.subscribe(RoutePutChannel.getChannel(channelName));
+                        RoutePutClient.this.subscribeAsync(RoutePutChannel.getChannel(channelName), null);
                     }
                 }
             } else {
@@ -801,6 +899,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             RoutePutClient.this.session = null;
             // In-flight blob transfers can't resume across a reconnect; fail them now.
             BLOBManager.failPendingTransfersForSession(RoutePutClient.this, new java.io.IOException("connection closed"));
+            RoutePutClient.this.failPendingRequests(new java.io.IOException("connection closed"));
             if (RoutePutClient.this.stayConnected)
             {
                 System.err.println("Connection Closed - Auto Reconnect");
@@ -817,6 +916,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
             e.printStackTrace(System.err);
             RoutePutClient.this.session = null;
             BLOBManager.failPendingTransfersForSession(RoutePutClient.this, e);
+            RoutePutClient.this.failPendingRequests(e);
             if (RoutePutClient.this.stayConnected) {
                 System.err.println("Auto Reconnect");
                 RoutePutClient.this.wakeKeepAlive();

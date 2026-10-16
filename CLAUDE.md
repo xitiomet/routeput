@@ -111,10 +111,19 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
 - Java `RoutePutClient`: `new RoutePutClient(chan, uri, password)`,
     `client.setChannelPassword(name, pw)`, or `client.subscribe(chan, pw)`. The
     password is attached to the outgoing `connectionId` handshake and to any
-    `TYPE_CONNECTION_STATUS` subscribe message.
-- The `TYPE_CONNECTION_STATUS`-based subscribe path (used by `RoutePutClient`) is
-    also password-gated in `RoutePutChannel.onMessage`; don't add an alternate join
-    path without repeating the check.
+    `request:"subscribe"` message.
+- `RoutePutClient.subscribe(chan[, pw])` **blocks** until the server's correlated
+    `response:"subscribe"` (success) or `authRequired` error (failure) arrives, or it
+    times out (`subscribeTimeoutMs`, default 15s) / the link drops; it returns `true`
+    only on success. It sends a `type:request, request:"subscribe"` (not the old
+    `TYPE_CONNECTION_STATUS` join) so the ack can be correlated by `msgId`. Use
+    `subscribeAsync(chan, pw)` for a non-blocking `CompletableFuture`; the reconnect
+    replay uses it so it never blocks the websocket thread. In-flight subscribes are
+    failed on disconnect so a blocking caller unblocks promptly.
+- The `TYPE_CONNECTION_STATUS`-based subscribe path (still used by the JS/Python
+    clients) and the `request:"subscribe"` path (used by `RoutePutClient`) are both
+    password-gated (`RoutePutChannel.onMessage` and `RoutePutServerWebsocket.handleRequest`
+    respectively); don't add an alternate join path without repeating the check.
 
 ## Blob transmission model
 
