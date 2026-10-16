@@ -120,6 +120,12 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     `subscribeAsync(chan, pw)` for a non-blocking `CompletableFuture`; the reconnect
     replay uses it so it never blocks the websocket thread. In-flight subscribes are
     failed on disconnect so a blocking caller unblocks promptly.
+- `RoutePutClient.unsubscribe(chan)` mirrors `subscribe`: it sends a
+    `type:request, request:"unsubscribe"` and **blocks** until the server's correlated
+    `response:"unsubscribe"` arrives, timing out (`subscribeTimeoutMs`) or failing on a
+    link drop; it returns `true` only on ack. `unsubscribeAsync(chan)` is the
+    non-blocking `CompletableFuture` variant. Both subscribe and unsubscribe futures
+    share `resolvePendingRequest`/`failPendingRequests`.
 - The `TYPE_CONNECTION_STATUS`-based subscribe path (still used by the JS/Python
     clients) and the `request:"subscribe"` path (used by `RoutePutClient`) are both
     password-gated (`RoutePutChannel.onMessage` and `RoutePutServerWebsocket.handleRequest`
