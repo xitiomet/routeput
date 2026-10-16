@@ -478,13 +478,13 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 BLOBManager.handleBlobData(this, j);
             }
             String sourceId = j.getSourceId();
-            if (sourceId != null && RoutePutClient.this.listeners.size() == 0) {
+            if (sourceId != null) 
+            {
                 RoutePutRemoteSession.handleRoutedMessage(this, j);
-            } else {
-                RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
-                    r.onMessage(this, j);
-                });
-            }
+            } 
+            RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
+                r.onMessage(this, j);
+            });
         }
     }
 
