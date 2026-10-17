@@ -1,2 +1,2 @@
 #!/bin/bash
-mvn compile exec:java -Dexec.mainClass="org.openstatic.routeput.RoutePutMain" -Dexec.args="-p 6144"
+mvn clean compile exec:java -Dexec.mainClass="org.openstatic.routeput.RoutePutMain" -Dexec.args="-p 6144"
