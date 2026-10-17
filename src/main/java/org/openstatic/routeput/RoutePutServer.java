@@ -30,7 +30,10 @@ import javax.servlet.FilterConfig;
 
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.AbstractConnector;
 import org.eclipse.jetty.io.ConnectionStatistics;
+import org.eclipse.jetty.io.Connection;
+import org.eclipse.jetty.io.EndPoint;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 
 public class RoutePutServer implements Runnable
@@ -51,6 +54,8 @@ public class RoutePutServer implements Runnable
     private ConnectionStatistics connectionStats;
     private long lastRxBytes;
     private long lastTxBytes;
+    private long totalRxBytes;
+    private long totalTxBytes;
     private long rxBytesPerSecond;
     private long txBytesPerSecond;
 
@@ -265,28 +270,45 @@ public class RoutePutServer implements Runnable
     // Convert the running byte totals into a per-second rate once each tick.
     private void sampleNetworkStats()
     {
+        long rx = 0;
+        long tx = 0;
+        // ConnectionStatistics only tallies a connection when it closes, so add the
+        // bytes of every still-open connection (long-lived websockets) for a live total.
         if (this.connectionStats != null)
         {
-            long rx = this.connectionStats.getReceivedBytes();
-            long tx = this.connectionStats.getSentBytes();
-            this.rxBytesPerSecond = Math.max(0, rx - this.lastRxBytes);
-            this.txBytesPerSecond = Math.max(0, tx - this.lastTxBytes);
-            this.lastRxBytes = rx;
-            this.lastTxBytes = tx;
+            rx = this.connectionStats.getReceivedBytes();
+            tx = this.connectionStats.getSentBytes();
         }
+        for (Connector c : httpServer.getConnectors())
+        {
+            if (c instanceof AbstractConnector)
+            {
+                for (EndPoint ep : ((AbstractConnector) c).getConnectedEndPoints())
+                {
+                    Connection conn = ep.getConnection();
+                    if (conn != null)
+                    {
+                        long bi = conn.getBytesIn();
+                        long bo = conn.getBytesOut();
+                        if (bi > 0) rx += bi;
+                        if (bo > 0) tx += bo;
+                    }
+                }
+            }
+        }
+        this.rxBytesPerSecond = Math.max(0, rx - this.lastRxBytes);
+        this.txBytesPerSecond = Math.max(0, tx - this.lastTxBytes);
+        this.lastRxBytes = rx;
+        this.lastTxBytes = tx;
+        this.totalRxBytes = rx;
+        this.totalTxBytes = tx;
     }
 
     public JSONObject networkStats()
     {
         JSONObject jo = new JSONObject();
-        if (this.connectionStats != null)
-        {
-            jo.put("bytesIn", this.connectionStats.getReceivedBytes());
-            jo.put("bytesOut", this.connectionStats.getSentBytes());
-        } else {
-            jo.put("bytesIn", 0);
-            jo.put("bytesOut", 0);
-        }
+        jo.put("bytesIn", this.totalRxBytes);
+        jo.put("bytesOut", this.totalTxBytes);
         jo.put("rxRate", this.rxBytesPerSecond);
         jo.put("txRate", this.txBytesPerSecond);
         return jo;
