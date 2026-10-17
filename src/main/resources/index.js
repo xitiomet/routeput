@@ -24,6 +24,28 @@ function formatRate(bytesPerSecond)
     return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i] + '/s';
 }
 
+function formatUptime(ms)
+{
+    var seconds = Math.floor(ms / 1000);
+    var units = [
+        ['year', 365 * 24 * 3600],
+        ['month', 30 * 24 * 3600],
+        ['day', 24 * 3600],
+        ['hour', 3600],
+        ['minute', 60],
+        ['second', 1]
+    ];
+    var parts = [];
+    for (var i = 0; i < units.length; i++)
+    {
+        var value = Math.floor(seconds / units[i][1]);
+        seconds -= value * units[i][1];
+        if (value > 0)
+            parts.push(value + ' ' + units[i][0] + (value === 1 ? '' : 's'));
+    }
+    return parts.length ? parts.join(', ') : '0 seconds';
+}
+
 
 function capitalize(s)
 {
@@ -115,6 +137,8 @@ routeput.onmessage = function (member, messageType, jsonObject) {
         document.getElementById('netTxRate').textContent = formatRate(net.txRate);
         document.getElementById('netBytesIn').textContent = "(" + formatBytes(net.bytesIn) + ")";
         document.getElementById('netBytesOut').textContent = "(" + formatBytes(net.bytesOut) + ")";
+        if (net.hasOwnProperty('uptime'))
+            document.getElementById('serverUptime').textContent = formatUptime(net.uptime);
     }
     if (messageType == "info")
     {

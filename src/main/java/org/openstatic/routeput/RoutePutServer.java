@@ -311,6 +311,7 @@ public class RoutePutServer implements Runnable
         jo.put("bytesOut", this.totalTxBytes);
         jo.put("rxRate", this.rxBytesPerSecond);
         jo.put("txRate", this.txBytesPerSecond);
+        jo.put("uptime", RoutePutMain.getUptime());
         return jo;
     }
     
