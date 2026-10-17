@@ -15,6 +15,15 @@ function formatBytes(bytes)
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+function formatRate(bytesPerSecond)
+{
+    if (!bytesPerSecond || bytesPerSecond <= 0) return '0 B/s';
+    var k = 1024;
+    var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+    return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i] + '/s';
+}
+
 
 function capitalize(s)
 {
@@ -99,6 +108,14 @@ routeput.onblob = function(name, blob) {
 
 routeput.onmessage = function (member, messageType, jsonObject) {
     var routePutMeta = jsonObject.__routeput;
+    if (jsonObject.hasOwnProperty('networkStats'))
+    {
+        var net = jsonObject.networkStats;
+        document.getElementById('netRxRate').textContent = formatRate(net.rxRate);
+        document.getElementById('netTxRate').textContent = formatRate(net.txRate);
+        document.getElementById('netBytesIn').textContent = "(" + formatBytes(net.bytesIn) + ")";
+        document.getElementById('netBytesOut').textContent = "(" + formatBytes(net.bytesOut) + ")";
+    }
     if (messageType == "info")
     {
         logIt(jsonObject.text);

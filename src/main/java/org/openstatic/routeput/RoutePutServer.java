@@ -29,6 +29,8 @@ import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
 
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.io.ConnectionStatistics;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 
 public class RoutePutServer implements Runnable
@@ -45,6 +47,12 @@ public class RoutePutServer implements Runnable
     protected ApiServlet apiServlet;
     // Timestamp-based so the sync interval can exceed the 60s tick cycle.
     private long lastMemberSyncAt;
+    // Raw byte counters across every Jetty connector (HTTP + websocket).
+    private ConnectionStatistics connectionStats;
+    private long lastRxBytes;
+    private long lastTxBytes;
+    private long rxBytesPerSecond;
+    private long txBytesPerSecond;
 
     public static class HeaderAddingFilter implements Filter
     {
@@ -133,6 +141,12 @@ public class RoutePutServer implements Runnable
         });
         this.sessions = new LinkedHashMap<String, RoutePutServerWebsocket>();
         httpServer = new Server(settings.optInt("port", 6144));
+        // Measure total bytes in/out at the connection level so all traffic is counted.
+        this.connectionStats = new ConnectionStatistics();
+        for (Connector c : httpServer.getConnectors())
+        {
+            c.addBean(this.connectionStats);
+        }
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
         context.addFilter(HeaderAddingFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
         context.setContextPath("/");
@@ -173,10 +187,12 @@ public class RoutePutServer implements Runnable
     
     public void everySecond(int tick) throws Exception
     {
+        this.sampleNetworkStats();
         if (this.routeputDebug != null)
         {
             RoutePutMessage jo = new RoutePutMessage();
             jo.put("channelStats", this.channelStats());
+            jo.put("networkStats", this.networkStats());
             jo.setChannel(this.routeputDebug);
             jo.setLogged(false);
             this.routeputDebug.onMessage(null, jo);
@@ -244,6 +260,36 @@ public class RoutePutServer implements Runnable
             return this.sessions.get(id);
         }
         return null;
+    }
+
+    // Convert the running byte totals into a per-second rate once each tick.
+    private void sampleNetworkStats()
+    {
+        if (this.connectionStats != null)
+        {
+            long rx = this.connectionStats.getReceivedBytes();
+            long tx = this.connectionStats.getSentBytes();
+            this.rxBytesPerSecond = Math.max(0, rx - this.lastRxBytes);
+            this.txBytesPerSecond = Math.max(0, tx - this.lastTxBytes);
+            this.lastRxBytes = rx;
+            this.lastTxBytes = tx;
+        }
+    }
+
+    public JSONObject networkStats()
+    {
+        JSONObject jo = new JSONObject();
+        if (this.connectionStats != null)
+        {
+            jo.put("bytesIn", this.connectionStats.getReceivedBytes());
+            jo.put("bytesOut", this.connectionStats.getSentBytes());
+        } else {
+            jo.put("bytesIn", 0);
+            jo.put("bytesOut", 0);
+        }
+        jo.put("rxRate", this.rxBytesPerSecond);
+        jo.put("txRate", this.txBytesPerSecond);
+        return jo;
     }
     
     public JSONObject channelStats()
