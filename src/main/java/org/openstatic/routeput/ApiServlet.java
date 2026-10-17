@@ -612,6 +612,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                 response.put("version", RoutePutMain.VERSION);
                 response.put("uptime", RoutePutMain.getUptime());
                 response.put("hostname", RoutePutChannel.getHostname());
+                if (RoutePutServer.instance != null)
+                    response.put("networkStats", RoutePutServer.instance.networkStats());
             }
         } catch (Exception x) {
             RoutePutServer.logError("doGET API", x);
