@@ -118,7 +118,7 @@ public class RoutePutMessage extends JSONObject
         }
     }
 
-    public  boolean hasMetaField(String fieldName)
+    public boolean hasMetaField(String fieldName)
     {
         return this.getRoutePutMeta().has(fieldName);
     }

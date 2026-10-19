@@ -312,7 +312,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                     }
                     if (token.equals("blind")) {
                         blind = true;
-                        post.getRoutePutMeta().put("blind", true);
+                        post.setMetaField("blind", true);
                     }
                 }
                 post.setSourceIdIfNull(sourceId);
@@ -560,7 +560,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                 }
                                 msg.setSourceIdIfNull(this.getConnectionId());
                                 if (blind.get())
-                                    msg.getRoutePutMeta().put("blind", true);
+                                    msg.setMetaField("blind", true);
                                 handleAPIMessage(finalRemoteIP, msg);
                             } else if ("receive".equals(token)) {
                                 if (st.hasMoreTokens()) 
@@ -732,15 +732,19 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         {
             return;
         } else {
+            boolean handled = handleReceiveUrl(remoteSession, jo);
+            if (handled)
+                return;
             JSONObject remoteProps = remoteSession.getProperties();
-            if (jo.getRoutePutMeta().optBoolean("blind", false))
-                remoteProps.put("_blind", true);
+            if (jo.optMetaField("blind", false))
+            {
+                if (!remoteProps.has("_receiveManaged") && !remoteProps.has("_receiveUrl"))
+                    remoteProps.put("_blind", true);
+            }
             if (remoteProps.optBoolean("_blind", false))
                 return;
         }
-        boolean handled = handleReceiveUrl(remoteSession, jo);
-        if (handled)
-            return;
+        
         RoutePutChannel chan = jo.getRoutePutChannel();
         if (chan.hasMember(targetId))
         {
