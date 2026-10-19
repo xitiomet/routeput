@@ -312,6 +312,7 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                     }
                     if (token.equals("blind")) {
                         blind = true;
+                        post.getRoutePutMeta().put("blind", true);
                     }
                 }
                 post.setSourceIdIfNull(sourceId);
@@ -553,9 +554,13 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                         }
                                     }
                                     if (!blind.get())
+                                    {
                                         response.put("messages", new JSONArray(this.pendingOutboundFor(srcId, channel)));
+                                    }
                                 }
                                 msg.setSourceIdIfNull(this.getConnectionId());
+                                if (blind.get())
+                                    msg.getRoutePutMeta().put("blind", true);
                                 handleAPIMessage(finalRemoteIP, msg);
                             } else if ("receive".equals(token)) {
                                 if (st.hasMoreTokens()) 
@@ -573,6 +578,8 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
                                     if (remoteSession != null)
                                     {
                                         remoteSession.getProperties().put("_receiveManaged", true);
+                                        if (remoteSession.getProperties().has("_blind"))
+                                            remoteSession.getProperties().remove("_blind");
                                     }
                                 }
                             } else if ("blob".equals(token)) {
@@ -721,6 +728,16 @@ public class ApiServlet extends HttpServlet implements RoutePutSession
         if (targetId.equals(this.getConnectionId()))
             return;
         RoutePutRemoteSession remoteSession = RoutePutRemoteSession.findRemoteSessionFor(this, targetId);
+        if (remoteSession == null)
+        {
+            return;
+        } else {
+            JSONObject remoteProps = remoteSession.getProperties();
+            if (jo.getRoutePutMeta().optBoolean("blind", false))
+                remoteProps.put("_blind", true);
+            if (remoteProps.optBoolean("_blind", false))
+                return;
+        }
         boolean handled = handleReceiveUrl(remoteSession, jo);
         if (handled)
             return;
