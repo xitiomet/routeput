@@ -109,7 +109,8 @@ public class RoutePutRemoteSession implements RoutePutSession
     {
         init();
         String sourceId = jo.getSourceId();
-        if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) {
+        if (jo.isType(RoutePutMessage.TYPE_CONNECTION_STATUS)) 
+        {
             boolean c = jo.getRoutePutMeta().optBoolean("connected", false);
             if (c) {
                 // If this is a message notifying us that a downstream client connected
@@ -140,7 +141,8 @@ public class RoutePutRemoteSession implements RoutePutSession
         } else {
             // looks like this is a normal message for a stored remote connection
             RoutePutRemoteSession remoteSession = null;
-            if (RoutePutRemoteSession.sessions.containsKey(sourceId)) {
+            if (RoutePutRemoteSession.sessions.containsKey(sourceId)) 
+            {
                 remoteSession = RoutePutRemoteSession.sessions.get(sourceId);
                 remoteSession.handleMessage(jo);
                 return remoteSession;

@@ -479,20 +479,32 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setType("pong");
+            resp.setTarget(j.getSourceId());
             resp.setMetaField("pingTimestamp", j.getRoutePutMeta().optLong("timestamp", 0));
             resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else {
-            if (j.isType(RoutePutMessage.TYPE_BLOB)) {
+            if (j.isType(RoutePutMessage.TYPE_BLOB)) 
+            {
                 BLOBManager.handleBlobData(this, j);
             }
             String sourceId = j.getSourceId();
             if (sourceId != null) 
             {
-                RoutePutRemoteSession.handleRoutedMessage(this, j);
+                try
+                {
+                    RoutePutRemoteSession.handleRoutedMessage(this, j);
+                } catch (Exception e) {
+                    RoutePutClient.logWarning("Exception handling routed message: " + e.getMessage());
+                }
             } 
             RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
-                r.onMessage(this, j);
+                try
+                {
+                    r.onMessage(this, j);
+                } catch (Exception e) {
+                    RoutePutClient.logWarning("Exception in message listener: " + e.getMessage());
+                }
             });
         }
     }

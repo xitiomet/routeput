@@ -909,7 +909,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             });
         } else {
             this.members.values().parallelStream()
-                        .filter((s) -> s.isRootConnection())
+                        .filter((s) -> s.isRootConnection()) // Dont send to Virtual remote connections
                         .filter((s) -> !s.containsConnectionId(jo.getSourceId())) // Never Send the event to the creator or its relay
                         .filter((s) -> !jo.containsHop(s.getConnectionId()))
                         .forEach((s) ->
