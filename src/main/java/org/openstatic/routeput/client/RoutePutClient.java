@@ -10,6 +10,7 @@ import java.io.File;
 import org.openstatic.routeput.BLOBManager;
 import org.openstatic.routeput.BLOBFile;
 import org.openstatic.routeput.RoutePutChannel;
+import org.openstatic.routeput.RoutePutException;
 import org.openstatic.routeput.RoutePutMessage;
 import org.openstatic.routeput.RoutePutSession;
 import org.openstatic.routeput.RoutePutRemoteSession;
@@ -479,7 +480,7 @@ public class RoutePutClient implements RoutePutSession, Runnable
         } else if (j.isType(RoutePutMessage.TYPE_PING)) {
             RoutePutMessage resp = new RoutePutMessage();
             resp.setType("pong");
-            resp.setTarget(j.getSourceId());
+            resp.setTargetId(j.getSourceId());
             resp.setMetaField("pingTimestamp", j.getRoutePutMeta().optLong("timestamp", 0));
             resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
@@ -495,7 +496,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 {
                     RoutePutRemoteSession.handleRoutedMessage(this, j);
                 } catch (Exception e) {
-                    RoutePutClient.logWarning("Exception handling routed message: " + e.getMessage());
+                    RoutePutException rp3 = new RoutePutException("Exception handling routed message " + j.toString(), e);
+                    this.transmit(rp3.toRoutePutMessage());
                 }
             } 
             RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
@@ -503,7 +505,8 @@ public class RoutePutClient implements RoutePutSession, Runnable
                 {
                     r.onMessage(this, j);
                 } catch (Exception e) {
-                    RoutePutClient.logWarning("Exception in message listener: " + e.getMessage());
+                    RoutePutException rp4 = new RoutePutException("Exception in message listener " + r.toString(), e);
+                    this.transmit(rp4.toRoutePutMessage());
                 }
             });
         }

@@ -645,8 +645,9 @@ public class BLOBManager
         {
             if (blobFile.exists())
             {
-                // Explicit data request: push expiration out if the blob is nearly expired.
-                if (blobFile.timeTillExpiration() < 86400000)
+                long blobManagerTimeoutMillis = BLOBManager.getBlobStorageTimeoutMillis();
+                // If the BLOB is nearing expiration (less than half of the blobManagerTimeoutMillis left), update its last modified time to extend its validity.
+                if (blobFile.timeTillExpiration() < (blobManagerTimeoutMillis / 2))
                 {
                     blobFile.touch();
                 }
