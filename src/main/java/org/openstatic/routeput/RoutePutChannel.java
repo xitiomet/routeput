@@ -2,10 +2,11 @@ package org.openstatic.routeput;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.IOException;
 import java.net.InetAddress;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -29,12 +30,15 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private static Thread channelTracker = null;
     private static File channelRoot;
+    private static LocalDate lastLogCleanupDate;
+    // Channel folders untouched this long are destroyed during cleanup. 0 disables.
+    private static long channelStorageTimeoutMillis = 30L * 24L * 60L * 60L * 1000L;
     private static String hostname;
     private static String masterConnectionId;
 
     private PropertyChangeSupport propertyChangeSupport;
     private String name;
-    private BufferedWriter logWriter;
+    private volatile ChannelLog logWriter;
     private JSONObject properties;
     private boolean unsavedProperties;
     protected LinkedHashMap<String, RoutePutSession> members;
@@ -143,13 +147,13 @@ public class RoutePutChannel implements RoutePutMessageListener
         {
             try
             {
-                File logFile = this.getLogFile();
-                if (logFile != null)
+                File channelFolder = this.getChannelFolder();
+                if (channelFolder != null)
                 {
-                    this.logWriter = new BufferedWriter(new FileWriter(logFile, true));
+                    this.logWriter = new ChannelLog(channelFolder);
                 }
-            } catch (Exception e) {
-                RoutePutServer.logError(e);
+            } catch (IOException e) {
+                System.err.println("Channel log open failed on \"" + this.getName() + "\": " + e);
             }
         }
     }
@@ -314,19 +318,6 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
-    /* Returns a java.io.File object representing the channel's property storage file */
-    private File getLogFile()
-    {
-        File channelFolder = this.getChannelFolder();
-        if (channelFolder != null)
-        {
-            File channelPropertiesFile = new File(channelFolder, "channel.log");
-            return channelPropertiesFile;
-        } else {
-            return null;
-        }
-    }
-
     /* Returns a java.io.File object representing the channel's data storage folder */
     private File getChannelFolder()
     {
@@ -347,9 +338,37 @@ public class RoutePutChannel implements RoutePutMessageListener
         }
     }
 
+    public static void setChannelStorageTimeout(long seconds)
+    {
+        RoutePutChannel.channelStorageTimeoutMillis = seconds * 1000L;
+    }
+
     public static void setChannelRoot(File channelRoot)
     {
         RoutePutChannel.channelRoot = channelRoot;
+        RoutePutChannel.lastLogCleanupDate = null;
+        RoutePutChannel.cleanLogs();
+    }
+
+    private static synchronized void cleanLogs()
+    {
+        Clock clock = Clock.systemDefaultZone();
+        LocalDate today = LocalDate.now(clock);
+        if (RoutePutChannel.channelRoot != null && !today.equals(RoutePutChannel.lastLogCleanupDate))
+        {
+            // Never destroy a folder for a channel currently live in memory; its log
+            // writer is open and its state is authoritative over what's on disk.
+            Set<String> protectedChannels = RoutePutChannel.channels == null
+                ? new HashSet<String>()
+                : new HashSet<String>(RoutePutChannel.channels.keySet());
+            try
+            {
+                ChannelLog.cleanRoot(RoutePutChannel.channelRoot, clock, RoutePutChannel.channelStorageTimeoutMillis, protectedChannels);
+                RoutePutChannel.lastLogCleanupDate = today;
+            } catch (IOException e) {
+                System.err.println("Channel log cleanup failed: " + e);
+            }
+        }
     }
 
     /* Start the channel tracker's internal thread if it hasn't been started already */
@@ -417,6 +436,7 @@ public class RoutePutChannel implements RoutePutMessageListener
 
     private static void everySecond() throws Exception
     {
+        RoutePutChannel.cleanLogs();
         // Go through each channel and update its stats for the debug stream
         RoutePutChannel.channels.values().parallelStream().forEach((c) ->
         {
@@ -438,14 +458,15 @@ public class RoutePutChannel implements RoutePutMessageListener
                 }
             }
             c.pingAvg = (int) (pingTotal / pingCount);
+            ChannelLog logWriter = c.logWriter;
             try
             {
-                if (c.logWriter != null)
+                if (logWriter != null)
                 {
-                    c.logWriter.flush();
+                    logWriter.flush();
                 }
-            } catch (Exception e) {
-                RoutePutServer.logError(e);
+            } catch (IOException e) {
+                System.err.println("Channel log flush failed on \"" + c.getName() + "\": " + e);
             }
         });
         // Look for idle channels and put them to sleep
@@ -699,17 +720,23 @@ public class RoutePutChannel implements RoutePutMessageListener
         {
             if (j.canBeLogged() && !RoutePutMessage.TYPE_PULSE.equals(j.getType()))
             {
+                ChannelLog logWriter = this.logWriter;
                 try
                 {
-                    if (this.logWriter != null && this.properties.optBoolean("log", true))
+                    if (logWriter != null && this.properties.optBoolean("log", true))
                     {
-                        this.logWriter.write(j.toString() + "\n");
+                        logWriter.write(j.toString());
                     }
                 } catch (Exception e) {
                     // Never route back through RoutePutServer.logError from here: this handler
                     // is itself the log sink and would recurse until StackOverflowError.
                     System.err.println("Channel log write failed on \"" + this.getName() + "\": " + e);
-                    try { this.logWriter.close(); } catch (Exception ignore) {}
+                    try
+                    {
+                        if (logWriter != null) logWriter.close();
+                    } catch (IOException closeError) {
+                        System.err.println("Channel log close failed on \"" + this.getName() + "\": " + closeError);
+                    }
                     this.logWriter = null;
                 }
             }
@@ -1228,13 +1255,14 @@ public class RoutePutChannel implements RoutePutMessageListener
     {
         RoutePutServer.saveJSONObject(this.getPropertiesFile(), this.properties);
         RoutePutServer.logIt("Channel \"" + this.getName() + "\" moved to cold storage, because of idle");
-        if (this.logWriter != null)
+        ChannelLog logWriter = this.logWriter;
+        if (logWriter != null)
         {
             try
             {
-                this.logWriter.close();
-            } catch (Exception e) {
-                RoutePutServer.logError(e);
+                logWriter.close();
+            } catch (IOException e) {
+                System.err.println("Channel log close failed on \"" + this.getName() + "\": " + e);
             }
             this.logWriter = null;
         }

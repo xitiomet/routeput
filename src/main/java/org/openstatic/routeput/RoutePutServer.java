@@ -111,6 +111,7 @@ public class RoutePutServer implements Runnable
         this.channelRoot = new File(settings.optString("channelStorageRoot", "./channel/"));
 
         BLOBManager.init(this.settings);
+        RoutePutChannel.setChannelStorageTimeout(this.settings.optLong("channelStorageTimeout", 30L * 24L * 60L * 60L));
         RoutePutChannel.setChannelRoot(this.channelRoot);
 
         if (this.settings.has("hostname"))

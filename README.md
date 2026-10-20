@@ -25,6 +25,28 @@ Routeput got it's name from the idea of PUTting the ROUTE information directly i
 
 ## Usage
 
+### Channel logs
+
+Channel logging is enabled by default (set the channel's `log` property to `false`
+to disable message logging). Logs are written to
+`channel/<channelName>/channel.YYYY-MM-DD.log`, using the server's local timezone.
+The writer rolls over at midnight and appends to the same day's file after a restart.
+
+On startup and once per day, Routeput removes dated logs older than today plus the
+previous six calendar days, including logs belonging to inactive channels. Existing
+`channel.log` files are renamed to `channel.YYYY-MM-DD.legacy.log` using their
+last-modified date, without copying their contents, and follow the same retention
+rule. Existing archives are never overwritten; migration or cleanup failures are
+reported to standard error. Other files in channel folders are left untouched.
+Retention limits age, not disk usage: a busy channel can still generate a large
+log within a single day.
+
+Whole channel folders are destroyed when nothing inside them has been modified for
+`channelStorageTimeout` seconds (default `30 * 24 * 60 * 60` = 30 days; set to `0`
+to disable). A channel that is currently live in memory is never destroyed, and
+going idle or shutting down rewrites its `properties.json`, so the timeout is
+measured from a channel's last activity.
+
 What do routeput messaages look like? You decide! The server is designed to route JSON objects as messages. These messages can be any custom json object you need, the server just adds its own little routing field called "__routeput"
 
 Imagine the following simple object
