@@ -725,7 +725,7 @@ public class RoutePutChannel implements RoutePutMessageListener
                 {
                     if (logWriter != null && this.properties.optBoolean("log", true))
                     {
-                        logWriter.write(j.toString());
+                        logWriter.write(j.copyWithTimestampAdded().toString());
                     }
                 } catch (Exception e) {
                     // Never route back through RoutePutServer.logError from here: this handler
