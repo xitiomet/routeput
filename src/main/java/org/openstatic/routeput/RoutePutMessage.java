@@ -350,7 +350,8 @@ public class RoutePutMessage extends JSONObject
 
     public boolean canBeLogged()
     {
-        return this.getRoutePutMeta().optBoolean("log", true);
+        boolean logSwitch = this.getRoutePutMeta().optBoolean("log", true);
+        return logSwitch && !TYPE_BLOB.equals(this.getType()) && !TYPE_PULSE.equals(this.getType());
     }
 
     public void setRequest(String requestType)
