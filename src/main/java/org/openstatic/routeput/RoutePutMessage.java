@@ -368,13 +368,10 @@ public class RoutePutMessage extends JSONObject
         }
     }
 
-    public JSONObject copyWithTimestampAdded()
+    public RoutePutMessage copyWithTimestampAdded()
     {
-        JSONObject copy = new JSONObject(this.toString());
-        if (!copy.has("timestamp"))
-        {
-            copy.put("timestamp", System.currentTimeMillis());
-        }
+        RoutePutMessage copy = new RoutePutMessage(new JSONObject(this.toString()));
+        copy.addTimestampIfAbsent();
         return copy;
     }
 
