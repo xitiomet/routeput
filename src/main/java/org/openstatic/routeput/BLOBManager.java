@@ -119,7 +119,9 @@ public class BLOBManager
         if (settings != null && (!isInitialized() || provisional))
         {
             BLOBManager.settings = settings;
-            BLOBManager.blobRoot = new File(BLOBManager.settings.optString("blobStorageRoot", "./blob/"));
+            String sharedRoot = System.getenv("ROUTEPUT_BLOBROOT");
+            String defaultRoot = (sharedRoot != null && !sharedRoot.isBlank()) ? sharedRoot : "./blob/";
+            BLOBManager.blobRoot = new File(BLOBManager.settings.optString("blobStorageRoot", defaultRoot));
             if (!BLOBManager.blobRoot.exists())
             {
                 BLOBManager.blobRoot.mkdir();

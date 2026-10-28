@@ -34,6 +34,9 @@ An explicit `BLOBManager.init(settings)` still takes precedence over either clie
 default. An unusable shared path causes initialization to fail, rather than silently
 switching to temporary storage.
 
+The server uses an explicit `blobStorageRoot` setting first, then a nonblank
+`ROUTEPUT_BLOBROOT` environment variable, and finally `./blob/`.
+
 Point `ROUTEPUT_BLOBROOT` at the local server's `blobStorageRoot` to let
 `client.getBlob(...)` return files already stored there without copying or fetching
 them over the connection. This does not change the blob protocol or browser clients.
