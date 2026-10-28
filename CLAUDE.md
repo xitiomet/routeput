@@ -165,6 +165,12 @@ and HTTP, and `org.json` for JSON. There are companion client libraries in Java
     `getBlob`/`requestBlob` future from hanging when a stream stalls or the socket drops.
 - JS `blobCache` (`context:name → {md5, size, blob}`) satisfies `requestBlob(...)`
     from the local cache without a server round-trip.
+- A member can opt out of blobs entirely by setting the `_noBlobs` session property to
+    `true`. `RoutePutChannel.broadcast` skips any member with `_noBlobs` for `type:blob`
+    messages, so the server never relays channel blob chunks to it. Convenience setters:
+    `RoutePutClient.setNoBlobs(boolean)` (Java) and `conn.setNoBlobs(bool)` (`routeput.js`),
+    each a thin wrapper over `setProperty("_noBlobs", ...)`; the filter honors the property
+    regardless of how it was set, so any client that sets it opts out.
 
 ## Coding conventions
 

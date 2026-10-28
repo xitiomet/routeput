@@ -1019,6 +1019,16 @@ class RouteputConnection
             this.transmit(mm);
         }
     }
+
+    setNoBlobs(noBlobs)
+    {
+        this.setProperty("_noBlobs", noBlobs ? true : false);
+    }
+
+    isNoBlobs()
+    {
+        return this.properties["_noBlobs"] === true;
+    }
     
     makeRequest(routeputMessage)
     {

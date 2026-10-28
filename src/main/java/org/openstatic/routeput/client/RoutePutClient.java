@@ -1031,6 +1031,17 @@ public class RoutePutClient implements RoutePutSession, Runnable
         }
     }
 
+    // When set, the server stops relaying channel blob chunks to this client.
+    public void setNoBlobs(boolean noBlobs)
+    {
+        this.setProperty("_noBlobs", noBlobs);
+    }
+
+    public boolean isNoBlobs()
+    {
+        return this.properties.optBoolean("_noBlobs", false);
+    }
+
     @Override
     public JSONObject getProperties()
     {

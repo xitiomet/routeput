@@ -922,8 +922,10 @@ public class RoutePutChannel implements RoutePutMessageListener
         {
             JSONObject where = jo.getRoutePutMeta().optJSONObject("where");
             jo.removeMetaField("where");
+            boolean isBlob = jo.isType(RoutePutMessage.TYPE_BLOB);
             this.members.values().parallelStream()
                         .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
+                        .filter((s) -> !isBlob || !s.getProperties().optBoolean("_noBlobs", false)) // honor a member opting out of blobs
                         .filter((s) -> !jo.containsHop(s.getConnectionId())) // Never send the event to a member that has already seen it
                         .forEach((s) ->
             {
@@ -936,8 +938,10 @@ public class RoutePutChannel implements RoutePutMessageListener
                 }
             });
         } else {
+            boolean isBlob = jo.isType(RoutePutMessage.TYPE_BLOB);
             this.members.values().parallelStream()
                         .filter((s) -> s.isRootConnection()) // Dont send to Virtual remote connections
+                        .filter((s) -> !isBlob || !s.getProperties().optBoolean("_noBlobs", false)) // honor a member opting out of blobs
                         .filter((s) -> !s.containsConnectionId(jo.getSourceId())) // Never Send the event to the creator or its relay
                         .filter((s) -> !jo.containsHop(s.getConnectionId()))
                         .forEach((s) ->
