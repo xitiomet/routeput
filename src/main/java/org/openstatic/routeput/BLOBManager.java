@@ -25,7 +25,7 @@ public class BLOBManager
     private static HashMap<String, PendingFetch> pendingFetches = new HashMap<String, PendingFetch>();
     private static File blobRoot;
     public static JSONObject settings = new JSONObject();
-    // True when the current init came from initClient() (temp dir); a later explicit
+    // True when the current init came from initClient(); a later explicit
     // init(settings) with non-null settings will replace it. Once a non-provisional
     // init has run, subsequent init() calls are ignored.
     private static boolean provisional = false;
@@ -108,8 +108,7 @@ public class BLOBManager
         return BLOBManager.blobRoot;
     }
 
-    // True once a caller has explicitly opted in to blob storage by calling
-    // init(settings) with a non-null settings object.
+    // True once either client or explicit storage initialization has run.
     public static boolean isInitialized()
     {
         return BLOBManager.blobRoot != null;
@@ -130,19 +129,7 @@ public class BLOBManager
             sweepStaleBlobs(BLOBManager.blobRoot, timeoutSecs);
             provisional = false;
         } else if (settings == null && !isInitialized()) {
-            try
-            {
-                java.nio.file.Path tempPath = java.nio.file.Files.createTempDirectory("routeput-blob-");
-                final File temp = tempPath.toFile();
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursive(temp)));
-                BLOBManager.blobRoot = temp;
-                BLOBManager.settings = new JSONObject();
-                BLOBManager.settings.put("blobStorageRoot", temp.getAbsolutePath());
-                BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
-                BLOBManager.provisional = true;
-            } catch (Exception e) {
-                RoutePutServer.logError(e);
-            }
+            initClient();
         }
         if (BLOBManager.blobStorage == null)
         {
@@ -160,27 +147,34 @@ public class BLOBManager
         return getBlobStorageTimeout() * 1000L;
     }
 
-    // Bring up BLOBManager for a standalone RoutePutClient with a JVM temp directory
-    // that is recursively deleted on shutdown. No-op when a previous init already ran;
-    // an explicit init(settings) after this replaces the provisional temp root.
+    // Only the temporary fallback is deleted on shutdown; shared storage is preserved.
+    // An explicit init(settings) can replace either provisional client root.
     public static void initClient()
     {
         if (isInitialized()) return;
         try
         {
-            java.nio.file.Path tempPath = java.nio.file.Files.createTempDirectory("routeput-blob-");
-            final File temp = tempPath.toFile();
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursive(temp)));
+            String sharedRoot = System.getenv("ROUTEPUT_BLOBROOT");
+            File root;
+            if (sharedRoot != null && !sharedRoot.isBlank())
+            {
+                root = Files.createDirectories(Paths.get(sharedRoot)).toFile();
+            } else {
+                final File temp = Files.createTempDirectory("routeput-blob-").toFile();
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursive(temp)));
+                root = temp;
+            }
             BLOBManager.settings = new JSONObject();
-            BLOBManager.settings.put("blobStorageRoot", temp.getAbsolutePath());
-            BLOBManager.blobRoot = temp;
+            BLOBManager.settings.put("blobStorageRoot", root.getAbsolutePath());
+            BLOBManager.blobRoot = root;
             BLOBManager.provisional = true;
             if (BLOBManager.blobStorage == null)
             {
                 BLOBManager.blobStorage = new HashMap<String, StringBuffer>();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             RoutePutServer.logError(e);
+            throw new IllegalStateException("Unable to initialize client blob storage", e);
         }
     }
 

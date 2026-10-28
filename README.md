@@ -25,6 +25,27 @@ Routeput got it's name from the idea of PUTting the ROUTE information directly i
 
 ## Usage
 
+### Shared Java client blob storage
+
+Java clients use the directory named by the `ROUTEPUT_BLOBROOT` environment variable
+when it is non-empty. Otherwise they use a private temporary directory that is
+deleted when the JVM exits. Shared storage is never deleted on client shutdown.
+An explicit `BLOBManager.init(settings)` still takes precedence over either client
+default. An unusable shared path causes initialization to fail, rather than silently
+switching to temporary storage.
+
+Point `ROUTEPUT_BLOBROOT` at the local server's `blobStorageRoot` to let
+`client.getBlob(...)` return files already stored there without copying or fetching
+them over the connection. This does not change the blob protocol or browser clients.
+
+Both Debian packages add `ROUTEPUT_BLOBROOT="/usr/share/routeput/blob"` to
+`/etc/environment` on installation unless a value is already configured. Log in
+again to inherit it; existing sessions and separately managed services need the
+variable exported explicitly. If the server uses a custom `blobStorageRoot`, update
+the variable to that same absolute path. Client users also need filesystem access
+(the package's `/usr/share/routeput` directory is restricted to the `routeput` user
+and group). Purging the package removes its default environment entry.
+
 ### Channel logs
 
 Channel logging is enabled by default (set the channel's `log` property to `false`
