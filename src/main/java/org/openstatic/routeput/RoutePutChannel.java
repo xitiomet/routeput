@@ -926,6 +926,7 @@ public class RoutePutChannel implements RoutePutMessageListener
             this.members.values().parallelStream()
                         .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
                         .filter((s) -> !isBlob || !s.getProperties().optBoolean("_noBlobs", false)) // honor a member opting out of blobs
+                        .filter((s) -> !jo.isFrom(s.getConnectionId()) && !s.containsConnectionId(jo.getSourceId()))
                         .filter((s) -> !jo.containsHop(s.getConnectionId())) // Never send the event to a member that has already seen it
                         .forEach((s) ->
             {

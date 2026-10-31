@@ -1,330 +1,737 @@
 # Routeput Message Routing
 
-This document explains how the Routeput Java server (`src/main/java/org/openstatic/routeput/`) decides where every inbound JSON message goes. Routing is driven by three fields inside the message envelope's `__routeput` meta block:
+Routeput delivers JSON messages between **members of a named channel**. A channel
+is a room or topic, a session is a participant, and a `connectionId` identifies
+that participant. Participants may be attached locally or reached through another
+Routeput server.
 
-| Field      | Purpose                                                              |
-| ---------- | -------------------------------------------------------------------- |
-| `channel`  | Logical room / topic the message belongs to.                         |
-| `srcId`    | `connectionId` of the originating session.                           |
-| `dstId`    | `connectionId` of a specific intended recipient. Absent ⇒ broadcast. |
+This guide describes the current Java implementation, with examples for people
+writing clients. It distinguishes ordinary application messages from protocol
+messages that the server handles specially.
 
+## Contents
 
-Everything below is grounded in:
+- [Start here: three ways to send](#start-here-three-ways-to-send)
+- [The message envelope](#the-message-envelope)
+- [Target a group with `where`](#target-a-group-with-where)
+- [Routing order and precedence](#routing-order-and-precedence)
+- [Collector mode](#collector-mode)
+- [Echo, replies, and delivery expectations](#echo-replies-and-delivery-expectations)
+- [Membership and channel passwords](#membership-and-channel-passwords)
+- [Routing across servers](#routing-across-servers)
+- [Properties and routing](#properties-and-routing)
+- [Protocol messages that take a different path](#protocol-messages-that-take-a-different-path)
+- [HTTP routing](#http-routing)
+- [Diagnostics and troubleshooting](#diagnostics-and-troubleshooting)
+- [Implementation map](#implementation-map)
 
-- [src/main/java/org/openstatic/routeput/RoutePutMessage.java](src/main/java/org/openstatic/routeput/RoutePutMessage.java)
-- [src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java)
-- [src/main/java/org/openstatic/routeput/RoutePutChannel.java](src/main/java/org/openstatic/routeput/RoutePutChannel.java)
-- [src/main/java/org/openstatic/routeput/RoutePutRemoteSession.java](src/main/java/org/openstatic/routeput/RoutePutRemoteSession.java)
-- [src/main/java/org/openstatic/routeput/ApiServlet.java](src/main/java/org/openstatic/routeput/ApiServlet.java)
-- [src/main/java/org/openstatic/routeput/RoutePutPropertyChangeMessage.java](src/main/java/org/openstatic/routeput/RoutePutPropertyChangeMessage.java)
+## Start here: three ways to send
 
----
+For ordinary application traffic, choose one of these:
 
-## 1. The Message Envelope
+| Goal | Metadata to include | Result without a collector |
+| --- | --- | --- |
+| Tell the room | `channel` | Broadcast to other members, through their direct links. |
+| Tell one member | `channel`, `dstId` | Deliver to that member only. No broadcast fallback. |
+| Tell a group selected by properties | `channel`, `where` | Expand into one targeted copy per matching member. |
 
-Every Routeput message is a JSON object. Routing metadata is kept under the `__routeput` key (see [`RoutePutMessage.getRoutePutMeta()`](src/main/java/org/openstatic/routeput/RoutePutMessage.java#L84)). A new message is auto-stamped with a `msgId`. A typical packet looks like:
+**Collector mode overrides these choices for messages from non-collectors.**
+See [Collector mode](#collector-mode).
 
-```jsonc
+The examples below assume the sender has connected and joined `workshop`.
+Always include the channel name explicitly in packets sent over a raw WebSocket
+or through the browser connection's `transmit` method.
+
+### 1. Broadcast to the channel
+
+```json
 {
-  "text": "hello world",
+  "text": "The workshop is starting",
   "__routeput": {
-    "msgId": "abc123XyZ",   // auto-generated
-    "channel": "lobby",     // required for normal routing
-    "srcId":  "kLm9P0qRsT", // sender connectionId (auto-stamped if missing)
-    "dstId":  "wXyZ1234aB", // OPTIONAL: target connectionId
-    "type":   "chat",       // see RoutePutMessage.TYPE_* constants
-    "hops":   ["kLm9P0qRsT"] // masterConnectionId appended per server hop; loop guard + tracing
+    "channel": "workshop",
+    "type": "chat"
   }
 }
 ```
 
-Relevant accessors on `RoutePutMessage`:
+With no `dstId` and no `where`, other channel members receive the message.
+Ordinary broadcasts exclude the sender and the link that represents the sender.
+Members behind another server receive it through that server's link.
 
-| Method                       | Behavior                                                                            |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| `getChannel()`               | Reads `__routeput.channel`. Returns `null` if absent.                               |
-| `getRoutePutChannel()`       | Resolves the channel name via `RoutePutChannel.getChannel(...)`.                    |
-| `hasChannel()`               | Whether the meta field is present.                                                  |
-| `setChannelIfNull(channel)`  | Only writes the field if it was missing — used by ingress points to set a default.  |
-| `getSourceId()`              | Reads `__routeput.srcId`.                                                           |
-| `setSourceIdIfNull(connId)`  | Only stamps if missing — this is what preserves `srcId` on relayed messages.        |
-| `getTargetId()` / `hasTargetId()` | Reads `__routeput.dstId`.                                                      |
-| `setTarget(session)` / `forTarget(session)` | `forTarget` returns a copy with `dstId` set to that session — used when fan-out wants per-recipient stamping. |
-| `getHops()` / `containsHop(id)` / `appendHop(id)` | Read / test / append the `__routeput.hops` array. Each server stamps its own `RoutePutChannel.getMasterConnectionId()`; see §5.3. |
+`chat` is an application-defined type, not a special server command. An ordinary
+message can also omit `type`.
 
----
+### 2. Send to one member
 
-## 2. Entry Points (ingress)
-
-There are three ways a message gets into the routing pipeline.
-
-### 2.1 WebSocket — `RoutePutServerWebsocket.onText`
-
-Mounted at `/channel/*` (configurable via `websocketMountPath`).
-
-The URL itself participates in routing. On connect (`onConnect`, [line ~352](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L352)) the path is tokenized:
-
-```
-/channel/<name>     -> sets defaultChannel
-/id/<connectionId>  -> client requests a specific connectionId
-/collector          -> client asks to become the channel collector
+```json
+{
+  "text": "Your station is ready",
+  "__routeput": {
+    "channel": "workshop",
+    "dstId": "stationA",
+    "type": "chat"
+  }
+}
 ```
 
-The handshake (`finishHandshake`, [line ~399](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L399)) issues a `TYPE_CONNECTION_ID` message back to the client with the assigned `connectionId` and joins the default channel via `RoutePutChannel.addMember(...)`. `addMember` broadcasts a `TYPE_CONNECTION_STATUS` packet to all other channel members.
+The target must be known as a member of **that channel**. Knowing its
+`connectionId` from another channel is not enough. If the target cannot be found,
+the free-for-all channel logs a lost-packet warning; it does not tell everyone
+else instead. A target already listed in `hops` is skipped.
 
-After the handshake, every incoming JSON frame is parsed into a `RoutePutMessage` and goes through the pipeline below.
+### 3. Send to members whose `x` property is `true`
 
-### 2.2 HTTP API — `ApiServlet.doPost`
-
-Mounted at `/api/*` (configurable via `apiMountPath`). Two shapes:
-
-- `POST /api/post/channel/<name>[/id/<srcId>]` — body is a single JSON object.
-- `POST /api/batch/channel/<name>[/id/<srcId>]` — body is a JSON array of objects.
-
-For each message the servlet sets the channel and source id from the URL using `setChannelIfNull` / `setSourceIdIfNull`, stamps `apiPost`/`apiBatch` in meta, and delegates to the same internal handler used by RemoteSession relaying.
-
-### 2.3 Upstream Client — `RoutePutClient`
-
-When the server is configured with an `upstreams` array in settings, `RoutePutServer.connectUpstreams()` opens client websockets to other Routeput servers. Messages received from upstream feed back into the same dispatch logic as local clients.
-
----
-
-## 3. The WebSocket Dispatch Pipeline
-
-`RoutePutServerWebsocket.onText` (around [line ~203](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L203)) is the trunk of routing. In order:
-
-1. **Parse** the text frame as JSON. Non-JSON text is logged and dropped.
-2. **Pre-handshake**: only `TYPE_CONNECTION_ID` is honored. It establishes `connectionId`, `defaultChannel`, optional properties and collector flag, then calls `finishHandshake()`.
-3. **Property-change messages** (`TYPE_PROPERTY_CHANGE`) are *not* routed normally — they go straight to `RoutePutPropertyChangeMessage(jo).processUpdates(this)`. See §7.
-4. **`setSourceIdIfNull(this.connectionId)`** — if the packet has no `srcId`, this socket's own `connectionId` is stamped. This is the single most important rule for distinguishing "this socket spoke" from "this socket is relaying for someone downstream".
-5. The dispatcher then branches on `sourceId == this.connectionId`:
-
-```
-sourceId == this.connectionId  → message came from the directly attached client
-sourceId != this.connectionId  → message belongs to a downstream RoutePutRemoteSession
-                                  reachable through this socket; hand it to
-                                  RoutePutRemoteSession.handleRoutedMessage(this, jo)
+```json
+{
+  "command": "refresh",
+  "__routeput": {
+    "channel": "workshop",
+    "where": {
+      "x": true
+    }
+  }
+}
 ```
 
-6. For directly-attached traffic, the dispatcher first absorbs any inline meta directives that are not really routing payload:
-   - `__routeput.setSessionProperty` → converted into a `RoutePutPropertyChangeMessage` and processed locally; the meta field is then stripped.
-7. Then it switches on `type`:
+This selects members whose **session properties** contain `"x": true`.
+It does not inspect the application payload or channel properties.
 
-| `type`                              | Action                                                            |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `TYPE_REQUEST`                      | `handleRequest(jo)` (subscribe/unsubscribe/blob/etc — see §8).    |
-| `TYPE_RESPONSE`                     | Ignored at the socket layer.                                      |
-| `TYPE_PING`                         | Replies with a `pong` containing both timestamps.                 |
-| `TYPE_PONG`                         | Records RTT; fires a `_ping` property-change on this session.     |
-| anything else **with** a channel    | Calls `handleMessage(jo)` → `channel.onMessage(this, jo)` (§4).   |
-| anything else **without** a channel | Logged as "Lost Message" (unless it's a blob — see below).        |
+## The message envelope
 
-8. **Blobs are special** ([line ~270](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L270)): if `type == "blob"`, `BLOBManager.handleBlobData` is invoked regardless of channel/source state. Because blob chunks bypass `channel.onMessage`, `handleBlobData` performs the same `hops` stamp/check itself (via `masterConnectionId`) before relaying a chunk, so blob fan-out gets the same loop guard as normal traffic (§5.3).
-9. **Echo flag**: if `__routeput.echo == true`, the original packet is sent straight back to the sender with the `echo` flag stripped — this happens at the very end of `handleMessage(...)`.
+Application data stays at the top level. Routeput metadata goes inside the
+`__routeput` JSON object:
 
-`handleMessage(jo)` itself ([line ~52](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java#L52)) hands off to **the channel** (`channel.onMessage(this, jo)`) and then notifies any per-session message listeners. The channel is where all of the interesting routing decisions live.
-
----
-
-## 4. Channel-level Routing — `RoutePutChannel.onMessage`
-
-This method (around [line ~510](src/main/java/org/openstatic/routeput/RoutePutChannel.java#L510)) is the dispatcher for in-channel traffic. The big steps:
-
-1. **Sanity check**: `j.getRoutePutChannel().equals(this)`. If a channel is asked to handle a packet that names a different channel, it's logged and dropped.
-2. **Logging**: write to `channel.log` if the channel has a log writer and the packet is `canBeLogged()` and not a `pulse`.
-3. **`hops` stamp**: append this environment's `RoutePutChannel.getMasterConnectionId()` to `__routeput.hops` via `j.appendHop(...)`. This both aids tracing and lets relays detect a message that has already passed through them (see §5.3).
-4. **Trap meta `setChannelProperty`**: convert into a `RoutePutPropertyChangeMessage` and process; remove the meta field. This is the same pattern as `setSessionProperty` but applied at channel scope.
-5. **`TYPE_CONNECTION_STATUS`**: if `__routeput.connected == true/false` it triggers `addMember`/`removeMember` for the session named by `srcId`. If the channel can't identify a session locally, it just broadcasts the packet so other peers can react.
-6. **The main fork** — three modes:
-
-### Mode A — Collector Mode (channel has a registered collector)
-
-A *collector* is a privileged member that mediates all traffic in the channel (`becomeCollector` request, see §8). When `channel.hasCollector()` is true and the message is not a property-change:
-
-- **If the sender IS the collector**:
-  - `dstId` set → look up that specific member (`findMemberById(dstId)`), deliver only to them, stamp `__routeput.collectorTargeted = true`. If not found, the packet is dropped.
-  - `dstId` not set → broadcast to all members (stamps `collectorBroadcast = true`).
-- **If the sender is NOT the collector**:
-  - The packet is *absorbed*: it is delivered **only** to the collector (stamps `collectorAbsorbed = true`). Other members of the channel get nothing. The collector is then responsible for deciding what (if anything) to re-emit.
-
-This is the model that powers "moderator" or "game server" channels — every client speaks to one authority, which decides what each client sees.
-
-### Mode B — Free-for-all with a target (`dstId` set, no collector)
-
-```
-target = channel.findMemberById(dstId)
-if (target != null)  target.send(jo);     // unicast
-else                 RoutePutServer.logWarning("PACKET LOST (Target wasn't found): ...");
+```json
+{
+  "text": "Hello",
+  "__routeput": {
+    "channel": "workshop",
+    "srcId": "stationA",
+    "dstId": "stationB",
+    "type": "chat",
+    "msgId": "exampleMessage",
+    "hops": ["environmentA"]
+  }
+}
 ```
 
-The packet is delivered to exactly one member of the channel and to no one else. There is no fallback broadcast.
+| Field | Meaning and practical advice |
+| --- | --- |
+| `channel` | Channel name as a string. Use it on ordinary routed messages. |
+| `srcId` | Original sender's `connectionId`. The WebSocket server fills it if absent. Ordinary clients should let their library/server fill it. Relays preserve it. |
+| `dstId` | One recipient's `connectionId`. Omit it for broadcast or `where` fan-out. It is not a channel name or a list of recipients. |
+| `where` | A JSON object that selects session properties when the packet reaches the broadcast layer. |
+| `type` | Application label or reserved protocol type. Reserved types change dispatch behavior. |
+| `msgId` | Message identifier. `RoutePutMessage` generates one if missing. Not an automatic delivery receipt or deduplication key. |
+| `ref` | Identifier of a message being answered. Protocol replies use the request's `msgId`. |
+| `hops` | Array of environment IDs used by relays for tracing and loop avoidance. Normally leave it to Routeput. |
+| `echo` | `true` asks the directly attached server WebSocket to send the packet back after ordinary channel handling. |
 
-### Mode C — Free-for-all broadcast (`dstId` absent, no collector)
+Leave optional routing fields **absent** when unused. Do not substitute JSON
+`null`, an empty string, an array of IDs, or a wildcard: routing branches often
+test whether a field exists, not whether its value is useful.
 
-```
-channel.broadcast(jo);
-```
+In the browser library:
 
-`broadcast` is described in §5.
+```javascript
+conn.transmit({
+    text: "Hello",
+    __routeput: { channel: "workshop", type: "chat" }
+});
 
-7. **Log-mirroring side effect**: outside the `routeputDebug` channel, any `error`/`info`/`warning` message is copied as a new packet onto the `routeputDebug` channel.
-8. **Per-channel listeners** registered via `addMessageListener(...)` are invoked in parallel after the routing decision.
-
----
-
-## 5. Broadcast Rules — `RoutePutChannel.broadcast`
-
-`broadcast(jo)` ([line ~688](src/main/java/org/openstatic/routeput/RoutePutChannel.java#L688)) has two modes, selected by whether the message carries a `__routeput.where` filter object.
-
-### 5.1 Filtered broadcast (`where` present)
-
-```
-where = jo.__routeput.where     // a JSON object describing required key/values
-remove the where field from the message
-for each member m of the channel:
-    if JSONTools.matchesFilter(m.getProperties(), where)
-       AND NOT jo.containsHop(m.getConnectionId()):
-        m.send(jo.forTarget(m))   // stamps dstId per recipient
-```
-
-This delivers to the subset of members whose session properties match the filter. Each recipient receives a copy with their own `connectionId` written into `dstId`, which makes downstream handling treat the packet as a directed unicast.
-
-### 5.2 Default broadcast (no `where`)
-
-```
-for each member m of the channel:
-    if m.isRootConnection()
-       AND NOT m.containsConnectionId(jo.srcId)
-       AND NOT jo.containsHop(m.getConnectionId()):
-        m.send(jo)
+conn.transmit({
+    command: "refresh",
+    __routeput: { channel: "workshop", where: { x: true } }
+});
 ```
 
-Three filters apply:
+`RouteputConnection.transmit` fills a missing `srcId`, but does **not** fill
+`channel`. A browser `RouteputChannel.transmit` supplies its channel and sender;
+a `RouteputRemoteSession.transmit` supplies its channel and target.
 
-- **`isRootConnection()`** — only directly-connected sessions receive the broadcast. `RoutePutRemoteSession` instances (proxies for downstream clients reached via another socket) are skipped, because the parent socket already received the packet and will fan it out on its side.
-- **Anti-echo** — a member is skipped if its `connectionId` matches `jo.srcId`. This stops senders from receiving their own broadcasts. For root server-websockets it is exact-id equality; the `containsConnectionId` indirection lets composite sessions screen out any of their wrapped ids.
-- **Hop guard** — a member is skipped if its `connectionId` already appears in `jo.__routeput.hops`. Since every server stamps its own `masterConnectionId` on each pass (§4 step 3), a packet is never sent back into a peer that already relayed it.
+## Target a group with `where`
 
-### 5.3 Hop-based loop prevention
+### One input packet becomes a bundle of targeted deliveries
 
-`__routeput.hops` is an array of the `masterConnectionId` values of every Routeput environment a packet has passed through. `RoutePutChannel.getMasterConnectionId()` returns a per-environment id (a server, or a `RoutePutClient`) that is stable for the process and unique across a federation, so it — not the display `hostname` — is the identity used for loop detection.
+Suppose the channel has these session properties:
 
-- **Stamping**: `RoutePutChannel.onMessage` calls `j.appendHop(getMasterConnectionId())` on every channel pass. Blob chunks bypass `onMessage`, so `BLOBManager.handleBlobData` performs the same stamp itself before relaying a chunk.
-- **Checking**: both `broadcast` filters above call `jo.containsHop(m.getConnectionId())` so a member that already relayed the packet is never sent it again. `handleBlobData` additionally drops a chunk outright (`if (jo.containsHop(masterConnectionId)) return;`) when it sees its own id, which stops a chunk from circulating a cyclic multi-server topology.
+| Member | Properties | Matches `{"x": true}`? |
+| --- | --- | --- |
+| `stationA` | `{"x": true, "role": "display"}` | Yes |
+| `stationB` | `{"x": false, "role": "display"}` | No |
+| `stationC` | `{"x": true, "role": "sensor"}` | Yes |
+| `stationD` | `{"role": "display"}` | No: `x` is missing |
 
----
+The server removes `where` from the input packet and makes a copy for each
+match. The deliveries look like this (server-added hop history omitted):
 
-## 6. Relayed Traffic and `RoutePutRemoteSession`
-
-When this server is connected to another Routeput server (either upstream via `RoutePutClient` or downstream via someone connecting to us), individual end-clients live on the far side of a single websocket. They are represented locally as `RoutePutRemoteSession` instances — they look like normal channel members but their `send()` actually serializes onto the parent socket.
-
-### 6.1 Recognising a relayed packet
-
-In `onText`, after `setSourceIdIfNull(this.connectionId)`:
-
-```
-if (srcId == this.connectionId)   → local client                        (§3.7)
-else                              → RoutePutRemoteSession.handleRoutedMessage(this, jo)
-```
-
-Because the relayed packet already had `srcId` populated by the originating server, the `if-null` stamp is a no-op and the dispatcher knows it is not from the directly-attached client.
-
-### 6.2 `handleRoutedMessage` ([line ~39](src/main/java/org/openstatic/routeput/RoutePutRemoteSession.java#L39))
-
-Keyed by `srcId`:
-
-- `TYPE_CONNECTION_STATUS connected:true` → look up the `RoutePutRemoteSession` for `srcId` or create one with this socket as its `parent`, then deliver the packet (which causes the channel `addMember(this)`).
-- `TYPE_CONNECTION_STATUS connected:false` → look up the session and let it process the disconnect (`removeMember`).
-- Anything else with a known `srcId` → forward to the existing `RoutePutRemoteSession`, which:
-  - Updates `rxPackets`/`lastReceived`.
-  - Calls `msgChannel.onMessage(this, m)` — the same channel pipeline as direct messages, but with the *remote session* as the apparent sender.
-
-### 6.3 Sending TO a remote session
-
-`RoutePutRemoteSession.send(jo)` rewrites the packet as `jo.forTarget(this)` (stamps `dstId = this.connectionId`), ensures a channel is set, then writes through the parent socket:
-
-```
-this.parent.send(jo);
+```json
+{
+  "command": "refresh",
+  "__routeput": {
+    "channel": "workshop",
+    "srcId": "controller",
+    "msgId": "refreshRequest",
+    "dstId": "stationA"
+  }
+}
 ```
 
-The parent socket's upstream-side server then performs `findMemberById(dstId)` locally and delivers it to the real client. This is what makes `dstId`-based unicast work across server hops without any special protocol — it is just the normal channel rule (Mode B in §4) applied on each hop.
+```json
+{
+  "command": "refresh",
+  "__routeput": {
+    "channel": "workshop",
+    "srcId": "controller",
+    "msgId": "refreshRequest",
+    "dstId": "stationC"
+  }
+}
+```
 
----
+Think of this as a **logical bundle of unicasts**, not a new wire format:
 
-## 7. Property-Change Messages — `RoutePutPropertyChangeMessage`
+- Each match gets a separate JSON message, not an array or a `type: "bundle"`.
+- Payload, `srcId`, and `msgId` are preserved across copies.
+- Each copy has its own recipient in `dstId`; `where` is gone.
+- Remote members are eligible too; their targeted copies go through their
+  parent links. The next environment routes by `dstId`, rather than evaluating
+  the filter again.
+- No matches means no deliveries. There is no fallback broadcast.
+- Fan-out uses parallel iteration: there is no recipient ordering, aggregate
+  acknowledgement, or all-or-nothing transaction.
 
-`TYPE_PROPERTY_CHANGE` packets are removed from the normal routing pipeline at the very top of `onText`. Both `RoutePutServerWebsocket` and `RoutePutChannel.onMessage` actively reject them from the dispatcher (the channel will even log a warning if one slips through).
+### Filter matching rules
 
-Instead they are processed by `RoutePutPropertyChangeMessage.processUpdates(...)`, which mutates the target session-property or channel-property store and emits its own targeted notification messages to interested members. Session properties live on `RoutePutSession.getProperties()`; channel properties live on `RoutePutChannel.getProperties()` and are persisted to `channel/<name>/properties.json` when modified.
+Every field in the filter is required: multiple fields mean **AND**.
+Extra properties on a member are allowed.
 
-Two inline shortcuts on regular messages get transformed into property-change traffic before any other routing happens:
+```json
+{
+  "command": "refresh",
+  "__routeput": {
+    "channel": "workshop",
+    "where": {
+      "x": true,
+      "role": "display",
+      "location": { "floor": "ground" },
+      "capabilities": ["screen", "audio"]
+    }
+  }
+}
+```
 
-- `__routeput.setSessionProperty: { key: value-path-or-literal }` — handled in `onText`, mutates the *sender's* session properties (`RoutePutPropertyChangeMessage.addUpdate(this, ...)`).
-- `__routeput.setChannelProperty: { key: value-path-or-literal }` — handled in `RoutePutChannel.onMessage`, mutates the channel's properties. Value strings are passed through `RoutePutMessage.getPathValue(...)`, so they can reference fields elsewhere in the same packet.
+This requires:
 
-After being trapped, these meta fields are removed from the original message so the rest of the routing logic does not re-emit them.
+- `x` equal to the boolean `true`;
+- `role` equal to the string `"display"`;
+- a `location` object containing `"floor": "ground"`;
+- a `capabilities` array containing both `"screen"` and `"audio"`.
 
----
+Nested objects match recursively. Arrays are containment filters: every
+requested element must be represented in the member's array; extra elements
+and a different order are allowed. Object/array elements in arrays are matched
+recursively too. Arrays do **not** mean "any of these alternatives."
 
-## 8. Request/Response Traffic (no channel fan-out)
+Scalar values use Java equality: `true` is not `"true"`, and `"Display"` is not
+`"display"`. Numeric Java representations can matter, so do not assume an integer
+and a floating-point value compare equal.
 
-Messages of `TYPE_REQUEST` never reach `channel.onMessage`. They are handled inline by `RoutePutServerWebsocket.handleRequest`, which dispatches on `__routeput.request`:
+There is no query language: no `$or`, `$gt`, regular expressions, wildcards, or
+automatic dotted-path lookup. Use nested objects, not `"location.floor"`, to
+match a nested property. An empty filter `{}` matches every member, but delivery
+still excludes the sender, links containing the sender, and prior hops (and
+honors the blob opt-out for blob broadcasts).
 
-| Request               | Effect                                                                                    |
-| --------------------- | ----------------------------------------------------------------------------------------- |
-| `subscribe`           | Join the channel named in meta; reply with channel properties + blob list.                |
-| `unsubscribe`         | Leave the channel.                                                                        |
-| `becomeCollector` / `dropCollector` | Toggle collector status on the default channel (see §4 Mode A).                |
-| `setChannelProperty` / `getChannelProperty` / `getChannelProperties` / `getSessionProperties` | Property RPC. |
-| `members`             | Reply with `channel.membersAsJSONArray()` if the requester is a member.                   |
-| `upstream`            | Tell the server to open a new upstream client connection.                                 |
-| `blob` / `blobInfo`   | Blob transfer RPC via `BLOBManager`.                                                      |
+### Important differences from ordinary broadcast
 
-Each reply is built with `RoutePutMessage.setResponse(...)`, which copies the channel from the request and stamps a `ref` field equal to the request's `msgId`. Responses are sent only to the requester — they do not enter channel broadcast.
+`where` fan-out excludes the sender even if its properties match. It also
+excludes links containing that sender, so a relayed packet is not targeted back
+at its originating link. Like ordinary broadcast, members whose own IDs appear
+in `hops` are excluded.
 
----
+Unlike ordinary broadcast, filtered fan-out does **not** have a root-link-only
+restriction: other matching remote members still receive individually targeted
+copies, including members reached through the sender's parent link.
 
-## 9. Decision Summary
+If `dstId` is present, ordinary channel routing chooses that target first:
+`where` does not narrow or validate the target. It is only consumed when
+`broadcast` actually runs.
 
-Given a message that has been parsed, sourced (`srcId` filled), and accepted into `channel.onMessage`:
+Properties are matched against the channel's current local view. In a
+federation, allow time for property updates and membership announcements to
+propagate before relying on a newly changed filter.
+
+## Routing order and precedence
+
+For a directly attached WebSocket, the server:
+
+1. Parses a JSON object and handles handshake/property-change traffic specially.
+2. Fills `srcId` if missing. If it differs from the socket's ID, it treats the
+   packet as relayed traffic for a known remote session.
+3. Processes inline `setSessionProperty` directives for direct traffic.
+4. Handles reserved control types locally. Ordinary messages with `channel`
+   enter `RoutePutChannel.onMessage`; ordinary messages without it are logged
+   as lost.
+
+At the channel, it checks that the packet names that channel, performs logging
+and receive accounting, appends this environment's hop ID, and consumes inline
+property directives. Then it makes the routing decision:
 
 ```mermaid
 flowchart TD
-    A[message enters channel.onMessage] --> B{type == CONNECTION_STATUS?}
-    B -- yes --> C{session known?}
-    C -- yes --> C1[addMember / removeMember]
-    C -- no  --> C2[broadcast as informational]
-    B -- no --> D{channel.hasCollector?}
-    D -- yes --> E{sender == collector?}
-    E -- yes --> E1{dstId set?}
-    E1 -- yes --> E2[unicast to dstId<br/>collectorTargeted=true]
-    E1 -- no  --> E3[broadcast<br/>collectorBroadcast=true]
-    E -- no --> E4[unicast to collector<br/>collectorAbsorbed=true]
-    D -- no --> F{dstId set?}
-    F -- yes --> F1{member found?}
-    F1 -- yes --> F2[unicast to that member]
-    F1 -- no  --> F3[PACKET LOST]
-    F -- no --> F4[broadcast to all root members<br/>except sender]
+    A[Packet enters channel] --> B{ConnectionStatus?}
+    B -- Yes --> C[Join or leave handling]
+    B -- No --> P{propertyChange?}
+    P -- Yes --> Q[Warn: wrong dispatch path]
+    P -- No --> D{Collector exists?}
+    D -- Yes --> E{Sender is collector?}
+    E -- No --> F[Send only to collector]
+    E -- Yes --> G{dstId present?}
+    D -- No --> G
+    G -- Yes --> H[Look up target in this channel]
+    H --> I[Send if found and not in hops]
+    G -- No --> J{where present?}
+    J -- Yes --> K[One targeted copy per matching member]
+    J -- No --> L[Broadcast through root links except source and prior hops]
 ```
 
-And at the broadcast layer:
+Channel message listeners run after the routing decision, including decisions
+that deliver to no network recipient. They are local Java callbacks, not extra
+channel members. Error/info/warning traffic may also be mirrored to the debug
+channel.
 
-```mermaid
-flowchart TD
-    B[broadcast] --> W{where filter present?}
-    W -- yes --> W1[for each member matching where:<br/>send forTarget(m) - stamps dstId]
-    W -- no --> W2[for each member that is<br/>isRootConnection() AND<br/>connectionId != srcId AND<br/>connectionId not in hops:<br/>send unchanged]
+## Collector mode
+
+A collector is a channel member acting as an application authority: for
+example, a moderator, game coordinator, or command dispatcher.
+
+| Sender | Destination fields | What the channel does |
+| --- | --- | --- |
+| Non-collector | Any, including `dstId` or `where` | Sends only to the collector; adds `collectorAbsorbed: true`. |
+| Collector | `dstId` present | Sends to the known target unless its ID is in `hops`; adds `collectorTargeted: true`. |
+| Collector | No `dstId` | Uses broadcast (including `where` if present); adds `collectorBroadcast: true`. |
+
+For absorbed traffic, the channel marks the original message but does not
+automatically replace its `dstId` with the collector's ID. The collector should
+interpret the requested destination and decide what to send next.
+
+To request collector status:
+
+```json
+{
+  "__routeput": {
+    "channel": "workshop",
+    "type": "request",
+    "request": "becomeCollector",
+    "msgId": "collectorRequest"
+  }
+}
 ```
 
----
+`becomeCollector` and `dropCollector` operate on the WebSocket's **default
+channel**, not an arbitrary channel selected by the request's `channel` field.
+The response's `collector` boolean reports the resulting status. A collector
+can also be requested by the connection URL's `/collector` token or the
+handshake's `collector` flag. An occupied collector slot is not replaced by
+these requests; removing the collector member clears the slot.
 
-## 10. Quick Reference
+Collector routing is implemented locally in each channel environment. Do not
+assume it establishes a globally elected authority across federated servers.
+Membership and property-change notifications use their own paths rather than
+being absorbed like application messages. Blob data also bypasses this decision.
 
-- **Channel** = topic name → singleton `RoutePutChannel` resolved by `RoutePutChannel.getChannel(name)`. Channels are auto-created on first use, persisted to `channel/<name>/`, and idled out after 10 minutes unless `permanent`.
-- **`srcId`** = sender's `connectionId`. Stamped by the socket only if absent (so relays keep the originator). Used for anti-echo on broadcasts and for routing replies through `RoutePutRemoteSession`.
-- **`dstId`** = optional intended recipient's `connectionId`. Present ⇒ unicast within the channel (via `findMemberById`); absent ⇒ broadcast. Cross-server unicast is the same rule applied at each hop after `RoutePutRemoteSession.send` stamps the field.
-- **Collector mode** overrides the above rules: non-collector traffic always lands at the collector; collector traffic uses the normal `dstId` rules.
-- **`where`** meta filter on a broadcast restricts delivery to members whose session properties match, and stamps each recipient's `dstId` for them.
-- **`hops`** meta array gets this environment's `masterConnectionId` appended on every channel pass (and on every blob-chunk relay). Members already listed in `hops` are skipped on broadcast, which is the primary multi-server loop guard; also useful for tracing.
-- **`echo`** meta returns a copy of the packet to the sender after routing.
-- **PropertyChange / blob / request** messages are handled out-of-band and do not flow through the normal `channel.onMessage` fan-out.
+## Echo, replies, and delivery expectations
+
+### Echo is a convenience, not a receipt
+
+```json
+{
+  "text": "Show this locally too",
+  "__routeput": {
+    "channel": "workshop",
+    "echo": true
+  }
+}
+```
+
+After ordinary direct WebSocket channel handling, the socket sends the packet
+back to its sender with `echo` removed. It is the packet **after** channel
+processing: consumed property directives and `where` may be gone, and hop or
+collector metadata may have been added.
+
+This does not prove that any other member received or processed it. It can
+occur even when a target was not found. It is not a general echo facility for
+HTTP, protocol requests, blob chunks, or remote-session dispatch. `where`
+fan-out never targets the sender, but explicit `echo: true` still requests this
+separate local return.
+
+### Application replies
+
+To answer another client, send an ordinary application packet with the same
+channel and `dstId` set to the original `srcId`. Include `ref` if your
+application uses correlation:
+
+```json
+{
+  "result": "ready",
+  "__routeput": {
+    "channel": "workshop",
+    "srcId": "stationA",
+    "dstId": "controller",
+    "type": "commandResult",
+    "ref": "refreshRequest"
+  }
+}
+```
+
+Do not use the reserved `type: "response"` for normal client-to-client replies:
+direct WebSocket protocol responses are handled locally, not routed like
+application traffic.
+
+Routeput's ordinary routing does not supply retries, offline delivery, delivery
+receipts, or exactly-once semantics. Hop history helps avoid loops; `msgId`
+alone does not suppress duplicates. Add application-level acknowledgements and
+timeouts where needed.
+
+## Membership and channel passwords
+
+One connection can join multiple channels. Its default channel is selected by
+the URL/handshake, but ordinary packets still name the channel they belong to.
+Use subscribe/unsubscribe requests to manage additional memberships:
+
+```json
+{
+  "__routeput": {
+    "type": "request",
+    "request": "subscribe",
+    "channel": "workshop",
+    "password": "example-channel-password",
+    "msgId": "joinRequest"
+  }
+}
+```
+
+Omit `password` on an open channel. Successful subscription replies use
+`type: "response"`, `response: "subscribe"`, and `ref: "joinRequest"`, and include
+channel properties and a blob list. An authentication rejection is an `error`
+with `authRequired: true`, the channel, and the correlated `ref`.
+
+The WebSocket handshake and the channel's `ConnectionStatus` join path also
+check channel passwords. A previously unused channel can adopt the first
+supplied password; an existing open channel cannot be claimed this way.
+Passwords are stored separately from public channel properties.
+
+Membership announcements use the exact, case-sensitive type
+`"ConnectionStatus"` with `srcId`, `channel`, `connected`, and session
+`properties`. A joining direct link receives announcements for existing
+members. Clients use those IDs and properties for targeting.
+
+The handshake also supplies an authoritative `channelMembers` array so
+reconnecting clients can prune stale members. Periodic `memberSync` packets
+repair missed leave announcements on existing links. Each sync describes the
+children that its receiving link should know, not an unrestricted instruction
+to delete every other member. `memberSyncSecs` defaults to 300; `0` disables
+periodic sync.
+
+Treat channel membership as the routing model, not a blanket guarantee that
+every low-level ingress method independently authorizes every packet. The
+channel's ordinary application branch does not itself reject a sender merely
+because `hasMember(sender)` is false.
+
+## Routing across servers
+
+Each Java environment maintains a view of its channel members. A remote member
+is represented by a `RoutePutRemoteSession`: a local placeholder with an ID,
+properties, and a **parent link** through which the real member is reached.
+
+- A relayed packet keeps the original `srcId`; it does not become a new packet
+  from the relay server.
+- `ConnectionStatus` join announcements create or update remote placeholders.
+- Ordinary packets with an unknown remote `srcId` are not automatically turned
+  into new members by WebSocket dispatch.
+- A broadcast is sent once through each eligible root link, not separately to
+  all of that link's remote placeholders.
+- A `dstId` packet is looked up at each channel hop and sent through the target's
+  parent link until it reaches the recipient. `where` copies already have the
+  required `dstId`.
+
+### Hop history
+
+`RoutePutChannel.onMessage` appends
+`RoutePutChannel.getMasterConnectionId()`: the local environment's routing ID,
+not its display hostname. This ID must be unique to the environment.
+
+Ordinary broadcast excludes root links that contain the original sender's ID,
+and members/links whose IDs already appear in `hops`. Filtered fan-out and
+targeted delivery also check the recipient's ID against `hops`. Blob chunk
+handling additionally drops a chunk if this environment's own ID is already
+in its history, then stamps the ID before broadcasting.
+
+These are routing guards, not a hop-count limit, expiry time, universal
+duplicate cache, or delivery guarantee. Do not reuse a received packet's old
+`hops` as the starting history for a new application message.
+
+**Current implementation caution:** `RoutePutRemoteSession.send` constructs a
+targeted copy but forwards the original object to its parent. The channel's
+unicast path and `where` fan-out already supply `dstId`, so they preserve the
+target. A bare call to `remoteSession.send` with an untargeted packet must not
+be relied on to add it automatically.
+
+## Properties and routing
+
+Session properties describe a participant; channel properties describe shared
+channel state. Only the former are inputs to `where`.
+
+In the browser, set a property before sending traffic that relies on it:
+
+```javascript
+conn.setProperty("x", true);
+conn.setProperty("role", "display");
+```
+
+Initial session properties can also be supplied as `properties` in a
+`connectionId` handshake. WebSocket URL query parameters become session
+properties too, but those values are **strings**: `?x=true` does not establish
+the JSON boolean required by `where: { x: true }`.
+
+### Inline property directives
+
+An ordinary packet can update properties and still carry application data:
+
+```json
+{
+  "reading": { "temperature": 21.5 },
+  "__routeput": {
+    "channel": "workshop",
+    "setSessionProperty": {
+      "temperature": "reading.temperature"
+    },
+    "setChannelProperty": {
+      "lastTemperature": "reading.temperature"
+    }
+  }
+}
+```
+
+The directives are converted into separate property-change updates and removed
+before the application packet is routed. `setSessionProperty` updates the
+sender; `setChannelProperty` updates the selected channel. Updates occur before
+the packet's routing decision, so they can affect a `where` match on that packet.
+
+String values are interpreted through `RoutePutMessage.getPathValue`: dotted
+paths read the packet, unresolved paths become literal strings, and an empty
+string selects the application payload without `__routeput`. Array positions
+and supported string transformations are also available through the path
+helper; see `JSONTools.getPathValue` and `evalStringMethod`.
+
+For directly attached WebSocket traffic, the early `setSessionProperty`
+handler expects **string path/literal values**. Use the normal property API or
+a `propertyChange` update for typed booleans, numbers, objects, and arrays;
+do not assume `setSessionProperty: { "x": true }` works on that path.
+The channel-level directive handler supports typed values as well.
+
+### Explicit property-change packets
+
+```json
+{
+  "__routeput": {
+    "type": "propertyChange",
+    "updates": [
+      { "type": "session", "id": "stationA", "key": "x", "new": true }
+    ]
+  }
+}
+```
+
+Use your own session ID for a local property update. Channel updates instead
+use `"type": "channel"` and the channel name as `id`. Updates can carry `old`
+and `new`; session processing uses the stored value rather than trusting a
+sender's guessed old value.
+
+The property processor chooses notification channels from the update IDs:
+session changes go to channels containing that session, and channel changes
+go to the named channel. It broadcasts channel-specific update packets with
+hop history. The original envelope's `dstId`/`where` do not restrict this
+notification fan-out. These packets do not use the ordinary collector branch.
+
+## Protocol messages that take a different path
+
+The following table describes **direct WebSocket dispatch**. HTTP injection and
+remote-session dispatch are not interchangeable with this protocol handler.
+
+| `type` | Handling |
+| --- | --- |
+| `connectionId` | Establishes/re-establishes identity, default channel, properties, and optional password/collector settings. |
+| `ConnectionStatus` | Channel/remote-session join or leave processing and membership announcements. |
+| `memberSync` | Reconciles remote children for the receiving link; not an application broadcast. |
+| `request` | Local server RPC selected by `request`; not normal channel fan-out. |
+| `response` | Local protocol response handling. `blobCheck` responses go to `BLOBManager`; other inbound direct responses are not forwarded as application packets. |
+| `ping` / `pong` | Link-local liveness/timing. Ping produces a correlated pong; pong updates RTT and may announce `_ping`. |
+| `propertyChange` | Property processor applies updates and generates its own notifications. |
+| `blob` | `BLOBManager` handles chunks and transfer acknowledgements outside ordinary channel dispatch. |
+| Anything else | Ordinary channel routing if `channel` is present. Includes application types and `midi`, `gps`, `binary`, `pulse`, `error`, `info`, `warning`. |
+
+### Useful server requests
+
+Request names belong in `__routeput.request`, with `type: "request"`.
+
+| Request | Effect |
+| --- | --- |
+| `subscribe` / `unsubscribe` | Join/leave the named channel and receive a correlated reply. |
+| `members` | Return member descriptions (including properties) if the requester belongs to the named channel. |
+| `becomeCollector` / `dropCollector` | Manage the default channel's collector. |
+| `getSessionProperties` | Return the directly connected session's properties; the response name is `getProperties`. |
+| `setChannelProperty` / `getChannelProperty` / `getChannelProperties` | Property RPC on the default channel. `setChannelProperty` uses meta `key` and `value`. |
+| `upstream` | Open an upstream link for a channel the requester belongs to; the URI is in the top-level `uri` field. |
+| `blobCheck` | Have/need negotiation based on blob name, MD5, and byte size. |
+| `blob` | Fetch a named blob, or accept legacy request-shaped chunk data. |
+| `blobInfo` | Return metadata for a named blob. |
+
+Replies use `response` for the operation name and `ref` for the request's
+`msgId`. They are sent to the requesting link, not broadcast through the channel.
+
+### Blob routing is not ordinary unicast
+
+Blob chunks carry `type: "blob"` and meta `name`, `i`, `of`, and `data`.
+`BLOBManager` receives/reassembles them. A chunk with a channel and **no**
+`dstId` is broadcast in flight through the channel's broadcast helper, which
+also supports `where`. There is no per-recipient have/need negotiation on
+that in-flight broadcast path.
+
+The current inbound chunk handler does **not** forward a `dstId` chunk using
+the ordinary channel target lookup. Adding `dstId` suppresses its broadcast;
+it is not a general way to send raw blob chunks to another client. Use the
+blob transfer APIs and server-mediated fetch/distribution paths instead.
+
+Members with the boolean session property `_noBlobs: true` are excluded from
+blob **broadcasts**, including filtered broadcasts. The browser
+`setNoBlobs(true)` and Java `setNoBlobs(true)` are convenience setters. This
+filter does not govern every direct blob RPC response.
+
+Java blob handlers initialize client storage on demand via
+`BLOBManager.init(null)`. Client storage uses `ROUTEPUT_BLOBROOT` if set, or a
+temporary directory deleted on shutdown otherwise. Explicit
+`BLOBManager.init(settings)` selects server/configured storage; a missing
+`blobStorageRoot` defaults to `ROUTEPUT_BLOBROOT` or `./blob/`. Not supplying
+settings is therefore **not** an opt-out from receiving blobs.
+
+`context`, where supplied by a blob API, is ownership/storage metadata, not a
+recipient selector. Do not use it instead of `channel`/routing fields.
+
+## HTTP routing
+
+By default the API is mounted at `/api/*`; WebSockets at `/channel/*`.
+Mount paths are configurable via `apiMountPath` and `websocketMountPath`.
+
+### POST one packet
+
+```bash
+curl -X POST http://localhost:6144/api/post/channel/workshop/id/controller \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"refresh","__routeput":{"channel":"workshop","where":{"x":true}}}'
+```
+
+The body is a JSON object. `/channel/<name>` on the POST URL **sets/overrides**
+the body's channel; `/id/<srcId>` supplies the source only if the body has none.
+The API stamps `apiPost: true`.
+
+### POST a batch
+
+```bash
+curl -X POST http://localhost:6144/api/batch/channel/workshop/id/controller \
+  -H 'Content-Type: application/json' \
+  -d '[
+    {"command":"refresh","__routeput":{"channel":"workshop","where":{"x":true}}},
+    {"text":"Hello stationB","__routeput":{"channel":"workshop","dstId":"stationB"}}
+  ]'
+```
+
+The body is an array of independent message objects. Each gets `apiBatch: true`
+and a missing source is filled from the URL. Existing per-message channels are
+preserved. **Include a string `channel` in every batch object:** the current
+missing-channel helper stores a Java channel object rather than its name, so
+the URL fallback should not be relied on.
+
+An HTTP batch is different from `where` fan-out: a batch contains several
+input packets; each filtered packet can itself expand into multiple targeted
+deliveries. Sending a JSON array as a WebSocket frame is not supported by the
+server's object-only text dispatch.
+
+### GET convenience transmission
+
+```text
+/api/channel/workshop/transmit?srcId=controller&where_x=true&command=refresh
+```
+
+`srcId`, `dstId`, and `type` become envelope fields. Parameters beginning with
+`where_` become filter keys, so `where_x=true` creates `where: { "x": true }`.
+Other parameters become top-level payload fields. Exact `true`/`false` values
+become booleans, and numeric values become Java `Double` values. Use POST JSON
+for nested filters or richer payloads.
+
+### API sessions and receiving
+
+The API servlet is a root routing link. A custom API source ID can create a
+virtual remote member and announce it to the channel. Its idle lifetime is
+controlled by `idleDestruct` (milliseconds, default 900000, minimum 30000).
+
+POST responses can include queued incoming `messages`; batch responses group
+queued messages by source ID. `/api/channel/<name>/receive/<srcId>` polls for
+messages, while `/api/channel/<name>/members` exposes member descriptions.
+Blind/managed receiving options affect API queue handling, not the channel's
+destination-selection rules.
+
+HTTP packets go through the API/remote-session channel path, **not**
+`RoutePutServerWebsocket.handleRequest`. Posting a reserved `request` packet
+does not make it a WebSocket RPC. The servlet also has its own pending-message
+queue behavior; do not assume it is identical to WebSocket delivery.
+
+## Diagnostics and troubleshooting
+
+Useful metadata and side effects:
+
+- `hops` helps identify which environments a packet traversed.
+- `collectorAbsorbed`, `collectorTargeted`, and `collectorBroadcast` explain the
+  collector decision.
+- `log: false` disables normal channel packet logging for that message, not its
+  delivery. Blob and pulse packets are excluded from normal channel logging
+  anyway. Channel property `log: false` also disables its log writer.
+- `timestamp` is used in timestamped log copies; it is not a routing deadline.
+- `squeak: true` prints the received WebSocket packet to standard error; it does
+  not change its destination.
+- Channel handling copies meta fields ending in `_rssi` into the sender's
+  session properties. These are telemetry side effects, not address fields.
+- Outside `routeputDebug`, `error`, `info`, and `warning` application messages
+  also generate a separate debug-channel summary, even if the original was
+  targeted. `log: false` is not a switch to disable that summary.
+
+| Symptom | What to check |
+| --- | --- |
+| Nobody receives an ordinary packet | Supply a string `channel`; verify handshake/membership, a known `srcId`, and whether a collector absorbed it. |
+| A targeted packet disappears | Is `dstId` a member of this channel? Is its ID already in `hops`? There is no broadcast fallback. |
+| A filtered packet matches nobody | Inspect session properties and JSON value types. Missing fields, string booleans, numeric representation differences, and stale remote properties matter. |
+| Sender receives a filtered packet | `where` excludes the sender. Check for explicit `echo: true` or an application reply. |
+| `dstId` plus `where` ignores the filter | Expected for ordinary target routing: `dstId` takes precedence. |
+| A packet never reaches another client | Check for reserved `request`/`response`/blob types that bypass ordinary routing. |
+| Messages stop at a coordinator | Check collector mode and whether the collector emits a new application packet. |
+| Remote targeting fails | Check remote membership announcements, parent-link connectivity, and hop history. |
+| Reconnection leaves stale members | Check handshake roster support and periodic `memberSync` on both ends. |
+| Blobs behave unlike chat | Use the blob APIs; check storage configuration, `_noBlobs`, and the inbound `dstId` chunk limitation. |
+
+## Implementation map
+
+These are the source locations behind the behavior above:
+
+| Source | Responsibilities |
+| --- | --- |
+| [RoutePutMessage.java](src/main/java/org/openstatic/routeput/RoutePutMessage.java) | Envelope accessors, generated IDs, `forTarget` copies, hops, response correlation, logging flags. |
+| [RoutePutServerWebsocket.java](src/main/java/org/openstatic/routeput/RoutePutServerWebsocket.java) | URL/handshake parsing, direct versus relayed dispatch, local requests, echo. |
+| [RoutePutChannel.java](src/main/java/org/openstatic/routeput/RoutePutChannel.java) | `onMessage` decisions, collectors, target lookup, `broadcast`/`where`, membership and sync. |
+| [JSONTools.java](src/main/java/org/openstatic/routeput/util/JSONTools.java) | Recursive object/array filter matching and property value-path helpers. |
+| [RoutePutRemoteSession.java](src/main/java/org/openstatic/routeput/RoutePutRemoteSession.java) | Remote member placeholders, parent links, relayed ingress, roster reconciliation. |
+| [RoutePutPropertyChangeMessage.java](src/main/java/org/openstatic/routeput/RoutePutPropertyChangeMessage.java) | Property application and channel-specific notification fan-out. |
+| [BLOBManager.java](src/main/java/org/openstatic/routeput/BLOBManager.java) | Chunk receipt, hop guards, broadcast relay, storage, have/need negotiation and fetches. |
+| [ApiServlet.java](src/main/java/org/openstatic/routeput/ApiServlet.java) | HTTP injection, batches, query filters, API virtual members and receive queues. |
+| [RoutePutClient.java](src/main/java/org/openstatic/routeput/client/RoutePutClient.java) | Java client/upstream dispatch, protocol requests and responses. |
+| [routeput.js](src/main/resources/routeput.js) | Browser transmit helpers, properties, membership, requests and blob APIs. |
