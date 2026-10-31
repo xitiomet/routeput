@@ -921,13 +921,35 @@ public class RoutePutChannel implements RoutePutMessageListener
         if (jo.hasMetaField("where"))
         {
             JSONObject where = jo.getRoutePutMeta().optJSONObject("where");
-            jo.removeMetaField("where");
             boolean isBlob = jo.isType(RoutePutMessage.TYPE_BLOB);
-            this.members.values().parallelStream()
+            Collection<RoutePutSession> matches = this.members.values().stream()
                         .filter((s) -> JSONTools.matchesFilter(s.getProperties(), where))
                         .filter((s) -> !isBlob || !s.getProperties().optBoolean("_noBlobs", false)) // honor a member opting out of blobs
-                        .filter((s) -> !s.containsConnectionId(jo.getSourceId())) 
+                        .filter((s) -> !jo.isFrom(s.getConnectionId()) && !s.containsConnectionId(jo.getSourceId()))
                         .filter((s) -> !jo.containsHop(s.getConnectionId())) // Never send the event to a member that has already seen it
+                        .collect(Collectors.toList());
+            Set<RoutePutSession> relays = matches.stream()
+                        .filter((s) -> s instanceof RoutePutRemoteSession)
+                        .map((s) -> ((RoutePutRemoteSession) s).getParent())
+                        .filter((s) -> s.isRootConnection() && !(s instanceof ApiServlet))
+                        .filter((s) -> !jo.isFrom(s.getConnectionId()) && !s.containsConnectionId(jo.getSourceId()))
+                        .filter((s) -> !jo.containsHop(s.getConnectionId()))
+                        .collect(Collectors.toSet());
+            relays.forEach((s) ->
+            {
+                try
+                {
+                    bumpTx();
+                    s.send(new RoutePutMessage(jo));
+                } catch (Exception e) {
+                    e.printStackTrace(System.err);
+                }
+            });
+            matches.stream()
+                        .filter((s) -> !relays.contains(s))
+                        // Source-link siblings still need targeted copies, not a broadcast back to their sender.
+                        .filter((s) -> !(s instanceof RoutePutRemoteSession) ||
+                                !relays.contains(((RoutePutRemoteSession) s).getParent()))
                         .forEach((s) ->
             {
                 try

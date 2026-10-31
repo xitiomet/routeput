@@ -49,6 +49,22 @@ the variable to that same absolute path. Client users also need filesystem acces
 (the package's `/usr/share/routeput` directory is restricted to the `routeput` user
 and group). Purging the package removes its default environment entry.
 
+### Property-filtered routing
+
+Set `__routeput.where` to an object matching recipient session properties.
+Matching local endpoints receive a copy with their `dstId` set. When multiple
+matching remote members share a relay, that link receives one untargeted copy
+with `where` retained, even if the relay itself does not match. The receiving
+environment filters and targets its local deliveries; a matching Java relay
+also receives one targeted application callback, while an unmatched relay
+only forwards the packet.
+
+Matching siblings on the source link still receive targeted copies instead of
+an untargeted broadcast back to the sender. Explicit `dstId` takes precedence
+over `where`. HTTP API children remain individually filtered and targeted,
+since polling queues are endpoints rather than downstream routing environments.
+Ordinary broadcasts without `where` are unchanged.
+
 ### Channel logs
 
 Channel logging is enabled by default (set the channel's `log` property to `false`

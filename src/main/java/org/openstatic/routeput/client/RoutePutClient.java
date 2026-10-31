@@ -17,6 +17,7 @@ import org.openstatic.routeput.RoutePutRemoteSession;
 import org.openstatic.routeput.RoutePutMessageListener;
 import org.openstatic.routeput.RoutePutMain;
 import org.openstatic.routeput.RoutePutPropertyChangeMessage;
+import org.openstatic.routeput.util.JSONTools;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -485,6 +486,18 @@ public class RoutePutClient implements RoutePutSession, Runnable
             resp.setMetaField("pongTimestamp", System.currentTimeMillis());
             this.send(resp);
         } else {
+            boolean deliverLocally = true;
+            if (j.hasMetaField("where"))
+            {
+                if (j.hasTargetId())
+                {
+                    deliverLocally = this.connectionId.equals(j.getTargetId());
+                } else {
+                    deliverLocally = !j.isFrom(this.connectionId) && !j.containsHop(this.connectionId) &&
+                        JSONTools.matchesFilter(this.getProperties(), j.getRoutePutMeta().optJSONObject("where")) &&
+                        (!j.isType(RoutePutMessage.TYPE_BLOB) || !this.isNoBlobs());
+                }
+            }
             if (j.isType(RoutePutMessage.TYPE_BLOB)) 
             {
                 BLOBManager.handleBlobData(this, j);
@@ -500,15 +513,19 @@ public class RoutePutClient implements RoutePutSession, Runnable
                     this.transmit(rp3.toRoutePutMessage());
                 }
             } 
-            RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
-                try
-                {
-                    r.onMessage(this, j);
-                } catch (Exception e) {
-                    RoutePutException rp4 = new RoutePutException("Exception in message listener " + r.toString(), e);
-                    this.transmit(rp4.toRoutePutMessage());
-                }
-            });
+            if (deliverLocally)
+            {
+                RoutePutMessage delivery = j.hasMetaField("where") && !j.hasTargetId() ? j.forTarget(this) : j;
+                RoutePutClient.this.listeners.parallelStream().forEach((r) -> {
+                    try
+                    {
+                        r.onMessage(this, delivery);
+                    } catch (Exception e) {
+                        RoutePutException rp4 = new RoutePutException("Exception in message listener " + r.toString(), e);
+                        this.transmit(rp4.toRoutePutMessage());
+                    }
+                });
+            }
         }
     }
 

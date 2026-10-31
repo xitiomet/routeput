@@ -10,11 +10,14 @@ import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.openstatic.routeput.client.RoutePutClient;
 import static org.junit.Assert.*;
 
 public class RoutePutChannelRoutingTest
 {
     private RoutePutChannel channel;
+    private final List<RoutePutClient> clients = new ArrayList<RoutePutClient>();
+    private final List<RoutePutRemoteSession> registeredRemotes = new ArrayList<RoutePutRemoteSession>();
 
     @Before
     public void setUp()
@@ -27,6 +30,9 @@ public class RoutePutChannelRoutingTest
     {
         this.channel.setCollector(null);
         this.channel.members.clear();
+        this.clients.forEach(RoutePutClient::shutdown);
+        if (!this.registeredRemotes.isEmpty())
+            RoutePutRemoteSession.getAllRemoteSessions().removeAll(this.registeredRemotes);
     }
 
     @Test
@@ -44,7 +50,7 @@ public class RoutePutChannelRoutingTest
         assertTrue(nonMatch.received.isEmpty());
         assertTargetedCopy(first, message);
         assertTargetedCopy(second, message);
-        assertFalse(message.hasMetaField("where"));
+        assertTrue(message.hasMetaField("where"));
         assertFalse(message.hasTargetId());
     }
 
@@ -107,7 +113,7 @@ public class RoutePutChannelRoutingTest
         RoutePutMessage delivery = parent.received.get(0);
         assertEquals(sibling.getConnectionId(), delivery.getTargetId());
         assertEquals(sender.getConnectionId(), delivery.getSourceId());
-        assertFalse(delivery.hasMetaField("where"));
+        assertTrue(delivery.hasMetaField("where"));
     }
 
     @Test
@@ -208,6 +214,322 @@ public class RoutePutChannelRoutingTest
         assertFalse(recipient.received.get(0).hasTargetId());
     }
 
+    @Test
+    public void filteredBroadcastBatchesManyRemoteMatchesThroughUnmatchedRoot()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        for (int i = 0; i < 100; i++)
+            remoteMember(parent);
+        RecordingSession recipient = member(true);
+        RoutePutMessage message = filteredMessage(sender);
+
+        this.channel.onMessage(sender, message);
+
+        assertTrue(sender.received.isEmpty());
+        assertForwardedCopy(parent, message);
+        assertTargetedCopy(recipient, message);
+        assertFalse(message.hasTargetId());
+    }
+
+    @Test
+    public void matchingRootAndChildrenOnlyReceiveOneForwardedPacket()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(true);
+        remoteMember(parent);
+        remoteMember(parent);
+        RoutePutMessage message = filteredMessage(sender);
+
+        this.channel.onMessage(sender, message);
+
+        assertForwardedCopy(parent, message);
+    }
+
+    @Test
+    public void filteredBroadcastForwardsOncePerDistinctRelay()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession first = member(false);
+        RecordingSession second = member(false);
+        remoteMember(first);
+        remoteMember(first);
+        remoteMember(second);
+        remoteMember(second);
+        RoutePutMessage message = filteredMessage(sender);
+
+        this.channel.onMessage(sender, message);
+
+        assertForwardedCopy(first, message);
+        assertForwardedCopy(second, message);
+    }
+
+    @Test
+    public void unmatchedRemoteMembersDoNotCauseForwarding()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        RoutePutRemoteSession child = remoteMember(parent);
+        child.getProperties().put("x", false);
+
+        this.channel.onMessage(sender, filteredMessage(sender));
+
+        assertTrue(parent.received.isEmpty());
+    }
+
+    @Test
+    public void sourceLinkSiblingsStayTargetedWhileOtherLinksAreBatched()
+    {
+        RecordingSession sourceLink = member(false);
+        RoutePutRemoteSession sender = remoteMember(sourceLink);
+        RoutePutRemoteSession sibling = remoteMember(sourceLink);
+        RoutePutRemoteSession secondSibling = remoteMember(sourceLink);
+        RecordingSession otherLink = member(false);
+        remoteMember(otherLink);
+        remoteMember(otherLink);
+        RoutePutMessage message = filteredMessage(sender);
+
+        this.channel.onMessage(sender, message);
+
+        assertEquals(2, sourceLink.received.size());
+        Set<String> targets = new HashSet<String>();
+        sourceLink.received.forEach((m) -> targets.add(m.getTargetId()));
+        assertEquals(Set.of(sibling.getConnectionId(), secondSibling.getConnectionId()), targets);
+        assertForwardedCopy(otherLink, message);
+    }
+
+    @Test
+    public void filteredBlobStillForwardsThroughOptedOutRelayToEligibleChild()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        parent.sessionProperties.put("_noBlobs", true);
+        remoteMember(parent);
+        RoutePutMessage message = filteredMessage(sender);
+        message.setType(RoutePutMessage.TYPE_BLOB);
+
+        this.channel.broadcast(message);
+
+        assertForwardedCopy(parent, message);
+    }
+
+    @Test
+    public void optedOutRemoteBlobRecipientsDoNotCauseForwarding()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        remoteMember(parent).getProperties().put("_noBlobs", true);
+        RoutePutMessage message = filteredMessage(sender);
+        message.setType(RoutePutMessage.TYPE_BLOB);
+
+        this.channel.broadcast(message);
+
+        assertTrue(parent.received.isEmpty());
+    }
+
+    @Test
+    public void unmatchedJavaRelayForwardsWithoutApplicationDelivery()
+    {
+        RoutePutClient client = client(false);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession first = member(true);
+        RecordingSession second = member(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+
+        client.handleWebSocketEvent(message);
+
+        assertTargetedCopy(first, message);
+        assertTargetedCopy(second, message);
+        assertTrue(callbacks.isEmpty());
+        assertFalse(message.hasTargetId());
+    }
+
+    @Test
+    public void matchingJavaRelayDeliversOneTargetedCallbackAndTargetsLocalChildren()
+    {
+        RoutePutClient client = client(true);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession recipient = member(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+
+        client.handleWebSocketEvent(message);
+
+        assertTargetedCopy(recipient, message);
+        assertEquals(1, callbacks.size());
+        assertEquals(client.getConnectionId(), callbacks.get(0).getTargetId());
+        assertTrue(callbacks.get(0).hasMetaField("where"));
+        assertTrue(callbacks.get(0).containsHop(RoutePutChannel.getMasterConnectionId()));
+        assertFalse(message.hasTargetId());
+    }
+
+    @Test
+    public void targetedFilteredChildPacketDoesNotLeakToMatchingJavaRelayListener()
+    {
+        RoutePutClient client = client(true);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession recipient = member(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+        message.setTarget(recipient);
+
+        client.handleWebSocketEvent(message);
+
+        assertTargetedCopy(recipient, message);
+        assertTrue(callbacks.isEmpty());
+    }
+
+    @Test
+    public void explicitTargetToJavaClientStillOverridesWhere()
+    {
+        RoutePutClient client = client(false);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession otherMatch = member(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+        message.setTarget(client);
+
+        client.handleWebSocketEvent(message);
+
+        assertTrue(otherMatch.received.isEmpty());
+        assertEquals(1, callbacks.size());
+        assertEquals(client.getConnectionId(), callbacks.get(0).getTargetId());
+    }
+
+    @Test
+    public void ordinaryJavaClientCallbacksRemainUnfiltered()
+    {
+        RoutePutClient client = client(false);
+        RoutePutRemoteSession source = registeredRemote(client);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+        message.removeMetaField("where");
+
+        client.handleWebSocketEvent(message);
+
+        assertEquals(1, callbacks.size());
+        assertFalse(callbacks.get(0).hasTargetId());
+    }
+
+    @Test
+    public void javaRelayRebatchesForwardedWhereForNextLink()
+    {
+        RoutePutClient client = client(false);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession nextLink = member(false);
+        remoteMember(nextLink);
+        remoteMember(nextLink);
+        RecordingSession local = member(true);
+        RoutePutMessage message = filteredMessage(source);
+        message.appendHop("previous-environment");
+
+        client.handleWebSocketEvent(message);
+
+        assertForwardedCopy(nextLink, message);
+        assertTargetedCopy(local, message);
+        assertTrue(nextLink.received.get(0).containsHop("previous-environment"));
+        assertTrue(nextLink.received.get(0).containsHop(RoutePutChannel.getMasterConnectionId()));
+    }
+
+    @Test
+    public void previouslyVisitedJavaRelayDoesNotReceiveAnotherApplicationCallback()
+    {
+        RoutePutClient client = client(true);
+        RoutePutRemoteSession source = registeredRemote(client);
+        RecordingSession recipient = member(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+        RoutePutMessage message = filteredMessage(source);
+        message.appendHop(client.getConnectionId());
+
+        client.handleWebSocketEvent(message);
+
+        assertTrue(callbacks.isEmpty());
+        assertTargetedCopy(recipient, message);
+    }
+
+    @Test
+    public void javaRelayDoesNotReceiveItsOwnFilteredBroadcast()
+    {
+        RoutePutClient client = client(true);
+        List<RoutePutMessage> callbacks = new ArrayList<RoutePutMessage>();
+        client.addMessageListener((s, m) -> callbacks.add(m));
+
+        client.handleWebSocketEvent(filteredMessage(client));
+
+        assertTrue(callbacks.isEmpty());
+    }
+
+    @Test
+    public void priorRelayHopRetainsTargetedDeliveryToUnvisitedRemoteChild()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        RoutePutRemoteSession child = remoteMember(parent);
+        RoutePutMessage message = filteredMessage(sender);
+        message.appendHop(parent.getConnectionId());
+
+        this.channel.onMessage(sender, message);
+
+        assertEquals(1, parent.received.size());
+        assertEquals(child.getConnectionId(), parent.received.get(0).getTargetId());
+        assertTrue(parent.received.get(0).hasMetaField("where"));
+    }
+
+    @Test
+    public void previouslyVisitedRemoteChildDoesNotCauseForwarding()
+    {
+        RecordingSession sender = member(true);
+        RecordingSession parent = member(false);
+        RoutePutRemoteSession child = remoteMember(parent);
+        RoutePutMessage message = filteredMessage(sender);
+        message.appendHop(child.getConnectionId());
+
+        this.channel.onMessage(sender, message);
+
+        assertTrue(parent.received.isEmpty());
+    }
+
+    private RoutePutClient client(boolean matches)
+    {
+        RoutePutClient client = new RoutePutClient(this.channel, "ws://localhost:6144/");
+        client.getProperties().put("x", matches);
+        this.clients.add(client);
+        this.channel.members.put(client.getConnectionId(), client);
+        return client;
+    }
+
+    private RoutePutRemoteSession registeredRemote(RoutePutSession parent)
+    {
+        RoutePutMessage join = new RoutePutMessage();
+        join.setChannel(this.channel);
+        join.setSourceId(UUID.randomUUID().toString());
+        join.setType(RoutePutMessage.TYPE_CONNECTION_STATUS);
+        join.setMetaField("connected", true);
+        join.setMetaField("properties", new JSONObject().put("x", true));
+        RoutePutRemoteSession remote = RoutePutRemoteSession.handleRoutedMessage(parent, join);
+        this.registeredRemotes.add(remote);
+        return remote;
+    }
+
+    private void assertForwardedCopy(RecordingSession parent, RoutePutMessage original)
+    {
+        assertEquals(1, parent.received.size());
+        RoutePutMessage delivery = parent.received.get(0);
+        assertFalse(delivery.hasTargetId());
+        assertTrue(delivery.getRoutePutMeta().getJSONObject("where")
+                .similar(original.getRoutePutMeta().getJSONObject("where")));
+        assertEquals(original.getSourceId(), delivery.getSourceId());
+        assertEquals(original.getMessageId(), delivery.getMessageId());
+        assertEquals("refresh", delivery.getString("command"));
+    }
+
     private RecordingSession member(boolean matches)
     {
         RecordingSession session = new RecordingSession(this.channel, matches);
@@ -244,7 +566,7 @@ public class RoutePutChannelRoutingTest
         assertEquals(original.getSourceId(), delivery.getSourceId());
         assertEquals(original.getMessageId(), delivery.getMessageId());
         assertEquals("refresh", delivery.getString("command"));
-        assertFalse(delivery.hasMetaField("where"));
+        assertTrue(delivery.hasMetaField("where"));
     }
 
     private static class RecordingSession extends RoutePutServerWebsocket
